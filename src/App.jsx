@@ -27,6 +27,8 @@ import {
   Vote,
 } from 'lucide-react';
 
+const Logo = new URL('../Logo.svg', import.meta.url).href;
+
 const navItems = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'map', label: 'Map', icon: MapPinned },
@@ -125,12 +127,10 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto max-w-[1500px] px-4 py-3">
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setActiveView('home')} className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 via-blue-500 to-orange-500 text-white">
-                <span className="font-display text-lg font-bold">PPH</span>
-              </div>
+        <div className="mx-auto max-w-[1500px] px-4 py-0 h-20 flex items-center">
+          <div className="flex w-full items-center gap-2">
+            <button type="button" onClick={() => setActiveView('home')} className="flex items-center gap-2">
+              <img src={Logo} alt="Public Policy Hub Logo" style={{ height: '120px' }} className="relative z-10 w-auto object-contain transition-transform hover:scale-105 -my-5" />
               <div className="hidden sm:block">
                 <p className="font-display text-xs uppercase tracking-[0.35em] text-slate-400">Public Policy Hub</p>
                 <p className="text-sm text-slate-600">Civic issues, built like a modern social app</p>
@@ -161,7 +161,7 @@ function App() {
             </div>
           </div>
 
-          <label className="group relative mt-3 lg:hidden">
+          <label className="group relative mt-1 lg:hidden">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600" />
             <input
               type="search"
@@ -172,7 +172,7 @@ function App() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-[1550px] px-4 pt-6">
+      <section className="mx-auto max-w-[1550px] px-4 pt-4">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_380px]">
           <div className="relative overflow-hidden rounded-[36px] bg-gradient-to-br from-blue-600 via-blue-700 to-slate-950 px-6 py-7 text-white shadow-[0_32px_100px_-42px_rgba(37,99,235,0.72)]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,_rgba(255,255,255,0.22),_transparent_32%),radial-gradient(circle_at_100%_0%,_rgba(249,115,22,0.28),_transparent_20%)]" />
@@ -221,7 +221,7 @@ function App() {
         </div>
       </section>
 
-      <main className="mobile-safe mx-auto grid max-w-[1550px] gap-6 px-4 pb-24 pt-6 lg:grid-cols-[250px_minmax(0,1fr)_360px]">
+      <main className="mobile-safe mx-auto grid max-w-[1550px] gap-6 px-4 pb-24 pt-4 lg:grid-cols-[250px_minmax(0,1fr)_360px]">
         <aside className="hidden space-y-4 lg:block">
           <div className="soft-card p-4">
             <p className="px-2 text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Navigation</p>
