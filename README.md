@@ -2,11 +2,15 @@
 
 Reddit-inspired community UI rebuilt with React and Tailwind CSS.
 
+## To install all the Dependencies 
+- `npm install`
+
 ## Scripts
 
 - `npm run dev`
 - `npm run build`
 - `npm run lint`
+
 
 ## Stack
 
