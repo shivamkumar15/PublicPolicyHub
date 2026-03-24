@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react';
+import { createElement, useState, useEffect } from 'react';
 import {
   BadgeCheck,
   Bell,
@@ -25,16 +25,19 @@ import {
   Users,
   Video,
   Vote,
+  LogOut,
 } from 'lucide-react';
+
+import { auth, provider, signInWithPopup } from './firebase.js';
 
 const Logo = new URL('../Logo.svg', import.meta.url).href;
 
 const navItems = [
   { id: 'home', label: 'Home', icon: House },
   { id: 'map', label: 'Map', icon: MapPinned },
-  { id: 'create', label: 'Post', icon: SquarePen },
+  { id: 'create', label: 'Post', icon: SquarePen, requiresAuth: true },
   { id: 'alerts', label: 'Alerts', icon: Bell },
-  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'profile', label: 'Profile', icon: User, requiresAuth: true },
 ];
 
 const feedTabs = ['Trending', 'Verified', 'Nearby', 'Solutions'];
@@ -119,10 +122,124 @@ const notifications = [
 function App() {
   const [activeView, setActiveView] = useState('home');
   const [activeFeed, setActiveFeed] = useState('Trending');
-  const [selectedId, setSelectedId] = useState(posts[0].id);
+  const [selectedId, setSelectedId] = useState(null);
+  const [apiPosts, setApiPosts] = useState([]);
+  const [apiCities, setApiCities] = useState([]);
+  const [apiNotifications, setApiNotifications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const visiblePosts = getVisiblePosts(activeFeed);
-  const selectedPost = posts.find((post) => post.id === selectedId) ?? visiblePosts[0];
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [authError, setAuthError] = useState('');
+
+  const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+
+  const fetchPublicData = () => {
+    return Promise.all([
+      fetch('http://localhost:5000/api/posts').then(res => res.json()),
+      fetch('http://localhost:5000/api/cities').then(res => res.json()),
+      fetch('http://localhost:5000/api/notifications').then(res => res.json())
+    ])
+    .then(([postsData, citiesData, notifsData]) => {
+      setApiPosts(postsData || []);
+      setApiCities(citiesData || []);
+      setApiNotifications(notifsData || []);
+      if (postsData && postsData.length > 0 && !selectedId) setSelectedId(postsData[0].id);
+    });
+  };
+
+  const fetchProfile = (currentToken) => {
+    if (!currentToken) return Promise.resolve();
+    return fetch('http://localhost:5000/api/users/profile', {
+      headers: { 'Authorization': `Bearer ${currentToken}` }
+    })
+    .then(res => {
+      if (!res.ok) throw new Error('Invalid token');
+      return res.json();
+    })
+    .then(data => setUserProfile(data))
+    .catch(() => handleLogout());
+  };
+
+  useEffect(() => {
+    setIsLoading(true);
+    fetchPublicData()
+      .then(() => fetchProfile(token))
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const handleNavClick = (id) => {
+    if ((id === 'profile' || id === 'create') && !userProfile && !token) {
+      setActiveView('auth');
+    } else {
+      setActiveView(id);
+    }
+  };
+
+  const handleGoogleAuth = async () => {
+    setAuthError('');
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const firebaseUser = result.user;
+      
+      const res = await fetch('http://localhost:5000/api/auth/firebaseLogin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0]
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Authentication failed on server');
+      
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      await fetchProfile(data.token);
+      setActiveView('home'); 
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setToken(null);
+    setUserProfile(null);
+    if (activeView === 'profile' || activeView === 'create') setActiveView('home');
+  };
+
+  const handlePostSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('http://localhost:5000/api/posts', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(postForm)
+      });
+      if (!res.ok) throw new Error('Failed to post issue');
+      
+      await fetchPublicData();
+      setActiveView('home');
+      setPostForm({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-display font-semibold text-slate-500">Connecting to PostgreSQL...</div>;
+
+  const posts = apiPosts.length > 0 ? apiPosts : window.posts || [];
+  const cities = apiCities.length > 0 ? apiCities : window.cities || [];
+  const notifications = apiNotifications.length > 0 ? apiNotifications : window.notifications || [];
+
+  const visiblePosts = getVisiblePosts(activeFeed, posts);
+  const selectedPost = posts.find((post) => post.id === selectedId) ?? visiblePosts[0] ?? posts[0];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -147,17 +264,27 @@ function App() {
             </label>
 
             <div className="ml-auto flex items-center gap-2">
-              <button onClick={() => setActiveView('create')} className="hidden rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 sm:inline-flex">
-                Upload
-              </button>
-              <button onClick={() => setActiveView('alerts')} className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600">
+              <button onClick={() => handleNavClick('alerts')} className="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 mr-2">
                 <Bell className="h-4 w-4" />
                 <span className="notification-dot" />
               </button>
-              <button onClick={() => setActiveView('profile')} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 pr-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-500 text-xs font-bold text-white">SK</span>
-                <span className="hidden text-sm font-semibold sm:block">Shivam</span>
-              </button>
+              {userProfile ? (
+                 <>
+                  <button onClick={() => handleNavClick('create')} className="hidden rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 sm:inline-flex">
+                    Upload
+                  </button>
+                  <button onClick={() => handleNavClick('profile')} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 pr-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-xs font-bold text-white uppercase">
+                      {userProfile.username.substring(0,2)}
+                    </span>
+                    <span className="hidden text-sm font-semibold sm:block">{userProfile.username}</span>
+                  </button>
+                 </>
+              ) : (
+                <button onClick={() => handleNavClick('auth')} className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white cursor-pointer hover:bg-slate-800 transition">
+                  Sign In
+                </button>
+              )}
             </div>
           </div>
 
@@ -229,7 +356,7 @@ function App() {
               {navItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveView(item.id)}
+                  onClick={() => handleNavClick(item.id)}
                   className={`flex w-full items-center justify-between rounded-[22px] px-4 py-3 text-left transition ${
                     activeView === item.id ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
                   }`}
@@ -257,6 +384,35 @@ function App() {
         </aside>
 
         <section className="space-y-6">
+          {activeView === 'auth' && (
+             <div className="soft-card p-6 sm:p-10 max-w-md mx-auto mt-10">
+               <div className="flex justify-center mb-6">
+                 <img src={Logo} alt="Logo" className="h-16 w-auto" style={{ filter: 'drop-shadow(0 4px 12px rgba(37, 99, 235, 0.2))' }} />
+               </div>
+               <h2 className="font-display text-2xl font-bold text-slate-900 text-center">
+                 Welcome to Public Policy Hub
+               </h2>
+               <p className="mt-2 text-slate-500 text-center text-sm">
+                 Sign in with your Google account to securely report civic issues and propose solutions.
+               </p>
+               
+               {authError && <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100">{authError}</div>}
+
+               <div className="mt-8 mb-4">
+                 <button onClick={handleGoogleAuth} className="flex w-full items-center justify-center gap-3 rounded-full bg-white border border-slate-300 px-5 py-3.5 text-[15px] font-semibold text-slate-700 shadow-[0_2px_10px_rgba(0,0,0,0.06)] transition hover:bg-slate-50 hover:shadow-md focus:ring-4 focus:ring-slate-100 cursor-pointer">
+                   <svg className="h-5 w-5" viewBox="0 0 24 24">
+                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                     <path fill="none" d="M1 1h22v22H1z" />
+                   </svg>
+                   Continue with Google
+                 </button>
+               </div>
+             </div>
+          )}
+
           {activeView === 'home' && (
             <>
               <div className="soft-card p-5">
@@ -416,19 +572,20 @@ function App() {
               <div className="soft-card p-5 sm:p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Create New Issue</p>
                 <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">Simple, mobile-friendly reporting.</h2>
-                <form className="mt-6 space-y-5">
+                <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <button className="rounded-[24px] border border-blue-200 bg-blue-50 p-4 text-left"><Video className="h-5 w-5 text-blue-700" /><p className="mt-3 font-semibold text-slate-950">Video</p></button>
                     <button className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 text-left"><Image className="h-5 w-5 text-orange-500" /><p className="mt-3 font-semibold text-slate-950">Image</p></button>
                   </div>
-                  <input type="text" placeholder="Title" className="form-input" />
+                  <input type="text" placeholder="Title" required className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-blue-300" value={postForm.title} onChange={e => setPostForm({...postForm, title: e.target.value})} />
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <input type="text" placeholder="Location" className="form-input" />
-                    <select className="form-input"><option>Police</option><option>Municipality</option><option>Education</option><option>Transport</option></select>
+                    <input type="text" placeholder="Location" required className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-blue-300" value={postForm.location} onChange={e => setPostForm({...postForm, location: e.target.value})} />
+                    <select className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-blue-300" value={postForm.department} onChange={e => setPostForm({...postForm, department: e.target.value})}>
+                        <option>General</option><option>Police</option><option>Municipality</option><option>Education</option><option>Transport</option>
+                    </select>
                   </div>
-                  <textarea rows="5" placeholder="Description" className="form-input min-h-[140px] resize-none" />
-                  <textarea rows="3" placeholder="Suggested solution (optional)" className="form-input min-h-[110px] resize-none" />
-                  <button className="rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">Post Issue</button>
+                  <textarea rows="5" placeholder="Description" required className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold outline-none focus:border-blue-300 min-h-[140px] resize-none" value={postForm.description} onChange={e => setPostForm({...postForm, description: e.target.value})} />
+                  <button type="submit" className="rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 cursor-pointer">Post Issue as {userProfile?.username}</button>
                 </form>
               </div>
               <InfoCard icon={CheckCircle2} title="Posting checklist" text="Use a short title, exact location, department, and one realistic fix. That combination performs best." />
@@ -454,29 +611,25 @@ function App() {
             </div>
           )}
 
-          {activeView === 'profile' && (
+          {activeView === 'profile' && userProfile && (
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="soft-card p-5 sm:p-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-blue-600 to-orange-500 text-3xl font-bold text-white">SK</div>
+                  <div className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-blue-600 to-cyan-500 text-3xl font-bold text-white uppercase">{userProfile.username.substring(0,2)}</div>
                   <div className="flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Citizen Reporter</p>
-                    <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">Shivam Kumar</h2>
-                    <p className="mt-2 text-sm text-slate-500">Posts: 12 • Solutions Proposed: 8</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{userProfile.role}</p>
+                    <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">{userProfile.username}</h2>
+                    <p className="mt-2 text-sm text-slate-500">Posts: {userProfile.postsCount} • Solutions Proposed: {userProfile.solutionsProposed}</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <MetricBox label="Reputation" value="540" dark={false} />
-                      <MetricBox label="Badges" value="3" dark={false} />
-                      <MetricBox label="Streak" value="7d" dark={false} />
+                      <MetricBox label="Reputation" value={userProfile.reputation} dark={false} />
+                      <MetricBox label="Badges" value={userProfile.badges.length} dark={false} />
+                      <MetricBox label="Streak" value={userProfile.streak} dark={false} />
                     </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {['Public Watchdog', 'Active Reporter', 'Solution Builder'].map((badge) => (
-                        <span key={badge} className="rounded-full border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-semibold text-orange-700">{badge}</span>
-                      ))}
-                    </div>
+                    <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">Sign Out</button>
                   </div>
                 </div>
               </div>
-              <InfoCard icon={Star} title="Profile Goal" text="Make contributors feel closer to creators and civic journalists than forum accounts." />
+              <InfoCard icon={Star} title="Your Impact" text="Every verified post builds your reputation. Keep contributing to unlock new civic journalist badges." />
             </div>
           )}
         </section>
@@ -536,7 +689,7 @@ function App() {
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setActiveView(item.id)}
+              onClick={() => handleNavClick(item.id)}
               className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-2 py-2 text-xs font-semibold ${
                 activeView === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-500'
               }`}
@@ -607,11 +760,12 @@ function DetailRow({ icon, label, value }) {
   );
 }
 
-function getVisiblePosts(activeFeed) {
-  if (activeFeed === 'Verified') return posts.filter((post) => post.verified);
-  if (activeFeed === 'Nearby') return posts.filter((post) => post.nearby);
-  if (activeFeed === 'Solutions') return [...posts].sort((a, b) => Number(b.solutions) - Number(a.solutions));
-  return posts;
+function getVisiblePosts(activeFeed, currentPosts) {
+  if (!currentPosts) return [];
+  if (activeFeed === 'Verified') return currentPosts.filter((post) => post.verified);
+  if (activeFeed === 'Nearby') return currentPosts.filter((post) => post.nearby);
+  if (activeFeed === 'Solutions') return [...currentPosts].sort((a, b) => Number(b.solutions) - Number(a.solutions));
+  return currentPosts;
 }
 
 export default App;
