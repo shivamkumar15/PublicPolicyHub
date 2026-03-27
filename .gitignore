@@ -32,3 +32,15 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Uploaded Media
+backend/uploads/
+
+# Scritps and Test Files
+backend/test_integration.js
+test1.*
+test2.*
+test3.*
+test_upload.js
+uploadtest/
+

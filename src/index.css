@@ -74,7 +74,7 @@
   }
 
   .video-shell {
-    @apply relative aspect-[4/3] overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_18px_45px_-28px_rgba(15,23,42,0.45)] transition duration-300;
+    @apply relative h-[260px] w-full overflow-hidden rounded-[20px] bg-slate-950 shadow-[0_18px_45px_-28px_rgba(15,23,42,0.45)] transition duration-300 sm:h-[340px] lg:h-[440px];
   }
 
   .pulse-ring {
@@ -103,5 +103,14 @@
 
   .form-input {
     @apply h-12 w-full rounded-[22px] border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100;
+  }
+
+  /* Hide scrollbar for side-scrolling galleries but keep functionality */
+  .hide-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
   }
 }

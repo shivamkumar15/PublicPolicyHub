@@ -1,4 +1,4 @@
-import { createElement, useEffect, useState } from 'react';
+﻿import { createElement, useEffect, useRef, useState } from 'react';
 import {
   BadgeCheck,
   Bell,
@@ -6,11 +6,8 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
-  Filter,
-  Flame,
   House,
-  Image,
-  LayoutGrid,
+  Image as ImageIcon,
   Lightbulb,
   MapPin,
   MapPinned,
@@ -23,12 +20,13 @@ import {
   TrendingUp,
   User,
   Users,
-  Video,
+  Video as VideoIcon,
   Vote,
   LogOut,
+  X,
 } from 'lucide-react';
 
-import AuthPage from './AuthPage';
+import AuthPage from './AuthPage.jsx';
 import {
   auth,
   createUserWithEmailAndPassword,
@@ -40,7 +38,7 @@ import {
 } from './firebase.js';
 
 const Logo = new URL('../Logo.svg', import.meta.url).href;
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = '';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: House },
@@ -52,13 +50,6 @@ const navItems = [
 
 const feedTabs = ['Trending', 'Verified', 'Nearby', 'Solutions'];
 
-const storyReels = [
-  { city: 'Patna', topic: 'Checkpoint sting', tone: 'from-orange-400 to-rose-500' },
-  { city: 'Delhi', topic: 'Metro thread', tone: 'from-blue-500 to-cyan-500' },
-  { city: 'Mumbai', topic: 'Flood watch', tone: 'from-indigo-500 to-violet-500' },
-  { city: 'Lucknow', topic: 'School audit', tone: 'from-emerald-500 to-lime-400' },
-];
-
 const defaultPosts = [
   {
     id: 'patna',
@@ -68,9 +59,10 @@ const defaultPosts = [
     description: 'Driver forced to pay Rs 500 to pass. Timestamped clip, route details, and prior complaint references are attached.',
     author: 'CitizenReporter',
     time: '3h ago',
-    support: '2.4k',
-    comments: '342',
-    solutions: '45',
+    support: 2400,
+    comments: 342,
+    solutions: 45,
+    shares: 12,
     media: 'VIDEO',
     verified: true,
     nearby: true,
@@ -86,9 +78,10 @@ const defaultPosts = [
     description: 'Commuters turned route gaps into a social-first thread with stop names, peak-time clips, and delay patterns.',
     author: 'MetroLens',
     time: '5h ago',
-    support: '1.9k',
-    comments: '228',
-    solutions: '31',
+    support: 1900,
+    comments: 228,
+    solutions: 31,
+    shares: 8,
     media: 'VIDEO',
     verified: true,
     nearby: false,
@@ -104,9 +97,10 @@ const defaultPosts = [
     description: 'Students compared records against classroom photos and built a visual audit thread anyone can verify quickly.',
     author: 'CampusWatch',
     time: '7h ago',
-    support: '1.2k',
-    comments: '174',
-    solutions: '20',
+    support: 1200,
+    comments: 174,
+    solutions: 20,
+    shares: 4,
     media: 'IMAGE',
     verified: false,
     nearby: true,
@@ -142,8 +136,67 @@ function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [mediaSlideIndexByPost, setMediaSlideIndexByPost] = useState({});
+  const [commentInput, setCommentInput] = useState('');
+  const [solutionInput, setSolutionInput] = useState('');
+  const [isInteractionSubmitting, setIsInteractionSubmitting] = useState(false);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  const [profileViewUsername, setProfileViewUsername] = useState(null);
+  const profileMenuRef = useRef(null);
+  const profilePhotoInputRef = useRef(null);
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+  const [mediaFiles, setMediaFiles] = useState([]);
+
+  const handleFileSelect = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setMediaFiles(prev => [...prev, ...Array.from(e.target.files)]);
+    }
+  };
+
+  const removeFile = (indexToRemove) => {
+    setMediaFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleMediaScroll = (postId, event) => {
+    const container = event.currentTarget;
+    const nextIndex = Math.round(container.scrollLeft / container.clientWidth);
+    setMediaSlideIndexByPost((current) => (
+      current[postId] === nextIndex ? current : { ...current, [postId]: nextIndex }
+    ));
+  };
+
+  const normalizePost = (post) => ({
+    ...post,
+    support: toCount(post?.support),
+    comments: toCount(post?.comments),
+    solutions: toCount(post?.solutions),
+    shares: toCount(post?.shares),
+    supporters: Array.isArray(post?.supporters) ? post.supporters : [],
+    commentsList: Array.isArray(post?.commentsList) ? post.commentsList : [],
+    solutionsList: Array.isArray(post?.solutionsList) ? post.solutionsList : [],
+    fixes: Array.isArray(post?.fixes) ? post.fixes : [],
+    mediaList: Array.isArray(post?.mediaList) ? post.mediaList : [],
+  });
+
+  const upsertPostInState = (incomingPost) => {
+    const normalizedIncoming = normalizePost(incomingPost);
+    setApiPosts((currentPosts) => {
+      const existingIndex = currentPosts.findIndex((post) => post.id === normalizedIncoming.id);
+      if (existingIndex === -1) return [normalizedIncoming, ...currentPosts];
+
+      const nextPosts = [...currentPosts];
+      nextPosts[existingIndex] = normalizedIncoming;
+      return nextPosts;
+    });
+  };
+
+  const ensureAuthenticated = () => {
+    if (token && userProfile) return true;
+    openAuthPage();
+    return false;
+  };
 
   const openAuthPage = () => {
     setAuthError('');
@@ -158,8 +211,9 @@ function App() {
     ])
     .then(([postsData, citiesData, notifsData]) => {
       if (Array.isArray(postsData)) {
-        setApiPosts(postsData);
-        setSelectedId((currentSelectedId) => currentSelectedId ?? postsData[0]?.id ?? null);
+        const normalizedPosts = postsData.map(normalizePost);
+        setApiPosts(normalizedPosts);
+        setSelectedId((currentSelectedId) => currentSelectedId ?? normalizedPosts[0]?.id ?? null);
       }
       if (Array.isArray(citiesData)) setApiCities(citiesData);
       if (Array.isArray(notifsData)) setApiNotifications(notifsData);
@@ -211,10 +265,57 @@ function App() {
       .finally(() => setIsLoading(false));
   }, [token]);
 
+  useEffect(() => {
+    const events = new EventSource(`${API_BASE_URL}/api/events`);
+
+    const onPostUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload?.post) upsertPostInState(payload.post);
+      } catch (error) {
+        console.error('Failed to parse realtime event:', error);
+      }
+    };
+
+    events.addEventListener('post_update', onPostUpdate);
+    events.onerror = () => {
+      // Browser auto-reconnect handles transient backend restarts.
+    };
+
+    return () => {
+      events.removeEventListener('post_update', onPostUpdate);
+      events.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userProfile?.username) {
+      setProfilePhotoUrl('');
+      return;
+    }
+
+    const storedPhoto = localStorage.getItem(`profilePhoto:${profileDisplay.username}`);
+    setProfilePhotoUrl(storedPhoto || '');
+  }, [userProfile?.username]);
+
+  useEffect(() => {
+    const closeMenuOnOutsideClick = (event) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeMenuOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeMenuOnOutsideClick);
+  }, []);
+
   const handleNavClick = (id) => {
     if ((id === 'profile' || id === 'create') && !userProfile && !token) {
       openAuthPage();
     } else {
+      if (id === 'profile' && userProfile?.username) {
+        setProfileViewUsername(userProfile.username);
+      }
       setActiveView(id);
     }
   };
@@ -280,29 +381,137 @@ function App() {
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
+    setIsProfileMenuOpen(false);
     setAuthError('');
     if (activeView === 'profile' || activeView === 'create') setActiveView('home');
+  };
+
+  const handleProfilePhotoUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !userProfile?.username) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const nextPhoto = typeof reader.result === 'string' ? reader.result : '';
+      if (!nextPhoto) return;
+
+      setProfilePhotoUrl(nextPhoto);
+      localStorage.setItem(`profilePhoto:${profileDisplay.username}`, nextPhoto);
+      setIsProfileMenuOpen(false);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handlePostSubmit = async (e) => {
     e.preventDefault();
     try {
+      const formData = new FormData();
+      formData.append('title', postForm.title);
+      formData.append('description', postForm.description);
+      formData.append('location', postForm.location);
+      formData.append('department', postForm.department);
+      formData.append('media', postForm.media);
+      mediaFiles.forEach(file => formData.append('files', file));
+
       const res = await fetch(`${API_BASE_URL}/api/posts`, {
         method: 'POST',
         headers: { 
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(postForm)
+        body: formData
       });
       if (!res.ok) throw new Error('Failed to post issue');
       
       await fetchPublicData();
       setActiveView('home');
       setPostForm({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+      setMediaFiles([]);
     } catch (err) {
       alert(err.message);
     }
+  };
+
+  const updatePostInteraction = async (postId, action, body = null, requiresAuth = true) => {
+    if (requiresAuth && !ensureAuthenticated()) return null;
+
+    const headers = body
+      ? {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        }
+      : (token ? { Authorization: `Bearer ${token}` } : {});
+
+    const res = await fetch(`${API_BASE_URL}/api/posts/${postId}/${action}`, {
+      method: 'POST',
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || `Failed to ${action}`);
+    upsertPostInState(data);
+    return data;
+  };
+
+  const handleSupport = async (postId) => {
+    try {
+      await updatePostInteraction(postId, 'support', null, true);
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleShare = async (postId) => {
+    try {
+      const currentUrl = `${window.location.origin}${window.location.pathname}#post-${postId}`;
+      if (navigator.share) {
+        await navigator.share({ title: 'Public Policy Hub Post', url: currentUrl });
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(currentUrl);
+      }
+
+      await updatePostInteraction(postId, 'share', null, false);
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        alert(error.message || 'Failed to share post');
+      }
+    }
+  };
+
+  const handleCommentSubmit = async (postId) => {
+    const text = commentInput.trim();
+    if (!text) return;
+
+    setIsInteractionSubmitting(true);
+    try {
+      await updatePostInteraction(postId, 'comments', { text }, true);
+      setCommentInput('');
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setIsInteractionSubmitting(false);
+    }
+  };
+
+  const handleSolutionSubmit = async (postId) => {
+    const text = solutionInput.trim();
+    if (!text) return;
+
+    setIsInteractionSubmitting(true);
+    try {
+      await updatePostInteraction(postId, 'solutions', { text }, true);
+      setSolutionInput('');
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setIsInteractionSubmitting(false);
+    }
+  };
+
+  const openAuthorProfile = (username) => {
+    if (!username) return;
+    setProfileViewUsername(username);
+    setActiveView('profile');
   };
 
   if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-display font-semibold text-slate-500">Connecting to server...</div>;
@@ -322,6 +531,28 @@ function App() {
 
   const visiblePosts = getVisiblePosts(activeFeed, apiPosts);
   const selectedPost = apiPosts.find((post) => post.id === selectedId) ?? visiblePosts[0] ?? apiPosts[0] ?? null;
+  const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
+  const isOwnProfile = !!userProfile && resolvedProfileUsername === userProfile.username;
+  const authorPostsCount = resolvedProfileUsername ? apiPosts.filter((post) => post.author === resolvedProfileUsername).length : 0;
+  const profileDisplay = isOwnProfile
+    ? {
+        username: userProfile.username,
+        role: userProfile.role,
+        postsCount: userProfile.postsCount,
+        solutionsProposed: userProfile.solutionsProposed,
+        reputation: userProfile.reputation,
+        badgesCount: userProfile.badges.length,
+        streak: userProfile.streak,
+      }
+    : {
+        username: resolvedProfileUsername,
+        role: 'CitizenReporter',
+        postsCount: authorPostsCount,
+        solutionsProposed: Math.max(Math.floor(authorPostsCount * 0.8), 1),
+        reputation: 500 + authorPostsCount * 10,
+        badgesCount: Math.max(Math.floor(authorPostsCount / 2), 1),
+        streak: `${Math.max(authorPostsCount, 1)}d`,
+      };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -355,12 +586,59 @@ function App() {
                   <button onClick={() => handleNavClick('create')} className="hidden rounded-full bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 sm:inline-flex">
                     Upload
                   </button>
-                  <button onClick={() => handleNavClick('profile')} className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 pr-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-xs font-bold text-white uppercase">
-                      {userProfile.username.substring(0,2)}
-                    </span>
-                    <span className="hidden text-sm font-semibold sm:block">{userProfile.username}</span>
-                  </button>
+                  <div className="relative" ref={profileMenuRef}>
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleProfilePhotoUpload}
+                    />
+                    <button
+                      onClick={() => setIsProfileMenuOpen((current) => !current)}
+                      className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 pr-3"
+                    >
+                      {isOwnProfile && profilePhotoUrl ? (
+                        <img src={profilePhotoUrl} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+                      ) : (
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-xs font-bold text-white uppercase">
+                          {profileDisplay.username.substring(0,2)}
+                        </span>
+                      )}
+                      <span className="hidden text-sm font-semibold sm:block">{profileDisplay.username}</span>
+                    </button>
+
+                    {isProfileMenuOpen && (
+                      <div className="absolute right-0 top-12 z-50 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                        <button
+                          type="button"
+                          onClick={() => profilePhotoInputRef.current?.click()}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Edit Profile Photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (userProfile?.username) setProfileViewUsername(userProfile.username);
+                            setActiveView('profile');
+                            setIsProfileMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Settings
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
+                        >
+                          <LogOut className="h-4 w-4" />
+                          Logout
+                        </button>
+                      </div>
+                    )}
+                  </div>
                  </>
               ) : (
                 <button onClick={openAuthPage} className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white cursor-pointer hover:bg-slate-800 transition">
@@ -430,7 +708,7 @@ function App() {
         </div>
       </section>
 
-      <main className="mobile-safe mx-auto grid max-w-[1550px] gap-6 px-4 pb-24 pt-4 lg:grid-cols-[250px_minmax(0,1fr)_360px]">
+      <main className="mobile-safe mx-auto grid max-w-[1550px] gap-6 px-4 pb-24 pt-4 lg:grid-cols-[250px_minmax(0,900px)] lg:justify-center">
         <aside className="hidden space-y-4 lg:block">
           <div className="soft-card p-4">
             <p className="px-2 text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Navigation</p>
@@ -471,8 +749,8 @@ function App() {
               <div className="soft-card p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Hot Reels</p>
-                    <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">Issue stories people are replaying</h2>
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Community feed</p>
+                    <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">Top civic posts with full media context</h2>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {feedTabs.map((tab) => (
@@ -486,32 +764,7 @@ function App() {
                         {tab}
                       </button>
                     ))}
-                    <button className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">
-                      <Filter className="h-4 w-4" />
-                      Filter
-                    </button>
-                    <button className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600">
-                      <LayoutGrid className="h-4 w-4" />
-                      Layout
-                    </button>
                   </div>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {storyReels.map((story) => (
-                    <button
-                      key={story.city}
-                      className="group rounded-[24px] border border-slate-200 bg-slate-50 p-4 text-left transition hover:-translate-y-1 hover:border-slate-300 hover:bg-white"
-                    >
-                      <div className={`mb-4 h-14 w-14 rounded-full bg-gradient-to-br ${story.tone} p-[2px] shadow-lg shadow-slate-200`}>
-                        <div className="flex h-full w-full items-center justify-center rounded-full bg-white font-display text-sm font-bold text-slate-950">
-                          {story.city.slice(0, 2)}
-                        </div>
-                      </div>
-                      <p className="font-display text-lg font-bold text-slate-950">{story.city}</p>
-                      <p className="mt-1 text-sm text-slate-500">{story.topic}</p>
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -528,48 +781,86 @@ function App() {
                     }}
                     role="button"
                     tabIndex={0}
-                    className={`soft-card group cursor-pointer overflow-hidden p-4 transition hover:-translate-y-1 hover:shadow-[0_34px_90px_-38px_rgba(37,99,235,0.3)] sm:p-5 animate-rise [animation-fill-mode:backwards] ${
+                    className={`soft-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_26px_70px_-40px_rgba(15,23,42,0.25)] sm:p-5 animate-rise [animation-fill-mode:backwards] ${
                       selectedId === post.id ? 'ring-2 ring-blue-200' : ''
                     }`}
                     style={{ animationDelay: `${index * 90}ms` }}
                   >
-                    <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start">
-                      <div className="video-shell order-1 group-hover:scale-[1.015]">
-                        <div className={`absolute inset-0 bg-gradient-to-br ${post.accent}`} />
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,_rgba(255,255,255,0.28),_transparent_26%),linear-gradient(180deg,_transparent_0%,_rgba(15,23,42,0.68)_100%)]" />
-                        <div className="absolute left-4 top-4 rounded-full bg-slate-950/45 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur">{post.media}</div>
-                        <button className="pulse-ring absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur">
-                          <Play className="ml-1 h-7 w-7 fill-current" />
-                        </button>
-                        <div className="absolute bottom-4 left-4 right-4 rounded-[24px] border border-white/15 bg-white/10 p-4 text-white backdrop-blur-xl">
-                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/80">{post.tag}</p>
-                          <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
-                            <span className="rounded-full bg-white/10 px-2 py-2">{post.support}</span>
-                            <span className="rounded-full bg-white/10 px-2 py-2">{post.comments}</span>
-                            <span className="rounded-full bg-white/10 px-2 py-2">{post.solutions}</span>
-                          </div>
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openAuthorProfile(post.author);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-1 text-left"
+                      >
+                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-cyan-500 text-xs font-bold uppercase text-white">
+                          {post.author.slice(0, 2)}
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{post.author}</p>
+                          <p className="text-xs text-slate-500">{post.time}</p>
                         </div>
+                      </button>
+                      <div className="video-shell order-1 relative overflow-hidden rounded-[20px]">
+                        {post.mediaList && post.mediaList.length > 0 ? (
+                          <div
+                            className="flex w-full h-full overflow-x-auto snap-x snap-mandatory hide-scrollbar"
+                            onScroll={(event) => handleMediaScroll(post.id, event)}
+                          >
+                            {post.mediaList.map((media, i) => (
+                              <div key={i} className="w-full h-full flex-shrink-0 snap-center relative">
+                                {media.type === 'VIDEO' ? (
+                                  <video src={`${API_BASE_URL}${media.url}`} className="h-full w-full object-contain bg-black" controls preload="metadata" playsInline />
+                                ) : (
+                                  <img src={`${API_BASE_URL}${media.url}`} alt={post.title} className="h-full w-full object-contain bg-slate-950" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <div className={`absolute inset-0 bg-gradient-to-br ${post.accent}`} />
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,_rgba(255,255,255,0.28),_transparent_26%),linear-gradient(180deg,_transparent_0%,_rgba(15,23,42,0.68)_100%)]" />
+                            <div className="absolute left-4 top-4 rounded-full bg-slate-950/45 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-white backdrop-blur">{post.media}</div>
+                            <button className="pulse-ring absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white backdrop-blur">
+                              <Play className="ml-1 h-7 w-7 fill-current" />
+                            </button>
+                          </>
+                        )}
                       </div>
+                      {post.mediaList && post.mediaList.length > 1 && (
+                        <div className="flex items-center justify-center gap-2 pt-2">
+                          {post.mediaList.map((_, dotIndex) => (
+                            <span
+                              key={`${post.id}-dot-${dotIndex}`}
+                              className={`h-2 w-2 rounded-full transition ${
+                                (mediaSlideIndexByPost[post.id] ?? 0) === dotIndex ? 'bg-blue-600' : 'bg-slate-300'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
 
-                      <div className="order-2 space-y-4">
-                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                      <div className="order-2 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                           <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-blue-700"><MapPin className="h-3.5 w-3.5" />{post.location}</span>
                           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{post.department}</span>
                           {post.verified && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                         </div>
                         <div>
-                          <p className="text-sm text-slate-500">Posted by {post.author} • {post.time}</p>
-                          <h3 className="mt-2 font-display text-2xl font-bold leading-tight text-slate-950 sm:text-[2rem]">{post.title}</h3>
-                          <p className="mt-3 text-[15px] leading-7 text-slate-600">{post.description}</p>
+                          <h3 className="mt-2 font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
+                          <p className="mt-2 text-[15px] leading-7 text-slate-600">{post.description}</p>
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          <MetricChip icon={TrendingUp} value={post.support} label="Support" primary />
-                          <MetricChip icon={MessageSquare} value={post.comments} label="Comments" />
-                          <MetricChip icon={Lightbulb} value={post.solutions} label="Solutions" />
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <MetricChip icon={TrendingUp} value={formatCount(post.support)} label="Support" primary />
+                          <MetricChip icon={MessageSquare} value={formatCount(post.comments)} label="Comments" />
+                          <MetricChip icon={Lightbulb} value={formatCount(post.solutions)} label="Solutions" />
                         </div>
-                        <div className="rounded-[24px] bg-slate-50 p-4">
+                        <div className="rounded-[16px] bg-slate-50 p-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Top Fix</p>
-                          <p className="mt-2 text-sm font-semibold leading-6 text-slate-900">{post.fixes[0]}</p>
+                          <p className="mt-2 text-sm font-semibold leading-6 text-slate-900">{post.fixes?.[0] || 'Awaiting suggested fixes'}</p>
                         </div>
                       </div>
                     </div>
@@ -626,9 +917,35 @@ function App() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Create New Issue</p>
                 <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">Simple, mobile-friendly reporting.</h2>
                 <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <button className="rounded-[24px] border border-blue-200 bg-blue-50 p-4 text-left"><Video className="h-5 w-5 text-blue-700" /><p className="mt-3 font-semibold text-slate-950">Video</p></button>
-                    <button className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 text-left"><Image className="h-5 w-5 text-orange-500" /><p className="mt-3 font-semibold text-slate-950">Image</p></button>
+                  <div className="space-y-4">
+                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition">
+                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <div className="flex gap-2 mb-2">
+                          <ImageIcon className="h-6 w-6 text-orange-500" />
+                          <VideoIcon className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <p className="text-sm font-semibold text-slate-600">Click or drag files to upload</p>
+                        <p className="text-xs text-slate-500 mt-1">Photos and Videos (Max 10)</p>
+                      </div>
+                      <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={handleFileSelect} />
+                    </label>
+
+                    {mediaFiles.length > 0 && (
+                      <div className="flex overflow-x-auto gap-3 pb-2 snap-x">
+                        {mediaFiles.map((file, idx) => (
+                          <div key={idx} className="relative shrink-0 snap-start h-20 w-20 rounded-xl overflow-hidden bg-slate-200 border border-slate-300">
+                            {file.type.startsWith('video/') ? (
+                              <video src={URL.createObjectURL(file)} className="h-full w-full object-cover" />
+                            ) : (
+                              <img src={URL.createObjectURL(file)} alt="preview" className="h-full w-full object-cover" />
+                            )}
+                            <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900/60 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition backdrop-blur-sm">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <input type="text" placeholder="Title" required className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-blue-300" value={postForm.title} onChange={e => setPostForm({...postForm, title: e.target.value})} />
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -664,90 +981,44 @@ function App() {
             </div>
           )}
 
-          {activeView === 'profile' && userProfile && (
+          {activeView === 'profile' && (userProfile || profileViewUsername) && (
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <div className="soft-card p-5 sm:p-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-                  <div className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-blue-600 to-cyan-500 text-3xl font-bold text-white uppercase">{userProfile.username.substring(0,2)}</div>
+                  {isOwnProfile && profilePhotoUrl ? (
+                    <img src={profilePhotoUrl} alt="Profile" className="h-24 w-24 rounded-[28px] object-cover" />
+                  ) : (
+                    <div className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-blue-600 to-cyan-500 text-3xl font-bold text-white uppercase">{profileDisplay.username.substring(0,2)}</div>
+                  )}
                   <div className="flex-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{userProfile.role}</p>
-                    <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">{userProfile.username}</h2>
-                    <p className="mt-2 text-sm text-slate-500">Posts: {userProfile.postsCount} • Solutions Proposed: {userProfile.solutionsProposed}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">{profileDisplay.role}</p>
+                    <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">{profileDisplay.username}</h2>
+                    <p className="mt-2 text-sm text-slate-500">Posts: {profileDisplay.postsCount} • Solutions Proposed: {profileDisplay.solutionsProposed}</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <MetricBox label="Reputation" value={userProfile.reputation} dark={false} />
-                      <MetricBox label="Badges" value={userProfile.badges.length} dark={false} />
-                      <MetricBox label="Streak" value={userProfile.streak} dark={false} />
+                      <MetricBox label="Reputation" value={profileDisplay.reputation} dark={false} />
+                      <MetricBox label="Badges" value={profileDisplay.badgesCount} dark={false} />
+                      <MetricBox label="Streak" value={profileDisplay.streak} dark={false} />
                     </div>
-                    <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">
-                      <LogOut className="h-4 w-4" />
-                      Sign Out
-                    </button>
+                    {isOwnProfile && (
+                      <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-              <InfoCard icon={Star} title="Your Impact" text="Every verified post builds your reputation. Keep contributing to unlock new civic journalist badges." />
+              <InfoCard
+                icon={Star}
+                title={isOwnProfile ? 'Your Impact' : 'Reporter Activity'}
+                text={isOwnProfile
+                  ? 'Every verified post builds your reputation. Keep contributing to unlock new civic journalist badges.'
+                  : 'This reporter’s public contributions and recent posts are shown here.'}
+              />
             </div>
           )}
         </section>
 
-        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <div className="soft-card overflow-hidden p-0">
-            {selectedPost ? (
-              <>
-                <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white">
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">Post Page UI</p>
-                  <h2 className="mt-3 font-display text-2xl font-bold">{selectedPost.title}</h2>
-                  <p className="mt-3 text-sm leading-6 text-slate-300">{selectedPost.description}</p>
-                </div>
-                <div className="p-5">
-                <div className="mt-5 grid gap-3">
-                  <DetailRow icon={MapPin} label="Location" value={selectedPost.location} />
-                  <DetailRow icon={Building2} label="Department" value={selectedPost.department} />
-                </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <button className="rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">Support</button>
-                  <button className="rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600">Disagree</button>
-                </div>
-                <div className="mt-6 space-y-3">
-                  {selectedPost.fixes.map((fix, index) => (
-                    <div key={fix} className="rounded-[22px] bg-slate-50 p-4 text-sm font-semibold text-slate-900">{index + 1}. {fix}</div>
-                  ))}
-                </div>
-                </div>
-              </>
-            ) : (
-              <div className="p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Post Page UI</p>
-                <h2 className="mt-3 font-display text-2xl font-bold text-slate-950">No issue selected yet</h2>
-                <p className="mt-3 text-sm leading-6 text-slate-500">Once posts load, the issue detail panel will appear here.</p>
-              </div>
-            )}
-          </div>
-
-          <div className="soft-card p-5">
-            <div className="flex items-center gap-2">
-              <Flame className="h-4 w-4 text-orange-500" />
-              <h3 className="font-display text-xl font-bold text-slate-950">Trending Issues</h3>
-            </div>
-            <div className="mt-4 space-y-3">
-              {['Fuel Pricing Transparency', 'Police Corruption', 'Exam Paper Leaks', 'Road Infrastructure'].map((item) => (
-                <div key={item} className="rounded-[22px] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">{item}</div>
-              ))}
-            </div>
-          </div>
-
-          <div className="soft-card p-5">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-600" />
-              <h3 className="font-display text-xl font-bold text-slate-950">Top Contributors</h3>
-            </div>
-            <div className="mt-4 space-y-3">
-              {['Shivam Kumar', 'Aditi Singh', 'MetroLens'].map((person) => (
-                <div key={person} className="rounded-[22px] border border-slate-200 p-4 text-sm font-semibold text-slate-800">{person}</div>
-              ))}
-            </div>
-          </div>
-        </aside>
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur-xl lg:hidden">
@@ -812,18 +1083,24 @@ function InfoCard({ icon, title, text }) {
   );
 }
 
-function DetailRow({ icon, label, value }) {
-  return (
-    <div className="flex items-center gap-3 rounded-[22px] bg-slate-50 px-4 py-3">
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-blue-600 shadow-sm">
-        {createElement(icon, { className: 'h-4 w-4' })}
-      </div>
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
-        <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
-      </div>
-    </div>
-  );
+function toCount(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    const multiplier = normalized.endsWith('m') ? 1000000 : normalized.endsWith('k') ? 1000 : 1;
+    const numericPart = normalized.replace(/[^0-9.]/g, '');
+    const parsedFloat = Number.parseFloat(numericPart);
+    const parsed = Number.isFinite(parsedFloat) ? Math.round(parsedFloat * multiplier) : Number.NaN;
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function formatCount(value) {
+  const numeric = toCount(value);
+  if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (numeric >= 1000) return `${(numeric / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${numeric}`;
 }
 
 function getVisiblePosts(activeFeed, currentPosts) {
@@ -835,3 +1112,5 @@ function getVisiblePosts(activeFeed, currentPosts) {
 }
 
 export default App;
+
+
