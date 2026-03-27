@@ -1,4 +1,4 @@
-import { createElement, useState, useEffect } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import {
   BadgeCheck,
   Bell,
@@ -28,9 +28,19 @@ import {
   LogOut,
 } from 'lucide-react';
 
-import { auth, provider, signInWithPopup } from './firebase.js';
+import AuthPage from './AuthPage';
+import {
+  auth,
+  createUserWithEmailAndPassword,
+  provider,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+  updateProfile,
+} from './firebase.js';
 
 const Logo = new URL('../Logo.svg', import.meta.url).href;
+const API_BASE_URL = 'http://localhost:5000';
 
 const navItems = [
   { id: 'home', label: 'Home', icon: House },
@@ -49,7 +59,7 @@ const storyReels = [
   { city: 'Lucknow', topic: 'School audit', tone: 'from-emerald-500 to-lime-400' },
 ];
 
-const posts = [
+const defaultPosts = [
   {
     id: 'patna',
     location: 'Patna, Bihar',
@@ -106,14 +116,14 @@ const posts = [
   },
 ];
 
-const cities = [
+const defaultCities = [
   { city: 'Delhi', issues: 120, topic: 'Ticketing scams' },
   { city: 'Mumbai', issues: 95, topic: 'Drainage and roads' },
   { city: 'Patna', issues: 40, topic: 'Traffic corruption' },
   { city: 'Bengaluru', issues: 67, topic: 'Bus gaps' },
 ];
 
-const notifications = [
+const defaultNotifications = [
   'New comment on your Patna checkpoint post',
   'Your solution reached 50 upvotes',
   'Issue verified by community moderators',
@@ -123,34 +133,46 @@ function App() {
   const [activeView, setActiveView] = useState('home');
   const [activeFeed, setActiveFeed] = useState('Trending');
   const [selectedId, setSelectedId] = useState(null);
-  const [apiPosts, setApiPosts] = useState([]);
-  const [apiCities, setApiCities] = useState([]);
-  const [apiNotifications, setApiNotifications] = useState([]);
+  const [apiPosts, setApiPosts] = useState(defaultPosts);
+  const [apiCities, setApiCities] = useState(defaultCities);
+  const [apiNotifications, setApiNotifications] = useState(defaultNotifications);
   const [isLoading, setIsLoading] = useState(true);
 
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState('');
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
 
+  const openAuthPage = () => {
+    setAuthError('');
+    setActiveView('auth');
+  };
+
   const fetchPublicData = () => {
     return Promise.all([
-      fetch('http://localhost:5000/api/posts').then(res => res.json()),
-      fetch('http://localhost:5000/api/cities').then(res => res.json()),
-      fetch('http://localhost:5000/api/notifications').then(res => res.json())
+      fetch(`${API_BASE_URL}/api/posts`).then(res => res.json()),
+      fetch(`${API_BASE_URL}/api/cities`).then(res => res.json()),
+      fetch(`${API_BASE_URL}/api/notifications`).then(res => res.json())
     ])
     .then(([postsData, citiesData, notifsData]) => {
-      setApiPosts(postsData || []);
-      setApiCities(citiesData || []);
-      setApiNotifications(notifsData || []);
-      if (postsData && postsData.length > 0 && !selectedId) setSelectedId(postsData[0].id);
+      if (Array.isArray(postsData)) {
+        setApiPosts(postsData);
+        setSelectedId((currentSelectedId) => currentSelectedId ?? postsData[0]?.id ?? null);
+      }
+      if (Array.isArray(citiesData)) setApiCities(citiesData);
+      if (Array.isArray(notifsData)) setApiNotifications(notifsData);
     });
   };
 
   const fetchProfile = (currentToken) => {
-    if (!currentToken) return Promise.resolve();
-    return fetch('http://localhost:5000/api/users/profile', {
+    if (!currentToken) {
+      setUserProfile(null);
+      return Promise.resolve();
+    }
+
+    return fetch(`${API_BASE_URL}/api/users/profile`, {
       headers: { 'Authorization': `Bearer ${currentToken}` }
     })
     .then(res => {
@@ -164,57 +186,108 @@ function App() {
   useEffect(() => {
     setIsLoading(true);
     fetchPublicData()
-      .then(() => fetchProfile(token))
+      .then(() => {
+        if (!token) {
+          setUserProfile(null);
+          return Promise.resolve();
+        }
+
+        return fetch(`${API_BASE_URL}/api/users/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error('Invalid token');
+            return res.json();
+          })
+          .then((data) => setUserProfile(data))
+          .catch(() => {
+            firebaseSignOut(auth).catch(() => {});
+            localStorage.removeItem('token');
+            setToken(null);
+            setUserProfile(null);
+          });
+      })
       .catch(console.error)
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [token]);
 
   const handleNavClick = (id) => {
     if ((id === 'profile' || id === 'create') && !userProfile && !token) {
-      setActiveView('auth');
+      openAuthPage();
     } else {
       setActiveView(id);
     }
   };
 
+  const finalizeFirebaseAuth = async (firebaseUser, preferredDisplayName = '') => {
+    const displayName = preferredDisplayName || firebaseUser.displayName || firebaseUser.email.split('@')[0];
+
+    const res = await fetch(`${API_BASE_URL}/api/auth/firebaseLogin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        displayName
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Authentication failed on server');
+
+    localStorage.setItem('token', data.token);
+    setToken(data.token);
+    await fetchProfile(data.token);
+    setActiveView('home');
+  };
+
   const handleGoogleAuth = async () => {
     setAuthError('');
+    setIsAuthSubmitting(true);
+
     try {
       const result = await signInWithPopup(auth, provider);
-      const firebaseUser = result.user;
-      
-      const res = await fetch('http://localhost:5000/api/auth/firebaseLogin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0]
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Authentication failed on server');
-      
-      localStorage.setItem('token', data.token);
-      setToken(data.token);
-      await fetchProfile(data.token);
-      setActiveView('home'); 
+      await finalizeFirebaseAuth(result.user);
     } catch (err) {
       setAuthError(err.message);
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleEmailAuth = async ({ mode, displayName, email, password }) => {
+    setAuthError('');
+    setIsAuthSubmitting(true);
+
+    try {
+      if (mode === 'signup') {
+        const nextDisplayName = displayName || email.split('@')[0];
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, { displayName: nextDisplayName });
+        await finalizeFirebaseAuth(result.user, nextDisplayName);
+      } else {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        await finalizeFirebaseAuth(result.user);
+      }
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setIsAuthSubmitting(false);
     }
   };
 
   const handleLogout = () => {
+    firebaseSignOut(auth).catch(() => {});
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
+    setAuthError('');
     if (activeView === 'profile' || activeView === 'create') setActiveView('home');
   };
 
   const handlePostSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/posts', {
+      const res = await fetch(`${API_BASE_URL}/api/posts`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -232,14 +305,23 @@ function App() {
     }
   };
 
-  if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-display font-semibold text-slate-500">Connecting to PostgreSQL...</div>;
+  if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-display font-semibold text-slate-500">Connecting to server...</div>;
 
-  const posts = apiPosts.length > 0 ? apiPosts : window.posts || [];
-  const cities = apiCities.length > 0 ? apiCities : window.cities || [];
-  const notifications = apiNotifications.length > 0 ? apiNotifications : window.notifications || [];
+  if (activeView === 'auth') {
+    return (
+      <AuthPage
+        error={authError}
+        isSubmitting={isAuthSubmitting}
+        logo={Logo}
+        onBack={() => setActiveView('home')}
+        onEmailAuth={handleEmailAuth}
+        onGoogleAuth={handleGoogleAuth}
+      />
+    );
+  }
 
-  const visiblePosts = getVisiblePosts(activeFeed, posts);
-  const selectedPost = posts.find((post) => post.id === selectedId) ?? visiblePosts[0] ?? posts[0];
+  const visiblePosts = getVisiblePosts(activeFeed, apiPosts);
+  const selectedPost = apiPosts.find((post) => post.id === selectedId) ?? visiblePosts[0] ?? apiPosts[0] ?? null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -281,7 +363,7 @@ function App() {
                   </button>
                  </>
               ) : (
-                <button onClick={() => handleNavClick('auth')} className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white cursor-pointer hover:bg-slate-800 transition">
+                <button onClick={openAuthPage} className="rounded-full bg-slate-900 px-5 py-2 text-sm font-semibold text-white cursor-pointer hover:bg-slate-800 transition">
                   Sign In
                 </button>
               )}
@@ -384,35 +466,6 @@ function App() {
         </aside>
 
         <section className="space-y-6">
-          {activeView === 'auth' && (
-             <div className="soft-card p-6 sm:p-10 max-w-md mx-auto mt-10">
-               <div className="flex justify-center mb-6">
-                 <img src={Logo} alt="Logo" className="h-16 w-auto" style={{ filter: 'drop-shadow(0 4px 12px rgba(37, 99, 235, 0.2))' }} />
-               </div>
-               <h2 className="font-display text-2xl font-bold text-slate-900 text-center">
-                 Welcome to Public Policy Hub
-               </h2>
-               <p className="mt-2 text-slate-500 text-center text-sm">
-                 Sign in with your Google account to securely report civic issues and propose solutions.
-               </p>
-               
-               {authError && <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl border border-red-100">{authError}</div>}
-
-               <div className="mt-8 mb-4">
-                 <button onClick={handleGoogleAuth} className="flex w-full items-center justify-center gap-3 rounded-full bg-white border border-slate-300 px-5 py-3.5 text-[15px] font-semibold text-slate-700 shadow-[0_2px_10px_rgba(0,0,0,0.06)] transition hover:bg-slate-50 hover:shadow-md focus:ring-4 focus:ring-slate-100 cursor-pointer">
-                   <svg className="h-5 w-5" viewBox="0 0 24 24">
-                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                     <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                     <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                     <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                     <path fill="none" d="M1 1h22v22H1z" />
-                   </svg>
-                   Continue with Google
-                 </button>
-               </div>
-             </div>
-          )}
-
           {activeView === 'home' && (
             <>
               <div className="soft-card p-5">
@@ -545,7 +598,7 @@ function App() {
                     <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">Issue map</p>
                     <h2 className="mt-3 font-display text-3xl font-bold">See where civic frustration is clustering across India.</h2>
                     <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                      {cities.map((city) => (
+                      {apiCities.map((city) => (
                         <div key={city.city} className="rounded-[24px] border border-white/10 bg-white/5 p-4 backdrop-blur">
                           <p className="font-display text-xl font-bold">{city.city}</p>
                           <p className="mt-1 text-sm text-slate-300">{city.topic}</p>
@@ -598,7 +651,7 @@ function App() {
                 <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Notifications</p>
                 <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">Important updates without the stale portal feel.</h2>
                 <div className="mt-6 space-y-3">
-                  {notifications.map((item) => (
+                  {apiNotifications.map((item) => (
                     <div key={item} className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-800">{item}</div>
                   ))}
                 </div>
@@ -625,7 +678,10 @@ function App() {
                       <MetricBox label="Badges" value={userProfile.badges.length} dark={false} />
                       <MetricBox label="Streak" value={userProfile.streak} dark={false} />
                     </div>
-                    <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">Sign Out</button>
+                    <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">
+                      <LogOut className="h-4 w-4" />
+                      Sign Out
+                    </button>
                   </div>
                 </div>
               </div>
@@ -636,26 +692,36 @@ function App() {
 
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           <div className="soft-card overflow-hidden p-0">
-            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white">
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">Post Page UI</p>
-              <h2 className="mt-3 font-display text-2xl font-bold">{selectedPost.title}</h2>
-              <p className="mt-3 text-sm leading-6 text-slate-300">{selectedPost.description}</p>
-            </div>
-            <div className="p-5">
-            <div className="mt-5 grid gap-3">
-              <DetailRow icon={MapPin} label="Location" value={selectedPost.location} />
-              <DetailRow icon={Building2} label="Department" value={selectedPost.department} />
-            </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button className="rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">Support</button>
-              <button className="rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600">Disagree</button>
-            </div>
-            <div className="mt-6 space-y-3">
-              {selectedPost.fixes.map((fix, index) => (
-                <div key={fix} className="rounded-[22px] bg-slate-50 p-4 text-sm font-semibold text-slate-900">{index + 1}. {fix}</div>
-              ))}
-            </div>
-            </div>
+            {selectedPost ? (
+              <>
+                <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white">
+                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-blue-200">Post Page UI</p>
+                  <h2 className="mt-3 font-display text-2xl font-bold">{selectedPost.title}</h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">{selectedPost.description}</p>
+                </div>
+                <div className="p-5">
+                <div className="mt-5 grid gap-3">
+                  <DetailRow icon={MapPin} label="Location" value={selectedPost.location} />
+                  <DetailRow icon={Building2} label="Department" value={selectedPost.department} />
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <button className="rounded-full bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20">Support</button>
+                  <button className="rounded-full border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600">Disagree</button>
+                </div>
+                <div className="mt-6 space-y-3">
+                  {selectedPost.fixes.map((fix, index) => (
+                    <div key={fix} className="rounded-[22px] bg-slate-50 p-4 text-sm font-semibold text-slate-900">{index + 1}. {fix}</div>
+                  ))}
+                </div>
+                </div>
+              </>
+            ) : (
+              <div className="p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Post Page UI</p>
+                <h2 className="mt-3 font-display text-2xl font-bold text-slate-950">No issue selected yet</h2>
+                <p className="mt-3 text-sm leading-6 text-slate-500">Once posts load, the issue detail panel will appear here.</p>
+              </div>
+            )}
           </div>
 
           <div className="soft-card p-5">

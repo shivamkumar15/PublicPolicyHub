@@ -1,11 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { query } from './db.js';
+import { connectDB } from './db.js';
+import User from './models/User.js';
+import Post from './models/Post.js';
+import City from './models/City.js';
+import Notification from './models/Notification.js';
 
 dotenv.config();
+
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -37,23 +43,25 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
   if (!uid || !email) return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
 
   try {
-    let userQuery = await query('SELECT * FROM users WHERE username = $1', [email]);
+    const usernameDisplay = displayName || email.split('@')[0];
+    let user = await User.findOne({ username: usernameDisplay });
     
-    if (userQuery.rows.length === 0) {
-      await query('INSERT INTO users (username, role, password_hash) VALUES ($1, $2, $3)', [email, 'CitizenReporter', 'firebase_oauth']);
-      userQuery = await query('SELECT * FROM users WHERE username = $1', [email]);
+    if (!user) {
+      user = new User({
+        username: usernameDisplay,
+        role: 'CitizenReporter',
+        password_hash: 'firebase_oauth'
+      });
+      await user.save();
     }
     
-    const user = userQuery.rows[0];
-    const usernameDisplay = displayName || email.split('@')[0];
-    
     const token = jwt.sign(
-      { username: usernameDisplay, role: user.role, email: user.username }, 
+      { username: user.username, role: user.role, email }, 
       JWT_SECRET, 
       { expiresIn: '7d' }
     );
     
-    res.json({ token, username: usernameDisplay, role: user.role });
+    res.json({ token, username: user.username, role: user.role });
   } catch (error) {
     console.error('Firebase Login error:', error);
     res.status(500).json({ error: 'Internal server error.' });
@@ -64,15 +72,15 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
 app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const { rows } = await query('SELECT COUNT(*) as posts_count FROM posts WHERE author = $1', [req.user.username]);
+    const postsCount = await Post.countDocuments({ author: req.user.username });
     
     res.json({
       username: req.user.username,
       role: req.user.role,
-      reputation: 540 + parseInt(rows[0].posts_count) * 10,
+      reputation: 540 + postsCount * 10,
       badges: ['Public Watchdog', 'Active Reporter'],
       streak: '7d',
-      postsCount: parseInt(rows[0].posts_count),
+      postsCount: postsCount,
       solutionsProposed: 8
     });
   } catch (err) {
@@ -86,8 +94,8 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.get('/api/posts', async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM posts ORDER BY time DESC;');
-    res.json(rows);
+    const posts = await Post.find().sort({ _id: -1 }).lean();
+    res.json(posts);
   } catch (error) {
     console.error('Error fetching posts:', error);
     res.status(500).json({ error: 'Database connection error' });
@@ -102,15 +110,18 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
   const id = `post_${Date.now()}`;
   const author = req.user.username; 
   const time = 'Just now';
-  const fixes = JSON.stringify(['Awaiting suggested fixes']);
+  const fixes = ['Awaiting suggested fixes'];
 
   try {
-    const { rows } = await query(
-      `INSERT INTO posts (id, location, department, title, description, author, time, media, tag, accent, fixes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *;`,
-      [id, location || 'India', department || 'General', title, description, author, time, media || 'IMAGE', department || 'Issue', 'from-slate-900 via-slate-800 to-slate-700', fixes]
-    );
-    res.status(201).json(rows[0]);
+    const newPost = new Post({
+      id, location: location || 'India', department: department || 'General', 
+      title, description, author, time, media: media || 'IMAGE', 
+      tag: department || 'Issue', accent: 'from-slate-900 via-slate-800 to-slate-700', 
+      fixes
+    });
+    
+    await newPost.save();
+    res.status(201).json(newPost);
   } catch (error) {
     console.error('Error creating post:', error);
     res.status(500).json({ error: 'Failed to create post' });
@@ -119,18 +130,18 @@ app.post('/api/posts', authenticateToken, async (req, res) => {
 
 app.get('/api/cities', async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM cities ORDER BY issues DESC;');
-    res.json(rows);
-  } catch (error) {
+    const cities = await City.find().sort({ issues: -1 }).lean();
+    res.json(cities);
+  } catch {
     res.status(500).json({ error: 'Database connection error' });
   }
 });
 
 app.get('/api/notifications', async (req, res) => {
   try {
-    const { rows } = await query('SELECT message FROM notifications ORDER BY created_at DESC LIMIT 10;');
-    res.json(rows.map(r => r.message));
-  } catch (error) {
+    const notifications = await Notification.find().sort({ created_at: -1 }).limit(10).lean();
+    res.json(notifications.map(n => n.message));
+  } catch {
     res.status(500).json({ error: 'Database connection error' });
   }
 });

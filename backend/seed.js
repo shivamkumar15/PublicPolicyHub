@@ -1,7 +1,11 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { query } from './db.js';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+import User from './models/User.js';
+import Post from './models/Post.js';
+import City from './models/City.js';
+import Notification from './models/Notification.js';
+
+dotenv.config();
 
 const realPosts = [
   {
@@ -132,43 +136,39 @@ const realNotifications = [
 
 async function seed() {
   try {
-    console.log('Clearing old dummy data...');
-    await query('DELETE FROM posts;');
-    await query('DELETE FROM cities;');
-    await query('DELETE FROM notifications;');
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('Connected to MongoDB. Clearing old data...');
+    
+    await Post.deleteMany({});
+    await City.deleteMany({});
+    await Notification.deleteMany({});
+    await User.deleteMany({});
+
     console.log('Inserting real-world Users...');
     const users = [...new Set(realPosts.map(p => p.author))];
-    for (const user of users) {
-      await query(`INSERT INTO users (username, role) VALUES ($1, 'User') ON CONFLICT (username) DO NOTHING;`, [user]);
+    for (const username of users) {
+      await User.updateOne({ username }, { username, role: 'User' }, { upsert: true });
     }
     
     console.log('Inserting real-world Posts...');
     for (const post of realPosts) {
-      await query(
-        `INSERT INTO posts (id, location, department, title, description, author, time, support, comments, solutions, media, verified, nearby, tag, accent, fixes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-         ON CONFLICT (id) DO NOTHING;`,
-        [post.id, post.location, post.department, post.title, post.description, post.author, post.time, post.support, post.comments, post.solutions, post.media, post.verified, post.nearby, post.tag, post.accent, JSON.stringify(post.fixes)]
-      );
+      await Post.updateOne({ id: post.id }, post, { upsert: true });
     }
 
     console.log('Inserting real-world Cities...');
     for (const city of realCities) {
-      await query(
-        `INSERT INTO cities (city, issues, topic) VALUES ($1, $2, $3) ON CONFLICT (city) DO NOTHING;`,
-        [city.city, city.issues, city.topic]
-      );
+      await City.updateOne({ city: city.city }, city, { upsert: true });
     }
 
     console.log('Inserting real-world Notifications...');
-    for (const note of realNotifications) {
-      await query(`INSERT INTO notifications (message) VALUES ($1);`, [note]);
+    for (const message of realNotifications) {
+      await Notification.create({ message });
     }
 
     console.log('Real data seeded successfully!');
     process.exit(0);
   } catch (err) {
-    console.error('Error seeding real database:', err);
+    console.error('Error seeding database:', err);
     process.exit(1);
   }
 }
