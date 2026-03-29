@@ -5,3 +5,5 @@ Inprofile= following, followers, coverPhoto, profilePhoto, and all the posts hav
 Activity section inside profile click= shows all the posts i have liked, all the posts i have commented, 
 
 Implementation of AI to show the best solution given by max people and which solution got most votes
+
+add debate section

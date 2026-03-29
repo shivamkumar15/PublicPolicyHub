@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
@@ -155,6 +155,8 @@ function App() {
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [profileViewUsername, setProfileViewUsername] = useState(null);
   const [viewedProfileMeta, setViewedProfileMeta] = useState(null);
+  const [aiSummaryByPost, setAiSummaryByPost] = useState({});
+  const [aiSummaryStatusByPost, setAiSummaryStatusByPost] = useState({});
   const [profileTab, setProfileTab] = useState('reports');
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
   const [profileShareFeedback, setProfileShareFeedback] = useState('');
@@ -242,6 +244,18 @@ function App() {
       nextPosts[existingIndex] = normalizedIncoming;
       return nextPosts;
     });
+    setAiSummaryByPost((current) => {
+      if (!(normalizedIncoming.id in current)) return current;
+      const next = { ...current };
+      delete next[normalizedIncoming.id];
+      return next;
+    });
+    setAiSummaryStatusByPost((current) => {
+      if (!(normalizedIncoming.id in current)) return current;
+      const next = { ...current };
+      delete next[normalizedIncoming.id];
+      return next;
+    });
   };
 
   const removePostFromState = (postId) => {
@@ -255,6 +269,18 @@ function App() {
       return next;
     });
     setSolutionInputsByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setAiSummaryByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setAiSummaryStatusByPost((current) => {
       if (!(postId in current)) return current;
       const next = { ...current };
       delete next[postId];
@@ -431,6 +457,33 @@ function App() {
       .then((data) => setViewedProfileMeta(data))
       .catch(() => setViewedProfileMeta(null));
   }, [resolvedProfileUsername, token]);
+
+  useEffect(() => {
+    if (activeView !== 'post' || !activePostId) return;
+    if (aiSummaryByPost[activePostId] || aiSummaryStatusByPost[activePostId] === 'loading') return;
+
+    let isCancelled = false;
+    setAiSummaryStatusByPost((current) => ({ ...current, [activePostId]: 'loading' }));
+
+    fetch(`${API_BASE_URL}/api/posts/${activePostId}/ai-summary`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load AI summary');
+        return res.json();
+      })
+      .then((data) => {
+        if (isCancelled) return;
+        setAiSummaryByPost((current) => ({ ...current, [activePostId]: data }));
+        setAiSummaryStatusByPost((current) => ({ ...current, [activePostId]: 'success' }));
+      })
+      .catch(() => {
+        if (isCancelled) return;
+        setAiSummaryStatusByPost((current) => ({ ...current, [activePostId]: 'error' }));
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activePostId, activeView, aiSummaryByPost, aiSummaryStatusByPost]);
 
   const handleNavClick = (id) => {
     if ((id === 'create' || id === 'bookmarks') && !userProfile && !token) {
@@ -924,6 +977,16 @@ function App() {
     .slice(0, 8);
   const activePost = activePostId ? apiPosts.find((post) => post.id === activePostId) ?? null : null;
   const activePostSolutions = getPostSolutions(activePost);
+  const activePostConsensus = activePostId ? aiSummaryByPost[activePostId] ?? null : null;
+  const activePostAiStatus = activePostId ? aiSummaryStatusByPost[activePostId] ?? 'idle' : 'idle';
+  const bottomTrendingPosts = activePost
+    ? trendingPosts.filter((post) => post.id !== activePost.id).slice(0, 6)
+    : trendingPosts.slice(0, 6);
+  const locationTrendingPosts = activePost
+    ? [...apiPosts]
+        .filter((post) => post.id !== activePost.id && isRelatedLocation(post.location, activePost.location))
+        .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
+    : [];
   const accountUsername = userProfile?.username || '';
   const savedPostIds = Array.isArray(userProfile?.bookmarkedPostIds)
     ? [...new Set(userProfile.bookmarkedPostIds.filter(Boolean))]
@@ -992,6 +1055,23 @@ function App() {
   const profileTopLocations = [...new Set(profilePosts.map((post) => post.location).filter(Boolean))].slice(0, 4);
   const accountInitials = accountUsername ? accountUsername.substring(0, 2) : 'PP';
   const profileInitials = getInitials(profileDisplay.username);
+  const inferredUserLocation = getMostFrequentValue(profilePosts.map((post) => post.location))
+    || getMostFrequentValue(apiPosts.map((post) => post.location))
+    || 'India';
+  const userLocationContext = parseLocationHierarchy(inferredUserLocation);
+  const exactLocationTrending = buildLocationScopeTrends(apiPosts, userLocationContext, 'location').slice(0, 4);
+  const cityTrending = buildLocationScopeTrends(
+    apiPosts,
+    userLocationContext,
+    'city',
+    new Set(exactLocationTrending.map((post) => post.id)),
+  ).slice(0, 4);
+  const stateTrending = buildLocationScopeTrends(
+    apiPosts,
+    userLocationContext,
+    'state',
+    new Set([...exactLocationTrending, ...cityTrending].map((post) => post.id)),
+  ).slice(0, 4);
 
   const renderPostMedia = (post) => {
     const mediaList = Array.isArray(post?.mediaList) ? post.mediaList : [];
@@ -1041,7 +1121,10 @@ function App() {
             <>
               <button
                 type="button"
-                onClick={() => scrollMediaByStep(post.id, -1)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  scrollMediaByStep(post.id, -1);
+                }}
                 disabled={!canGoPrev}
                 className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
               >
@@ -1049,7 +1132,10 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => scrollMediaByStep(post.id, 1)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  scrollMediaByStep(post.id, 1);
+                }}
                 disabled={!canGoNext}
                 className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
               >
@@ -1065,7 +1151,8 @@ function App() {
               <button
                 key={`${post.id}-dot-${dotIndex}`}
                 type="button"
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   const container = mediaScrollerRefs.current[post.id];
                   if (!container) return;
                   container.scrollTo({
@@ -1238,7 +1325,7 @@ function App() {
               <img src={Logo} alt="Public Policy Hub Logo" style={{ height: '90px' }} className="w-auto object-contain -my-4" />
               <div className="hidden sm:block">
                 <p className="font-display text-xs uppercase tracking-[0.2em] text-slate-500">Public Policy Hub</p>
-                <p className="text-sm text-slate-600">Clear reporting, visible progress</p>
+                <p className="text-sm text-slate-600">Nation is our, We have the Power</p>
               </div>
             </button>
 
@@ -1395,6 +1482,81 @@ function App() {
               )}
             </div>
           </div>
+
+          {activeView === 'post' && activePost && (
+            <div className="soft-card p-4">
+              <div className="px-2">
+                <p className="text-sm font-semibold text-slate-500">Trending In {activePost.location}</p>
+                <p className="mt-1 text-xs text-slate-400">Other issues gaining attention in the same location.</p>
+              </div>
+              <div className="mt-3 space-y-2">
+                {locationTrendingPosts.map((post, index) => (
+                  <button
+                    key={`${post.id}-location-trend`}
+                    type="button"
+                    onClick={() => {
+                      setActivePostId(post.id);
+                      setActiveView('post');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                      #{index + 1} In this area
+                    </p>
+                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
+                    <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
+                  </button>
+                ))}
+
+                {locationTrendingPosts.length === 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                    No other trending issues found for this location yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeView === 'home' && (
+            <div className="soft-card p-4">
+              <div className="px-2">
+                <p className="text-sm font-semibold text-slate-500">Trending Around You</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Based on {userLocationContext.locationLabel || 'community location signals'}.
+                </p>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <LocationTrendSection
+                  title={userLocationContext.locationLabel ? `In ${userLocationContext.locationLabel}` : 'In your area'}
+                  posts={exactLocationTrending}
+                  emptyLabel="No exact-location trends yet."
+                  onOpenPost={(postId) => {
+                    setActivePostId(postId);
+                    setActiveView('post');
+                  }}
+                />
+                <LocationTrendSection
+                  title={userLocationContext.city ? `In ${userLocationContext.city}` : 'In your city'}
+                  posts={cityTrending}
+                  emptyLabel="No broader city trends yet."
+                  onOpenPost={(postId) => {
+                    setActivePostId(postId);
+                    setActiveView('post');
+                  }}
+                />
+                <LocationTrendSection
+                  title={userLocationContext.state ? `In ${userLocationContext.state}` : 'In your state'}
+                  posts={stateTrending}
+                  emptyLabel="No broader state trends yet."
+                  onOpenPost={(postId) => {
+                    setActivePostId(postId);
+                    setActiveView('post');
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </aside>
 
         <section className="mx-auto w-full max-w-[980px] space-y-6">
@@ -1444,34 +1606,52 @@ function App() {
                   return (
                     <article
                       key={post.id}
-                      className="soft-card group overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] sm:p-5"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleSolutionClick(post.id)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        handleSolutionClick(post.id);
+                      }}
+                      className="soft-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
                     >
                       <div className="space-y-4">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openAuthorProfile(post.author);
-                        }}
-                        className="flex w-full items-center gap-3 rounded-xl px-1 text-left"
-                      >
-                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white">
+                      <div className="flex w-full items-center gap-3 rounded-xl px-1 text-left">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openAuthorProfile(post.author);
+                          }}
+                          className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
+                        >
                           {post.author.slice(0, 2)}
-                        </span>
+                        </button>
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">{post.author}</p>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openAuthorProfile(post.author);
+                            }}
+                            className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                          >
+                            {post.author}
+                          </button>
                           <p className="text-xs text-slate-500">{post.time}</p>
                         </div>
-                      </button>
+                      </div>
                       <div>
                         <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
                         <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
                         {isTruncated && (
                           <button
                             type="button"
-                            onClick={() =>
+                            onClick={(event) => {
+                              event.stopPropagation();
                               setExpandedDescriptionByPost((current) => ({ ...current, [post.id]: !isDescriptionExpanded }))
-                            }
+                            }}
                             className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
                           >
                             {isDescriptionExpanded ? 'Read less' : 'Read more'}
@@ -1490,7 +1670,10 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() => handleSupport(post.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleSupport(post.id);
+                            }}
                             className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                               isSupportedByUser
                                 ? 'border-blue-700 bg-blue-600 text-white shadow-[0_10px_24px_-14px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
@@ -1503,7 +1686,10 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() => handleSolutionClick(post.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleSolutionClick(post.id);
+                            }}
                             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Lightbulb className="h-4 w-4" />
@@ -1512,7 +1698,10 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() => handleShare(post.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleShare(post.id);
+                            }}
                             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Share2 className="h-4 w-4" />
@@ -1521,7 +1710,10 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() => handleToggleSavedPost(post.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleToggleSavedPost(post.id);
+                            }}
                             className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                               isSavedByUser
                                 ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
@@ -1536,7 +1728,10 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() => handleDeletePost(post.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeletePost(post.id);
+                            }}
                             className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1680,22 +1875,31 @@ function App() {
                           Back to feed
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openAuthorProfile(activePost.author);
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl px-1 text-left"
-                        >
-                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white">
+                        <div className="flex w-full items-center gap-3 rounded-xl px-1 text-left">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openAuthorProfile(activePost.author);
+                            }}
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
+                          >
                             {activePost.author.slice(0, 2)}
-                          </span>
+                          </button>
                           <div>
-                            <p className="text-sm font-semibold text-slate-900">{activePost.author}</p>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openAuthorProfile(activePost.author);
+                              }}
+                              className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                            >
+                              {activePost.author}
+                            </button>
                             <p className="text-xs text-slate-500">{activePost.time}</p>
                           </div>
-                        </button>
+                        </div>
 
                         <div>
                           <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{activePost.title}</h3>
@@ -1814,10 +2018,8 @@ function App() {
                       </div>
                     </article>
 
-                    <div className="soft-card rounded-t-none p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Comments & Solutions</p>
-                      <h3 className="mt-1.5 font-display text-2xl font-bold text-slate-950">{formatCount(activePost.solutions)} community responses</h3>
-                      <p className="mt-2 text-sm text-slate-500">Structured like an Instagram comment sheet, with Agree, Disagree, Reply, and Net kept intact.</p>
+                    <div className="soft-card rounded-t-none border-t-0 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">People's Solutions</p>
 
                       <div className="mt-5 space-y-5">
                         {activePostSolutions.length === 0 && (
@@ -1827,6 +2029,34 @@ function App() {
                         )}
 
                         {activePostSolutions.map((solution) => renderDiscussionEntry(activePost.id, solution, 0))}
+                      </div>
+                    </div>
+
+                    <div className="soft-card rounded-t-none border-t-0 p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Trending Issues</p>
+                      <div className="mt-4 space-y-3">
+                        {bottomTrendingPosts.map((post, index) => (
+                          <button
+                            key={`${post.id}-post-trend`}
+                            type="button"
+                            onClick={() => {
+                              setActivePostId(post.id);
+                              setActiveView('post');
+                            }}
+                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
+                          >
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+                            <p className="mt-1.5 text-base font-semibold leading-6 text-slate-950">{post.title}</p>
+                            <p className="mt-2 text-sm text-slate-500">
+                              {formatCount(post.support)} supports • {post.department}
+                            </p>
+                          </button>
+                        ))}
+                        {bottomTrendingPosts.length === 0 && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                            No trending issues yet.
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
@@ -1966,31 +2196,61 @@ function App() {
         </section>
 
         <aside className="hidden lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-l lg:border-slate-200 lg:pl-4">
-          <div className="soft-card p-4">
-            <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Trending Issues</p>
-            <div className="mt-3 space-y-2">
-              {trendingPosts.slice(0, 6).map((post, index) => (
-                <button
-                  key={`${post.id}-trend-rail`}
-                  type="button"
-                  onClick={() => {
-                    setActivePostId(post.id);
-                    setActiveView('post');
-                  }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
-                >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
-                  <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
-                  <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
-                </button>
-              ))}
-              {trendingPosts.length === 0 && (
-                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                  No trending issues yet.
-                </p>
-              )}
+          {activeView === 'post' && (
+            <div className="soft-card overflow-hidden p-4">
+              <div className="rounded-[26px] border border-blue-100 bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.45),_rgba(255,255,255,0.96)_58%)] p-4">
+                <div className="space-y-3">
+                  <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Most agreed</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {activePostAiStatus === 'loading' && 'Generating summary...'}
+                      {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
+                      {activePostAiStatus === 'success' && (activePostConsensus?.most_agreed || 'No strong solution has emerged yet.')}
+                      {activePostAiStatus === 'idle' && 'Generating summary...'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Common solution</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">
+                      {activePostAiStatus === 'loading' && 'Combining the most common ideas...'}
+                      {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
+                      {activePostAiStatus === 'success' && (activePostConsensus?.common_solution || 'Common solution is still forming.')}
+                      {activePostAiStatus === 'idle' && 'Combining the most common ideas...'}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeView !== 'post' && (
+            <div className="soft-card p-4">
+              <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Trending Issues</p>
+              <div className="mt-3 space-y-2">
+                {trendingPosts.slice(0, 6).map((post, index) => (
+                  <button
+                    key={`${post.id}-trend-rail`}
+                    type="button"
+                    onClick={() => {
+                      setActivePostId(post.id);
+                      setActiveView('post');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+                    <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
+                    <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
+                  </button>
+                ))}
+                {trendingPosts.length === 0 && (
+                  <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                    No trending issues yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </aside>
 
       </main>
@@ -2356,19 +2616,25 @@ function BookmarkedPostCard({ post, onOpenPost, onOpenAuthor, onToggleSave }) {
   return (
     <article className="soft-card p-5 transition hover:shadow-[0_16px_38px_-28px_rgba(15,23,42,0.38)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <button
-          type="button"
-          onClick={onOpenAuthor}
-          className="flex items-center gap-3 rounded-xl text-left"
-        >
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold uppercase text-white">
+        <div className="flex items-center gap-3 rounded-xl text-left">
+          <button
+            type="button"
+            onClick={onOpenAuthor}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold uppercase text-white transition hover:bg-slate-800"
+          >
             {getInitials(post.author)}
-          </span>
+          </button>
           <div>
-            <p className="text-sm font-semibold text-slate-900">{post.author}</p>
+            <button
+              type="button"
+              onClick={onOpenAuthor}
+              className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+            >
+              {post.author}
+            </button>
             <p className="text-xs text-slate-500">{post.time || 'Recently'}</p>
           </div>
-        </button>
+        </div>
 
         <button
           type="button"
@@ -2434,6 +2700,34 @@ function BookmarkedPostCard({ post, onOpenPost, onOpenAuthor, onToggleSave }) {
         </div>
       )}
     </article>
+  );
+}
+
+function LocationTrendSection({ title, posts, emptyLabel, onOpenPost }) {
+  return (
+    <div>
+      <p className="px-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</p>
+      <div className="mt-2 space-y-2">
+        {posts.map((post, index) => (
+          <button
+            key={`${post.id}-${title}`}
+            type="button"
+            onClick={() => onOpenPost(post.id)}
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+            <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
+            <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
+          </button>
+        ))}
+
+        {posts.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+            {emptyLabel}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -3067,6 +3361,76 @@ function getMostFrequentValue(values) {
   return topValue;
 }
 
+function isRelatedLocation(firstLocation, secondLocation) {
+  const normalizeLocation = (value) => `${value ?? ''}`.trim().toLowerCase();
+  const firstNormalized = normalizeLocation(firstLocation);
+  const secondNormalized = normalizeLocation(secondLocation);
+
+  if (!firstNormalized || !secondNormalized) return false;
+  if (firstNormalized === secondNormalized) return true;
+
+  const firstPrimary = firstNormalized.split(',')[0]?.trim() || '';
+  const secondPrimary = secondNormalized.split(',')[0]?.trim() || '';
+  return !!firstPrimary && firstPrimary === secondPrimary;
+}
+
+function parseLocationHierarchy(location) {
+  const normalizedLocation = `${location ?? ''}`.trim();
+  if (!normalizedLocation) {
+    return {
+      locationLabel: '',
+      city: '',
+      state: '',
+    };
+  }
+
+  const parts = normalizedLocation.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return {
+      locationLabel: normalizedLocation,
+      city: normalizedLocation,
+      state: normalizedLocation,
+    };
+  }
+
+  if (parts.length === 1) {
+    return {
+      locationLabel: parts[0],
+      city: parts[0],
+      state: parts[0],
+    };
+  }
+
+  return {
+    locationLabel: normalizedLocation,
+    city: parts[Math.max(parts.length - 2, 0)] || parts[0],
+    state: parts[parts.length - 1] || parts[0],
+  };
+}
+
+function buildLocationScopeTrends(posts, locationContext, scope, excludedPostIds = new Set()) {
+  if (!locationContext) return [];
+
+  const exactLabel = `${locationContext.locationLabel ?? ''}`.trim().toLowerCase();
+  const cityLabel = `${locationContext.city ?? ''}`.trim().toLowerCase();
+  const stateLabel = `${locationContext.state ?? ''}`.trim().toLowerCase();
+
+  return [...(Array.isArray(posts) ? posts : [])]
+    .filter((post) => !excludedPostIds.has(post.id))
+    .filter((post) => {
+      const postLocation = parseLocationHierarchy(post.location);
+      const postExact = `${postLocation.locationLabel ?? ''}`.trim().toLowerCase();
+      const postCity = `${postLocation.city ?? ''}`.trim().toLowerCase();
+      const postState = `${postLocation.state ?? ''}`.trim().toLowerCase();
+
+      if (scope === 'location') return !!exactLabel && postExact === exactLabel;
+      if (scope === 'city') return !!cityLabel && postCity === cityLabel;
+      if (scope === 'state') return !!stateLabel && postState === stateLabel;
+      return false;
+    })
+    .sort((a, b) => getTrendingScore(b) - getTrendingScore(a));
+}
+
 function collectSolutionsByAuthor(posts, username) {
   const normalizedUsername = `${username ?? ''}`.trim();
   if (!normalizedUsername) return [];
@@ -3137,4 +3501,3 @@ function getProfileJoinLabel(username) {
 }
 
 export default App;
-

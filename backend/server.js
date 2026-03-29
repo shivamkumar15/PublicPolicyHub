@@ -24,6 +24,8 @@ connectDB();
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'better_india_secret_key_123';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const sseClients = new Set();
 
 // Middleware
@@ -199,6 +201,13 @@ const normalizeDiscussionEntry = (entry, index, path = []) => {
 };
 
 const normalizeSolution = (solution, index) => normalizeDiscussionEntry(solution, index, []);
+
+const flattenDiscussionEntries = (entries = []) => (
+  entries.flatMap((entry) => {
+    const replies = Array.isArray(entry?.replies) ? flattenDiscussionEntries(entry.replies) : [];
+    return [entry, ...replies];
+  }).filter(Boolean)
+);
 
 const getSolutionIndex = (value) => {
   const parsed = Number.parseInt(`${value ?? ''}`, 10);
@@ -526,6 +535,174 @@ const buildProfilePayload = async (user, viewerUsername = '') => {
   };
 };
 
+const buildFallbackSolutionSummary = (solutionEntries) => {
+  const topSolution = [...solutionEntries].sort((a, b) => {
+    if (b.agree_count !== a.agree_count) return b.agree_count - a.agree_count;
+    if (b.score !== a.score) return b.score - a.score;
+    return b.reply_count - a.reply_count;
+  })[0];
+
+  return {
+    most_agreed: topSolution?.text || 'No strong solution has emerged yet.',
+    common_solution: topSolution?.text
+      ? `The strongest common direction is to ${topSolution.text.replace(/[.?!]+$/, '').replace(/^\s+/,'').toLowerCase()}.`
+      : 'Common solution is still forming.',
+    source: 'fallback',
+  };
+};
+
+const extractOpenAiOutputText = (data) => {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  const outputItems = Array.isArray(data?.output) ? data.output : [];
+  const fragments = outputItems.flatMap((item) => {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    return content
+      .filter((part) => part?.type === 'output_text' && typeof part?.text === 'string')
+      .map((part) => part.text.trim())
+      .filter(Boolean);
+  });
+
+  return fragments.join('\n').trim();
+};
+
+const parseOpenAiSolutionSummary = (data) => {
+  if (data?.output_parsed && typeof data.output_parsed === 'object') {
+    return data.output_parsed;
+  }
+
+  const outputText = extractOpenAiOutputText(data);
+  if (!outputText) return null;
+
+  try {
+    return JSON.parse(outputText);
+  } catch {
+    const jsonMatch = outputText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      return null;
+    }
+  }
+};
+
+const getSolutionEntriesForSummary = (normalizedPost) => {
+  const structuredEntries = flattenDiscussionEntries(normalizedPost.solutionsList)
+    .map((entry) => ({
+      text: `${entry?.text ?? ''}`.trim(),
+      agree_count: Array.isArray(entry?.upvoters) ? entry.upvoters.length : 0,
+      disagree_count: Array.isArray(entry?.downvoters) ? entry.downvoters.length : 0,
+      reply_count: Array.isArray(entry?.replies) ? entry.replies.length : 0,
+      score: typeof entry?.score === 'number'
+        ? entry.score
+        : (Array.isArray(entry?.upvoters) ? entry.upvoters.length : 0) - (Array.isArray(entry?.downvoters) ? entry.downvoters.length : 0),
+    }))
+    .filter((entry) => entry.text);
+
+  if (structuredEntries.length > 0) {
+    return structuredEntries;
+  }
+
+  return (Array.isArray(normalizedPost?.fixes) ? normalizedPost.fixes : [])
+    .map((fix) => `${fix ?? ''}`.trim())
+    .filter((fix) => fix && fix.toLowerCase() !== 'awaiting suggested fixes')
+    .map((fix) => ({
+      text: fix,
+      agree_count: 0,
+      disagree_count: 0,
+      reply_count: 0,
+      score: 0,
+    }));
+};
+
+const createAiSolutionSummary = async (post) => {
+  const normalizedPost = normalizePost(post);
+  const solutionEntries = getSolutionEntriesForSummary(normalizedPost);
+
+  if (solutionEntries.length === 0) {
+    return {
+      most_agreed: 'No strong solution has emerged yet.',
+      common_solution: 'Common solution is still forming.',
+      source: 'empty',
+    };
+  }
+
+  const fallbackSummary = buildFallbackSolutionSummary(solutionEntries);
+  if (!OPENAI_API_KEY) {
+    return fallbackSummary;
+  }
+
+  const prompt = [
+    'You are summarizing civic problem-solving suggestions from users.',
+    'Paraphrase the most agreed solution so it sounds polished, concise, and actionable.',
+    'Also synthesize the repeated ideas across all user solutions into one clean sentence.',
+    'Do not mention votes, comments, or that this is AI-generated.',
+    'Keep each field under 35 words.',
+    '',
+    `Post title: ${normalizedPost.title}`,
+    `Location: ${normalizedPost.location}`,
+    `Department: ${normalizedPost.department}`,
+    '',
+    'Solutions:',
+    JSON.stringify(solutionEntries, null, 2),
+  ].join('\n');
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: prompt,
+        temperature: 0.3,
+        max_output_tokens: 220,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'solution_summary',
+            strict: true,
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                most_agreed: { type: 'string' },
+                common_solution: { type: 'string' },
+              },
+              required: ['most_agreed', 'common_solution'],
+            },
+          },
+        },
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error?.message || 'OpenAI request failed');
+    }
+
+    const parsed = parseOpenAiSolutionSummary(data);
+    if (!parsed) {
+      throw new Error('OpenAI returned an unreadable summary payload');
+    }
+
+    return {
+      most_agreed: `${parsed?.most_agreed ?? ''}`.trim() || fallbackSummary.most_agreed,
+      common_solution: `${parsed?.common_solution ?? ''}`.trim() || fallbackSummary.common_solution,
+      source: 'openai',
+    };
+  } catch (error) {
+    console.error('Falling back to local solution summary:', error);
+    return fallbackSummary;
+  }
+};
+
 // --- Auth Routes ---
 
 app.post('/api/auth/firebaseLogin', async (req, res) => {
@@ -705,6 +882,19 @@ app.get('/api/posts', async (req, res) => {
   } catch (error) {
     console.error('Error fetching posts:', error);
     res.status(500).json({ error: 'Database connection error' });
+  }
+});
+
+app.get('/api/posts/:postId/ai-summary', async (req, res) => {
+  try {
+    const post = await Post.findOne({ id: req.params.postId });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const summary = await createAiSolutionSummary(post);
+    res.json(summary);
+  } catch (error) {
+    console.error('Error generating AI solution summary:', error);
+    res.status(500).json({ error: 'Failed to generate AI summary' });
   }
 });
 
