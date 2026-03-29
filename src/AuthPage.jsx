@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import {
-  ArrowLeft,
-  BadgeCheck,
-  ChevronRight,
-  LockKeyhole,
-  Mail,
-  ShieldCheck,
-  User,
-} from 'lucide-react';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import BadgeCheck from 'lucide-react/dist/esm/icons/badge-check.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import LockKeyhole from 'lucide-react/dist/esm/icons/lock-keyhole.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 
 const benefits = [
   'Track reports, comments, and solutions from one secure account.',

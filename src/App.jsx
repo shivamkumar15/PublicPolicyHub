@@ -1,31 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ArrowLeft,
-  BadgeCheck,
-  Bell,
-  Building2,
-  ChevronLeft,
-  ChevronRight,
-  House,
-  Image as ImageIcon,
-  Lightbulb,
-  Maximize2,
-  MapPin,
-  Minimize2,
-  Pause,
-  Play,
-  Settings,
-  Share2,
-  SquarePen,
-  Trash2,
-  TrendingUp,
-  User,
-  Video as VideoIcon,
-  LogOut,
-  Volume2,
-  VolumeX,
-  X,
-} from 'lucide-react';
+import Activity from 'lucide-react/dist/esm/icons/activity.js';
+import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
+import BadgeCheck from 'lucide-react/dist/esm/icons/badge-check.js';
+import Bell from 'lucide-react/dist/esm/icons/bell.js';
+import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js';
+import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
+import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
+import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Globe from 'lucide-react/dist/esm/icons/globe.js';
+import House from 'lucide-react/dist/esm/icons/house.js';
+import ImageIcon from 'lucide-react/dist/esm/icons/image.js';
+import Lightbulb from 'lucide-react/dist/esm/icons/lightbulb.js';
+import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
+import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2.js';
+import MessageCircle from 'lucide-react/dist/esm/icons/message-circle.js';
+import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js';
+import Pause from 'lucide-react/dist/esm/icons/pause.js';
+import Play from 'lucide-react/dist/esm/icons/play.js';
+import Settings from 'lucide-react/dist/esm/icons/settings.js';
+import Share2 from 'lucide-react/dist/esm/icons/share-2.js';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
+import SquarePen from 'lucide-react/dist/esm/icons/square-pen.js';
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
+import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
+import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
+import Users from 'lucide-react/dist/esm/icons/users.js';
+import VideoIcon from 'lucide-react/dist/esm/icons/video.js';
+import Volume2 from 'lucide-react/dist/esm/icons/volume-2.js';
+import VolumeX from 'lucide-react/dist/esm/icons/volume-x.js';
+import X from 'lucide-react/dist/esm/icons/x.js';
+import Zap from 'lucide-react/dist/esm/icons/zap.js';
 
 import AuthPage from './AuthPage.jsx';
 import {
@@ -44,8 +53,8 @@ const API_BASE_URL = '';
 const navItems = [
   { id: 'home', label: 'Home', Icon: (props) => <House {...props} /> },
   { id: 'create', label: 'Report', Icon: (props) => <SquarePen {...props} />, requiresAuth: true },
+  { id: 'bookmarks', label: 'Bookmarks', Icon: (props) => <Bookmark {...props} />, requiresAuth: true },
   { id: 'alerts', label: 'Alerts', Icon: (props) => <Bell {...props} /> },
-  { id: 'profile', label: 'Profile', Icon: (props) => <User {...props} />, requiresAuth: true },
 ];
 
 const defaultPosts = [
@@ -145,12 +154,17 @@ function App() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [profileViewUsername, setProfileViewUsername] = useState(null);
+  const [viewedProfileMeta, setViewedProfileMeta] = useState(null);
+  const [profileTab, setProfileTab] = useState('reports');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [profileShareFeedback, setProfileShareFeedback] = useState('');
   const [theme, setTheme] = useState(getInitialTheme);
   const profileMenuRef = useRef(null);
   const profilePhotoInputRef = useRef(null);
   const solutionInputRefs = useRef({});
   const solutionReplyInputRefs = useRef({});
   const mediaScrollerRefs = useRef({});
+  const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
   const [mediaFiles, setMediaFiles] = useState([]);
@@ -315,7 +329,10 @@ function App() {
       if (!res.ok) throw new Error('Invalid token');
       return res.json();
     })
-    .then(data => setUserProfile(data))
+    .then((data) => {
+      setUserProfile(data);
+      setProfilePhotoUrl(data?.profilePhotoUrl || '');
+    })
     .catch(() => handleLogout());
   };
 
@@ -375,14 +392,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!userProfile?.username) {
-      setProfilePhotoUrl('');
-      return;
-    }
-
-    const storedPhoto = localStorage.getItem(`profilePhoto:${userProfile.username}`);
-    setProfilePhotoUrl(storedPhoto || '');
-  }, [userProfile?.username]);
+    setProfilePhotoUrl(userProfile?.profilePhotoUrl || '');
+  }, [userProfile?.profilePhotoUrl]);
 
   useEffect(() => {
     const closeMenuOnOutsideClick = (event) => {
@@ -400,18 +411,50 @@ function App() {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
+  useEffect(() => {
+    setProfileTab('reports');
+    setProfileShareFeedback('');
+  }, [profileViewUsername, userProfile?.username]);
+
+  useEffect(() => {
+    if (!resolvedProfileUsername) {
+      setViewedProfileMeta(null);
+      return;
+    }
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${API_BASE_URL}/api/users/${resolvedProfileUsername}`, { headers })
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch public profile');
+        return res.json();
+      })
+      .then((data) => setViewedProfileMeta(data))
+      .catch(() => setViewedProfileMeta(null));
+  }, [resolvedProfileUsername, token]);
+
   const handleNavClick = (id) => {
-    if ((id === 'profile' || id === 'create') && !userProfile && !token) {
+    if ((id === 'create' || id === 'bookmarks') && !userProfile && !token) {
       openAuthPage();
     } else {
-      if (id === 'profile' && userProfile?.username) {
-        setProfileViewUsername(userProfile.username);
-      } else if (id !== 'profile') {
-        setProfileViewUsername(null);
-      }
+      setProfileViewUsername(null);
       setActivePostId(null);
       setActiveView(id);
     }
+  };
+
+  const handleDepartmentFilterSelect = (department) => {
+    if (!department) return;
+
+    setProfileViewUsername(null);
+    setActivePostId(null);
+    setActiveView('home');
+    setSelectedDepartmentFilter((currentDepartment) => (
+      currentDepartment === department ? '' : department
+    ));
+  };
+
+  const clearDepartmentFilter = () => {
+    setSelectedDepartmentFilter('');
   };
 
   const finalizeFirebaseAuth = async (firebaseUser, preferredDisplayName = '') => {
@@ -476,26 +519,47 @@ function App() {
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
+    setViewedProfileMeta(null);
     setProfileViewUsername(null);
     setIsProfileMenuOpen(false);
     setAuthError('');
-    if (activeView === 'profile' || activeView === 'create') setActiveView('home');
+    setSelectedDepartmentFilter('');
+    if (activeView === 'profile' || activeView === 'create' || activeView === 'bookmarks') setActiveView('home');
   };
 
-  const handleProfilePhotoUpload = (event) => {
+  const handleProfilePhotoUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file || !userProfile?.username) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const nextPhoto = typeof reader.result === 'string' ? reader.result : '';
-      if (!nextPhoto) return;
+    try {
+      const formData = new FormData();
+      formData.append('photo', file);
 
-      setProfilePhotoUrl(nextPhoto);
-      localStorage.setItem(`profilePhoto:${userProfile.username}`, nextPhoto);
+      const res = await fetch(`${API_BASE_URL}/api/users/profile/photo`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to upload profile photo');
+
+      setProfilePhotoUrl(data.profilePhotoUrl || '');
+      setUserProfile((currentProfile) => (
+        currentProfile ? { ...currentProfile, profilePhotoUrl: data.profilePhotoUrl || '' } : currentProfile
+      ));
+      setViewedProfileMeta((currentProfile) => (
+        currentProfile?.username === userProfile.username
+          ? { ...currentProfile, profilePhotoUrl: data.profilePhotoUrl || '' }
+          : currentProfile
+      ));
       setIsProfileMenuOpen(false);
-    };
-    reader.readAsDataURL(file);
+      event.target.value = '';
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const handlePostSubmit = async (e) => {
@@ -718,7 +782,105 @@ function App() {
   const openAuthorProfile = (username) => {
     if (!username) return;
     setProfileViewUsername(username);
+    setProfileTab('reports');
+    setActivePostId(null);
     setActiveView('profile');
+  };
+
+  const openOwnProfile = () => {
+    if (!userProfile?.username) return;
+    setProfileViewUsername(userProfile.username);
+    setProfileTab('reports');
+    setActivePostId(null);
+    setActiveView('profile');
+    setIsProfileMenuOpen(false);
+  };
+
+  const handleToggleProfileFollow = async () => {
+    if (!resolvedProfileUsername || resolvedProfileUsername === userProfile?.username) return;
+    if (!ensureAuthenticated()) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/${resolvedProfileUsername}/follow`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to update follow state');
+
+      setUserProfile((currentProfile) => (
+        currentProfile
+          ? { ...currentProfile, following: Array.isArray(data.following) ? data.following : currentProfile.following }
+          : currentProfile
+      ));
+      setViewedProfileMeta((currentProfile) => (
+        currentProfile && currentProfile.username === resolvedProfileUsername
+          ? {
+              ...currentProfile,
+              followerCount: data.followerCount,
+              followingCount: data.followingCount,
+              isFollowing: data.isFollowing,
+            }
+          : currentProfile
+      ));
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleProfileShare = async () => {
+    if (!resolvedProfileUsername || typeof window === 'undefined') return;
+
+    const shareUrl = `${window.location.origin}${window.location.pathname}#profile-${resolvedProfileUsername}`;
+    const shareTitle = `${resolvedProfileUsername} on Public Policy Hub`;
+    const shareText = `Track reports, fixes, and public signal from ${resolvedProfileUsername}.`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+        setProfileShareFeedback('Profile shared');
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        setProfileShareFeedback('Profile link copied');
+      } else {
+        setProfileShareFeedback(`Share @${resolvedProfileUsername}`);
+      }
+    } catch {
+      setProfileShareFeedback('');
+    }
+
+    window.setTimeout(() => setProfileShareFeedback(''), 2200);
+  };
+
+  const handleToggleSavedPost = async (postId) => {
+    if (!postId) return;
+    if (!ensureAuthenticated()) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/posts/${postId}/bookmark`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to update bookmarks');
+
+      setUserProfile((currentProfile) => (
+        currentProfile
+          ? {
+              ...currentProfile,
+              bookmarkedPostIds: Array.isArray(data.bookmarkedPostIds) ? data.bookmarkedPostIds : currentProfile.bookmarkedPostIds,
+            }
+          : currentProfile
+      ));
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const handleThemeToggle = () => {
@@ -741,37 +903,95 @@ function App() {
     );
   }
 
-  const visiblePosts = apiPosts;
-  const trendingPosts = [...visiblePosts]
+  const filteredHomePosts = selectedDepartmentFilter
+    ? apiPosts.filter((post) => `${post?.department ?? ''}`.trim() === selectedDepartmentFilter)
+    : apiPosts;
+  const topCaseCategories = Object.entries(
+    apiPosts.reduce((counts, post) => {
+      const department = `${post?.department ?? ''}`.trim();
+      if (!department) return counts;
+      counts[department] = (counts[department] ?? 0) + 1;
+      return counts;
+    }, {})
+  )
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })
+    .slice(0, 6);
+  const trendingPosts = [...apiPosts]
     .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
     .slice(0, 8);
   const activePost = activePostId ? apiPosts.find((post) => post.id === activePostId) ?? null : null;
   const activePostSolutions = getPostSolutions(activePost);
   const accountUsername = userProfile?.username || '';
-  const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
+  const savedPostIds = Array.isArray(userProfile?.bookmarkedPostIds)
+    ? [...new Set(userProfile.bookmarkedPostIds.filter(Boolean))]
+    : [];
+  const bookmarkedPosts = apiPosts.filter((post) => savedPostIds.includes(post.id));
+  const bookmarkedDepartmentsCount = new Set(bookmarkedPosts.map((post) => post.department).filter(Boolean)).size;
+  const bookmarkedTopDepartment = getMostFrequentValue(bookmarkedPosts.map((post) => post.department)) || 'No lead category yet';
   const isOwnProfile = !!userProfile && resolvedProfileUsername === userProfile.username;
-  const authorPostsCount = resolvedProfileUsername ? apiPosts.filter((post) => post.author === resolvedProfileUsername).length : 0;
+  const profilePosts = resolvedProfileUsername
+    ? apiPosts.filter((post) => post.author === resolvedProfileUsername)
+    : [];
+  const profileSolutions = resolvedProfileUsername ? collectSolutionsByAuthor(apiPosts, resolvedProfileUsername) : [];
+  const profileLocation = getMostFrequentValue(profilePosts.map((post) => post.location)) || 'India';
+  const profileBeat = getMostFrequentValue(profilePosts.map((post) => post.department)) || 'Public accountability';
+  const profileSupportReceived = profilePosts.reduce((total, post) => total + toCount(post.support), 0);
+  const profileCommentsReceived = profilePosts.reduce((total, post) => total + toCount(post.comments), 0);
+  const profileCommunitiesCount = new Set(profilePosts.map((post) => post.department).filter(Boolean)).size;
+  const profileFollowerBase = Math.max(
+    18,
+    Math.round((profileSupportReceived / 4) + (profileSolutions.length * 9) + (profilePosts.length * 15)),
+  );
+  const profileFollowingBase = Math.max(
+    12,
+    Math.round((profilePosts.length * 2) + profileSolutions.length + profileCommunitiesCount + 8),
+  );
+  const profileFollowersCount = viewedProfileMeta?.followerCount ?? profileFollowerBase;
+  const profileFollowingCount = viewedProfileMeta?.followingCount ?? profileFollowingBase;
+  const isFollowingViewedProfile = !!accountUsername
+    && accountUsername !== resolvedProfileUsername
+    && !!viewedProfileMeta?.isFollowing;
   const profileDisplay = isOwnProfile
     ? {
         username: userProfile.username,
         role: userProfile.role,
-        postsCount: userProfile.postsCount,
-        solutionsProposed: userProfile.solutionsProposed,
-        reputation: userProfile.reputation,
-        badgesCount: userProfile.badges.length,
-        streak: userProfile.streak,
+        postsCount: Math.max(toCount(userProfile.postsCount), profilePosts.length),
+        solutionsProposed: Math.max(toCount(userProfile.solutionsProposed), profileSolutions.length),
+        reputation: Math.max(toCount(userProfile.reputation), 540 + Math.round(profileSupportReceived / 2)),
       }
     : {
-        username: resolvedProfileUsername,
-        role: 'CitizenReporter',
-        postsCount: authorPostsCount,
-        solutionsProposed: Math.max(Math.floor(authorPostsCount * 0.8), 1),
-        reputation: 500 + authorPostsCount * 10,
-        badgesCount: Math.max(Math.floor(authorPostsCount / 2), 1),
-        streak: `${Math.max(authorPostsCount, 1)}d`,
+        username: viewedProfileMeta?.username || resolvedProfileUsername,
+        role: viewedProfileMeta?.role || 'CitizenReporter',
+        postsCount: Math.max(toCount(viewedProfileMeta?.postsCount), profilePosts.length),
+        solutionsProposed: Math.max(toCount(viewedProfileMeta?.solutionsProposed), profileSolutions.length, profilePosts.length > 0 ? 1 : 0),
+        reputation: Math.max(
+          toCount(viewedProfileMeta?.reputation),
+          500 + (profilePosts.length * 10) + (profileSolutions.length * 12) + Math.round(profileSupportReceived / 3),
+        ),
       };
+  const profileBio = isOwnProfile
+    ? `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`
+    : `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`;
+  const profileJoinLabel = getProfileJoinLabel(resolvedProfileUsername);
+  const profileImpactScore = Math.max(
+    61,
+    Math.min(98, 62 + (profilePosts.length * 4) + (profileSolutions.length * 3) + Math.round(profileCommentsReceived / 12)),
+  );
+  const viewedProfilePhotoUrl = resolvedProfileUsername
+    ? (
+        resolvedProfileUsername === userProfile?.username
+          ? profilePhotoUrl
+          : (viewedProfileMeta?.profilePhotoUrl || '')
+      )
+    : '';
+  const profileActivityFeed = buildProfileActivityFeed(profilePosts, profileSolutions).slice(0, 8);
+  const latestProfilePost = profilePosts[0] ?? null;
+  const profileTopLocations = [...new Set(profilePosts.map((post) => post.location).filter(Boolean))].slice(0, 4);
   const accountInitials = accountUsername ? accountUsername.substring(0, 2) : 'PP';
-  const profileInitials = profileDisplay.username ? profileDisplay.username.substring(0, 2) : 'PP';
+  const profileInitials = getInitials(profileDisplay.username);
 
   const renderPostMedia = (post) => {
     const mediaList = Array.isArray(post?.mediaList) ? post.mediaList : [];
@@ -1028,7 +1248,7 @@ function App() {
                   <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 sm:inline-flex">
                     Report Issue
                   </button>
-                  <div className="relative" ref={profileMenuRef}>
+                  <div className="relative flex items-center gap-2" ref={profileMenuRef}>
                     <input
                       ref={profilePhotoInputRef}
                       type="file"
@@ -1036,39 +1256,43 @@ function App() {
                       className="hidden"
                       onChange={handleProfilePhotoUpload}
                     />
+
                     <button
-                      onClick={() => setIsProfileMenuOpen((current) => !current)}
-                      className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 pr-3"
+                      type="button"
+                      onClick={openOwnProfile}
+                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-2.5 py-1.5 transition hover:bg-slate-50"
                     >
                       {profilePhotoUrl ? (
-                        <img src={profilePhotoUrl} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+                        <img src={profilePhotoUrl} alt="Profile" className="h-10 w-10 rounded-2xl object-cover" />
                       ) : (
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white uppercase">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold text-white uppercase">
                           {accountInitials}
                         </span>
                       )}
-                      <span className="hidden text-sm font-semibold sm:block">{accountUsername}</span>
+                      <span className="hidden text-left sm:block">
+                        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Profile</span>
+                        <span className="block text-sm font-bold text-slate-900">{accountUsername}</span>
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsProfileMenuOpen((current) => !current)}
+                      className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                      aria-label="Open profile menu"
+                    >
+                      <ChevronDown className={`h-4 w-4 transition ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     {isProfileMenuOpen && (
-                      <div className="absolute right-0 top-12 z-50 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]">
+                      <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]">
                         <button
                           type="button"
                           onClick={() => profilePhotoInputRef.current?.click()}
                           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
                         >
-                          Edit Profile
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (userProfile?.username) setProfileViewUsername(userProfile.username);
-                            setActiveView('profile');
-                            setIsProfileMenuOpen(false);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          Settings
+                          <ImageIcon className="h-4 w-4" />
+                          Edit photo
                         </button>
                         <button
                           type="button"
@@ -1076,7 +1300,7 @@ function App() {
                           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
                         >
                           <Lightbulb className="h-4 w-4" />
-                          {theme === 'dark' ? 'Change Theme' : 'Change Theme'}
+                          Switch theme
                         </button>
                         <button
                           type="button"
@@ -1122,22 +1346,96 @@ function App() {
               })}
             </div>
           </div>
+
+          <div className="soft-card p-4">
+            <div className="flex items-center justify-between gap-3 px-2">
+              <p className="text-sm font-semibold text-slate-500">Most Cases</p>
+              {selectedDepartmentFilter && (
+                <button
+                  type="button"
+                  onClick={clearDepartmentFilter}
+                  className="text-xs font-semibold text-blue-700 transition hover:text-blue-800"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="mt-3 space-y-2">
+              {topCaseCategories.map(([department, count], index) => (
+                <button
+                  type="button"
+                  key={`${department}-${count}`}
+                  onClick={() => handleDepartmentFilterSelect(department)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${
+                    selectedDepartmentFilter === department
+                      ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                      : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                      selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
+                    }`}
+                    >
+                      {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{department}</p>
+                  </div>
+                  <div className="ml-3 text-right">
+                    <p className="text-lg font-bold text-slate-950">{formatCount(count)}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">cases</p>
+                  </div>
+                </button>
+              ))}
+
+              {topCaseCategories.length === 0 && (
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                  No category data yet.
+                </p>
+              )}
+            </div>
+          </div>
         </aside>
 
         <section className="mx-auto w-full max-w-[980px] space-y-6">
           {activeView === 'home' && (
             <>
               <div className="soft-card p-7">
-                <div>
-                  <p className="text-sm font-semibold text-slate-500">Post Section</p>
-                  <h2 className="mt-1.5 font-display text-[30px] font-bold text-slate-950">Community reports and updates</h2>
-                  <p className="mt-2 text-base text-slate-500">Evidence-first reports from citizens and contributors.</p>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-500">Post Section</p>
+                    <h2 className="mt-1.5 font-display text-[30px] font-bold text-slate-950">Community reports and updates</h2>
+                    <p className="mt-2 text-base text-slate-500">
+                      {selectedDepartmentFilter
+                        ? `Showing the latest reports from ${selectedDepartmentFilter}.`
+                        : 'Evidence-first reports from citizens and contributors.'}
+                    </p>
+                  </div>
+
+                  {selectedDepartmentFilter && (
+                    <button
+                      type="button"
+                      onClick={clearDepartmentFilter}
+                      className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                    >
+                      <Building2 className="h-4 w-4" />
+                      {selectedDepartmentFilter}
+                      <span className="text-blue-400">/</span>
+                      Clear
+                    </button>
+                  )}
                 </div>
+                {selectedDepartmentFilter && (
+                  <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900">
+                    Filtering the main feed by department while keeping the sidebar rankings based on all reported cases.
+                  </div>
+                )}
               </div>
 
               <div className="space-y-5">
-                {visiblePosts.map((post) => {
+                {filteredHomePosts.map((post) => {
                   const isSupportedByUser = !!userProfile?.username && post.supporters?.includes(userProfile.username);
+                  const isSavedByUser = savedPostIds.includes(post.id);
                   const isOwnPost = !!userProfile?.username && post.author === userProfile.username;
                   const isSubmittingAction = !!isActionSubmittingByPost[post.id];
                   const isDescriptionExpanded = !!expandedDescriptionByPost[post.id];
@@ -1188,7 +1486,7 @@ function App() {
                           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{post.department}</span>
                           {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                           <button
                             type="button"
                             disabled={isSubmittingAction}
@@ -1220,6 +1518,19 @@ function App() {
                             <Share2 className="h-4 w-4" />
                             Share {formatCount(post.shares)}
                           </button>
+                          <button
+                            type="button"
+                            disabled={isSubmittingAction}
+                            onClick={() => handleToggleSavedPost(post.id)}
+                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                              isSavedByUser
+                                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <Bookmark className={`h-4 w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
+                            {isSavedByUser ? 'Saved' : 'Save'}
+                          </button>
                         </div>
                         {isOwnPost && (
                           <button
@@ -1242,9 +1553,80 @@ function App() {
                   );
                 })}
 
-                {visiblePosts.length === 0 && (
+                {filteredHomePosts.length === 0 && (
                   <div className="soft-card p-6 text-sm text-slate-600">
-                    No posts available yet. Trending posts will appear here once issues are published.
+                    {selectedDepartmentFilter
+                      ? `No reports found for ${selectedDepartmentFilter} yet. Try another category or clear the filter.`
+                      : 'No posts available yet. Trending posts will appear here once issues are published.'}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {activeView === 'bookmarks' && (
+            <>
+              <div className="soft-card p-7">
+                <div className="flex flex-wrap items-start justify-between gap-6">
+                  <div className="max-w-2xl">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+                      <Bookmark className="h-3.5 w-3.5 fill-current" />
+                      Personal Library
+                    </span>
+                    <h2 className="mt-4 font-display text-[30px] font-bold text-slate-950">Saved posts</h2>
+                    <p className="mt-2 text-base text-slate-500">
+                      A clean place to revisit the reports you want to track, share, or come back to later.
+                    </p>
+                  </div>
+
+                  <div className="grid w-full gap-3 sm:max-w-[460px] sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Saved posts</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(bookmarkedPosts.length)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Departments</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(bookmarkedDepartmentsCount)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Top category</p>
+                      <p className="mt-2 text-sm font-semibold leading-6 text-slate-950">{bookmarkedTopDepartment}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                {bookmarkedPosts.map((post) => (
+                  <BookmarkedPostCard
+                    key={`${post.id}-bookmark`}
+                    post={post}
+                    onOpenPost={() => {
+                      setActivePostId(post.id);
+                      setActiveView('post');
+                    }}
+                    onOpenAuthor={() => openAuthorProfile(post.author)}
+                    onToggleSave={() => handleToggleSavedPost(post.id)}
+                  />
+                ))}
+
+                {bookmarkedPosts.length === 0 && (
+                  <div className="soft-card p-7">
+                    <EmptyProfilePanel
+                      icon={<Bookmark className="h-5 w-5" />}
+                      title="No saved posts yet"
+                      description="Use the save button on any post to keep it in your bookmarks."
+                    />
+                    <div className="mt-5 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => handleNavClick('home')}
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      >
+                        Browse reports
+                        <ArrowUpRight className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1272,6 +1654,7 @@ function App() {
 
               {activePost && (() => {
                 const isSupportedByUser = !!userProfile?.username && activePost.supporters?.includes(userProfile.username);
+                const isSavedByUser = savedPostIds.includes(activePost.id);
                 const isOwnActivePost = !!userProfile?.username && activePost.author === userProfile.username;
                 const solutionInput = solutionInputsByPost[activePost.id] ?? '';
                 const isSubmittingAction = !!isActionSubmittingByPost[activePost.id];
@@ -1339,7 +1722,7 @@ function App() {
                             {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                             <button
                               type="button"
                               disabled={isSubmittingAction}
@@ -1370,6 +1753,19 @@ function App() {
                             >
                               <Share2 className="h-4 w-4" />
                               Share {formatCount(activePost.shares)}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={() => handleToggleSavedPost(activePost.id)}
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                isSavedByUser
+                                  ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              <Bookmark className={`h-4 w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
+                              {isSavedByUser ? 'Saved' : 'Save'}
                             </button>
                           </div>
 
@@ -1500,7 +1896,47 @@ function App() {
           )}
 
           {activeView === 'profile' && (userProfile || profileViewUsername) && (
-            <div className="soft-card p-6">
+            <div className="space-y-5">
+              <ProfileView
+                isOwnProfile={isOwnProfile}
+                profileDisplay={profileDisplay}
+                profileInitials={profileInitials}
+                profileBio={profileBio}
+                profileBeat={profileBeat}
+                profileLocation={profileLocation}
+                profileJoinLabel={profileJoinLabel}
+                profileCommunitiesCount={profileCommunitiesCount}
+                profileImpactScore={profileImpactScore}
+                profileFollowersCount={profileFollowersCount}
+                profileFollowingCount={profileFollowingCount}
+                profilePosts={profilePosts}
+                profileSolutions={profileSolutions}
+                profileActivityFeed={profileActivityFeed}
+                profileTab={profileTab}
+                profileShareFeedback={profileShareFeedback}
+                viewedProfilePhotoUrl={viewedProfilePhotoUrl}
+                isFollowingViewedProfile={isFollowingViewedProfile}
+                latestProfilePost={latestProfilePost}
+                profileTopLocations={profileTopLocations}
+                onSelectTab={setProfileTab}
+                onEditPhoto={() => profilePhotoInputRef.current?.click()}
+                onCreateReport={() => handleNavClick('create')}
+                onToggleTheme={handleThemeToggle}
+                onToggleFollow={handleToggleProfileFollow}
+                onShareProfile={handleProfileShare}
+                onOpenLatestPost={() => {
+                  if (!latestProfilePost) return;
+                  setActivePostId(latestProfilePost.id);
+                  setActiveView('post');
+                }}
+                onOpenPost={(postId) => {
+                  setActivePostId(postId);
+                  setActiveView('post');
+                }}
+                onOpenProfile={openAuthorProfile}
+                onLogout={handleLogout}
+              />
+              {profileTab === '__legacy__' && (
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
                 {isOwnProfile && profilePhotoUrl ? (
                   <img src={profilePhotoUrl} alt="Profile" className="h-24 w-24 rounded-2xl object-cover" />
@@ -1524,6 +1960,7 @@ function App() {
                   )}
                 </div>
               </div>
+              )}
             </div>
           )}
         </section>
@@ -1577,6 +2014,537 @@ function App() {
           })}
         </div>
       </nav>
+    </div>
+  );
+}
+
+function ProfileView({
+  isOwnProfile,
+  profileDisplay,
+  profileInitials,
+  profileBio,
+  profileBeat,
+  profileLocation,
+  profileJoinLabel,
+  profileCommunitiesCount,
+  profileImpactScore,
+  profileFollowersCount,
+  profileFollowingCount,
+  profilePosts,
+  profileSolutions,
+  profileActivityFeed,
+  profileTab,
+  profileShareFeedback,
+  viewedProfilePhotoUrl,
+  isFollowingViewedProfile,
+  latestProfilePost,
+  profileTopLocations,
+  onSelectTab,
+  onEditPhoto,
+  onCreateReport,
+  onToggleTheme,
+  onToggleFollow,
+  onShareProfile,
+  onOpenLatestPost,
+  onOpenPost,
+  onLogout,
+}) {
+  return (
+    <>
+      <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)]">
+        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-5 py-5 sm:px-7 sm:py-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                {profileDisplay.role}
+              </span>
+              <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+                {profileBeat}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                {Math.max(profileCommunitiesCount, 1)} communities
+              </span>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
+              <p className="mt-1 font-display text-3xl font-bold text-slate-950">{profileImpactScore}%</p>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+              {viewedProfilePhotoUrl ? (
+                <img
+                  src={viewedProfilePhotoUrl}
+                  alt={`${profileDisplay.username} profile`}
+                  className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)]"
+                />
+              ) : (
+                <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-4xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)]">
+                  {profileInitials}
+                </div>
+              )}
+
+              <div className="max-w-2xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-display text-[34px] font-bold leading-tight text-slate-950">{profileDisplay.username}</h2>
+                  {profileDisplay.reputation >= 600 && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      <BadgeCheck className="h-3.5 w-3.5" />
+                      Trusted reporter
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm font-semibold text-slate-500">@{profileDisplay.username.toLowerCase()}</p>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{profileBio}</p>
+                <div className="mt-4 flex flex-wrap gap-2.5 text-sm text-slate-500">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                    <MapPin className="h-4 w-4 text-blue-600" />
+                    {profileLocation}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                    <CalendarDays className="h-4 w-4 text-blue-600" />
+                    Joined {profileJoinLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                    <Globe className="h-4 w-4 text-blue-600" />
+                    {profileTopLocations[0] || profileLocation}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 xl:justify-end">
+              {isOwnProfile ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onEditPhoto}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    Edit photo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCreateReport}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    <SquarePen className="h-4 w-4" />
+                    New report
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onToggleTheme}
+                    className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    <Lightbulb className="h-4 w-4" />
+                    Switch theme
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onToggleFollow}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+                      isFollowingViewedProfile
+                        ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        : 'bg-slate-900 text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    {isFollowingViewedProfile ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                    {isFollowingViewedProfile ? 'Following' : 'Follow'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onShareProfile}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    {profileShareFeedback || 'Share profile'}
+                  </button>
+                  {latestProfilePost && (
+                    <button
+                      type="button"
+                      onClick={onOpenLatestPost}
+                      className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                    >
+                      <ArrowUpRight className="h-4 w-4" />
+                      Latest report
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 px-5 py-5 sm:px-7 md:grid-cols-2 xl:grid-cols-5">
+          <ProfileStatPill icon={<Users className="h-4 w-4" />} label="Followers" value={formatCount(profileFollowersCount)} hint="Tracking this profile" />
+          <ProfileStatPill icon={<UserPlus className="h-4 w-4" />} label="Following" value={formatCount(profileFollowingCount)} hint="Accounts in orbit" />
+          <ProfileStatPill icon={<Bookmark className="h-4 w-4" />} label="Reports" value={formatCount(profileDisplay.postsCount)} hint="Published threads" />
+          <ProfileStatPill icon={<Lightbulb className="h-4 w-4" />} label="Solutions" value={formatCount(profileDisplay.solutionsProposed)} hint="Idea drops" />
+          <ProfileStatPill icon={<Zap className="h-4 w-4" />} label="Reputation" value={formatCount(profileDisplay.reputation)} hint="Community-earned signal" />
+        </div>
+      </div>
+
+      <div className="space-y-5">
+          <div className="soft-card p-2">
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[
+                { id: 'reports', label: 'Reports', count: profilePosts.length },
+                { id: 'solutions', label: 'Solutions', count: profileSolutions.length },
+                { id: 'activity', label: 'Activity', count: profileActivityFeed.length },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onSelectTab(tab.id)}
+                  className={`rounded-xl px-4 py-3 text-left transition ${
+                    profileTab === tab.id
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${profileTab === tab.id ? 'text-white/65' : 'text-slate-400'}`}>
+                    {tab.label}
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-bold">{formatCount(tab.count)}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {profileTab === 'reports' && (
+            <div className="space-y-4">
+              {profilePosts.map((post) => (
+                <ProfileReportCard
+                  key={`${post.id}-profile-card`}
+                  post={post}
+                  onOpenPost={() => onOpenPost(post.id)}
+                />
+              ))}
+              {profilePosts.length === 0 && (
+                <EmptyProfilePanel
+                  icon={<Bookmark className="h-5 w-5" />}
+                  title="No reports yet"
+                  description={`${profileDisplay.username} has not published a report yet. The profile header and stats will grow as new posts land.`}
+                />
+              )}
+            </div>
+          )}
+
+          {profileTab === 'solutions' && (
+            <div className="space-y-4">
+              {profileSolutions.map((solution) => (
+                <ProfileSolutionCard
+                  key={`${solution.postId}-${solution.solutionIndex}-${solution.key}`}
+                  solution={solution}
+                  onOpenPost={() => onOpenPost(solution.postId)}
+                />
+              ))}
+              {profileSolutions.length === 0 && (
+                <EmptyProfilePanel
+                  icon={<Lightbulb className="h-5 w-5" />}
+                  title="No solutions posted yet"
+                  description="This profile has not added a community solution yet. Suggested fixes and threaded replies will show up here."
+                />
+              )}
+            </div>
+          )}
+
+          {profileTab === 'activity' && (
+            <div className="space-y-4">
+              {profileActivityFeed.map((activity) => (
+                <ProfileActivityCard
+                  key={activity.id}
+                  activity={activity}
+                  onOpenPost={() => onOpenPost(activity.postId)}
+                />
+              ))}
+              {profileActivityFeed.length === 0 && (
+                <EmptyProfilePanel
+                  icon={<Activity className="h-5 w-5" />}
+                  title="No activity yet"
+                  description="New reports, solutions, and social momentum will stack here as the profile becomes more active."
+                />
+              )}
+            </div>
+          )}
+
+          {isOwnProfile && (
+            <div className="soft-card p-5">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-red-600"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
+            </div>
+          )}
+      </div>
+    </>
+  );
+}
+
+function ProfileStatPill({ icon, label, value, hint }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
+          {icon}
+        </span>
+      </div>
+      <p className="mt-3 font-display text-3xl font-bold text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
+function ProfileActivityCard({ activity, onOpenPost }) {
+  const isReport = activity.kind === 'report';
+
+  return (
+    <article className="soft-card overflow-hidden p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-2xl">
+          <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isReport ? 'text-blue-700' : 'text-amber-700'}`}>
+            {activity.eyebrow}
+          </p>
+          <h3 className="mt-2 font-display text-[26px] font-bold leading-tight text-slate-950">{activity.title}</h3>
+          <p className="mt-2 text-sm leading-7 text-slate-600">{activity.preview}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenPost}
+          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          Open
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-500">
+        {activity.chips.map((chip) => (
+          <span key={`${activity.id}-${chip}`} className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600">
+            {chip}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {activity.metrics.map((metric) => (
+          <div key={`${activity.id}-${metric.label}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{metric.label}</p>
+            <p className="mt-1 text-lg font-bold text-slate-950">{metric.value}</p>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function BookmarkedPostCard({ post, onOpenPost, onOpenAuthor, onToggleSave }) {
+  const { previewText } = getDescriptionPreview(post.description, false, 160);
+
+  return (
+    <article className="soft-card p-5 transition hover:shadow-[0_16px_38px_-28px_rgba(15,23,42,0.38)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={onOpenAuthor}
+          className="flex items-center gap-3 rounded-xl text-left"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-xs font-bold uppercase text-white">
+            {getInitials(post.author)}
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">{post.author}</p>
+            <p className="text-xs text-slate-500">{post.time || 'Recently'}</p>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleSave}
+          className="inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"
+        >
+          <Bookmark className="h-4 w-4 fill-current" />
+          Remove
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+          <MapPin className="h-3.5 w-3.5" />
+          {post.location}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600">
+          <Building2 className="h-3.5 w-3.5" />
+          {post.department}
+        </span>
+        <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-500">
+          Saved to your library
+        </span>
+      </div>
+
+      <div className="mt-4">
+        <h3 className="font-display text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
+        <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Support</p>
+            <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.support)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Solutions</p>
+            <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.solutions)}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Comments</p>
+            <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.comments)}</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenPost}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+        >
+          Open thread
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {post.fixes?.[0] && (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Top fix</p>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-900">
+            {post.fixes[0]}
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ProfileReportCard({ post, onOpenPost }) {
+  const { previewText } = getDescriptionPreview(post.description, false, 170);
+
+  return (
+    <article className="soft-card overflow-hidden p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+              <MapPin className="h-3.5 w-3.5" />
+              {post.location}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600">
+              <Building2 className="h-3.5 w-3.5" />
+              {post.department}
+            </span>
+            {post.verified && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Verified
+              </span>
+            )}
+          </div>
+          <h3 className="mt-3 font-display text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
+          <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{post.time || 'Recently'}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenPost}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          Open thread
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Support</p>
+          <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.support)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Solutions</p>
+          <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.solutions)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Comments</p>
+          <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.comments)}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Shares</p>
+          <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(post.shares)}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ProfileSolutionCard({ solution, onOpenPost }) {
+  return (
+    <article className="soft-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Solution on {solution.postDepartment}</p>
+          <h3 className="mt-2 font-display text-2xl font-bold text-slate-950">{solution.postTitle}</h3>
+          <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
+            {solution.text}
+          </p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{formatTimestamp(solution.createdAt)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenPost}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          View post
+          <ArrowUpRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2 text-sm text-slate-500">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+          <TrendingUp className="h-4 w-4 text-blue-600" />
+          Score {formatCount(solution.score)}
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+          <MessageCircle className="h-4 w-4 text-blue-600" />
+          Replies {formatCount(solution.replyCount)}
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+          <MapPin className="h-4 w-4 text-blue-600" />
+          {solution.postLocation}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function EmptyProfilePanel({ icon, title, description }) {
+  return (
+    <div className="soft-card p-8 text-center">
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+        {icon}
+      </span>
+      <h3 className="mt-4 font-display text-2xl font-bold text-slate-950">{title}</h3>
+      <p className="mt-2 text-sm leading-7 text-slate-600">{description}</p>
     </div>
   );
 }
@@ -1671,14 +2639,10 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [selectedQuality, setSelectedQuality] = useState(() => qualityOptions?.[0]?.value ?? 'auto');
-  const [activeSource, setActiveSource] = useState(() => qualityOptions?.[0]?.url || src);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    const options = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
-    const matchingOption = options.find((option) => option.value === selectedQuality) ?? options[0];
-    setActiveSource(matchingOption?.url || src);
-  }, [qualityOptions, selectedQuality, src]);
+  const sourceOptions = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
+  const activeQualityOption = sourceOptions.find((option) => option.value === selectedQuality) ?? sourceOptions[0];
+  const activeSource = activeQualityOption?.url || src;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1769,8 +2733,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
 
   const onChangeQuality = (qualityValue) => {
     const video = videoRef.current;
-    const options = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
-    const nextOption = options.find((option) => option.value === qualityValue);
+    const nextOption = sourceOptions.find((option) => option.value === qualityValue);
     if (!video || !nextOption) return;
 
     // Don't do anything if the source URL is actually the same to avoid unnecessary reload.
@@ -1784,7 +2747,6 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
     const wasPlaying = !video.paused;
 
     setSelectedQuality(qualityValue);
-    setActiveSource(nextOption.url);
     setIsSettingsOpen(false);
 
     // We use a one-time event listener for 'loadedmetadata' to ensure the video has 
@@ -1841,7 +2803,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         {isSettingsOpen && (
           <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl">
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Quality</p>
-            {(qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }]).map((option) => (
+            {sourceOptions.map((option) => (
               <button
                 key={`${option.value}-${option.label}`}
                 type="button"
@@ -1919,12 +2881,12 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">Q</span>
             <select
-              value={selectedQuality}
+              value={activeQualityOption?.value ?? 'auto'}
               onChange={(event) => onChangeQuality(event.target.value)}
               className="bg-transparent text-xs font-semibold text-white outline-none"
               aria-label="Select video quality"
             >
-              {(qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }]).map((option) => (
+              {sourceOptions.map((option) => (
                 <option key={`bar-${option.value}`} value={option.value} className="bg-slate-900 text-white">
                   {option.label}
                 </option>
@@ -2084,4 +3046,95 @@ function formatTimestamp(value) {
   });
 }
 
+function getMostFrequentValue(values) {
+  const counts = values
+    .map((value) => `${value ?? ''}`.trim())
+    .filter(Boolean)
+    .reduce((accumulator, value) => {
+      accumulator.set(value, (accumulator.get(value) ?? 0) + 1);
+      return accumulator;
+    }, new Map());
+
+  let topValue = '';
+  let topCount = 0;
+  counts.forEach((count, value) => {
+    if (count > topCount) {
+      topValue = value;
+      topCount = count;
+    }
+  });
+
+  return topValue;
+}
+
+function collectSolutionsByAuthor(posts, username) {
+  const normalizedUsername = `${username ?? ''}`.trim();
+  if (!normalizedUsername) return [];
+
+  return posts.flatMap((post) =>
+    getPostSolutions(post)
+      .map((solution, solutionIndex) => ({
+        ...solution,
+        postId: post.id,
+        postTitle: post.title,
+        postLocation: post.location,
+        postDepartment: post.department,
+        solutionIndex,
+      }))
+      .filter((solution) => solution.author === normalizedUsername)
+  );
+}
+
+function buildProfileActivityFeed(profilePosts, profileSolutions) {
+  const reportFeed = profilePosts.map((post, index) => ({
+    id: `feed-report-${post.id}`,
+    kind: 'report',
+    postId: post.id,
+    eyebrow: 'Report thread',
+    title: post.title,
+    preview: getDescriptionPreview(post.description, false, 180).previewText,
+    chips: [post.location, post.department, post.time || 'Recently'].filter(Boolean),
+    metrics: [
+      { label: 'Support', value: formatCount(post.support) },
+      { label: 'Comments', value: formatCount(post.comments) },
+      { label: 'Shares', value: formatCount(post.shares) },
+    ],
+    sortValue: 4000 - index,
+  }));
+
+  const solutionFeed = profileSolutions.map((solution, index) => ({
+    id: `feed-solution-${solution.postId}-${solution.solutionIndex}-${solution.key}`,
+    kind: 'solution',
+    postId: solution.postId,
+    eyebrow: 'Community solution',
+    title: solution.postTitle,
+    preview: `${solution.text}`.trim(),
+    chips: [solution.postDepartment, solution.postLocation, formatTimestamp(solution.createdAt)].filter(Boolean),
+    metrics: [
+      { label: 'Score', value: formatCount(solution.score) },
+      { label: 'Replies', value: formatCount(solution.replyCount) },
+      { label: 'Post', value: 'Open thread' },
+    ],
+    sortValue: 3000 - index,
+  }));
+
+  return [...reportFeed, ...solutionFeed].sort((a, b) => b.sortValue - a.sortValue);
+}
+
+function getProfileJoinLabel(username) {
+  const normalized = `${username ?? ''}`.trim().toLowerCase();
+  if (!normalized) return 'recently';
+
+  const total = [...normalized].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  const year = 2022 + (total % 4);
+  const monthIndex = total % 12;
+  const labelDate = new Date(Date.UTC(year, monthIndex, 1));
+
+  return labelDate.toLocaleString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export default App;
+

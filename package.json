@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "dev:frontend": "parcel index.html",
+    "dev:frontend": "parcel serve index.html --dist-dir .parcel-dev",
     "dev:backend": "cd backend && npm run dev",
-    "start": "parcel index.html",
+    "start": "parcel serve index.html --dist-dir .parcel-dev",
     "build": "parcel build index.html --dist-dir dist",
     "lint": "eslint ."
   },

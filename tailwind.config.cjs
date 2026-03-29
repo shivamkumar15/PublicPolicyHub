@@ -13,8 +13,8 @@ module.exports = {
         },
       },
       fontFamily: {
-        sans: ['Roboto', 'Segoe UI', 'sans-serif'],
-        display: ['Inter', 'Roboto', 'sans-serif'],
+        sans: ['Manrope', 'Segoe UI', 'sans-serif'],
+        display: ['Space Grotesk', 'Manrope', 'sans-serif'],
       },
       keyframes: {
         rise: {

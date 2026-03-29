@@ -10,9 +10,13 @@ import Notification from './models/Notification.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // Connect to MongoDB
 connectDB();
@@ -459,6 +463,69 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+const attachOptionalUser = async (req, _res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    req.user = null;
+    next();
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    let user = null;
+    if (decoded?.sub) user = await User.findById(decoded.sub);
+    if (!user && decoded?.uid) user = await User.findOne({ firebase_uid: decoded.uid });
+    if (!user && decoded?.email) user = await User.findOne({ email: normalizeEmail(decoded.email) });
+    if (!user && decoded?.username) user = await User.findOne({ username: decoded.username });
+
+    req.user = user ? {
+      id: user._id.toString(),
+      uid: user.firebase_uid || '',
+      username: user.username,
+      role: user.role,
+      email: user.email || '',
+    } : null;
+  } catch {
+    req.user = null;
+  }
+
+  next();
+};
+
+const getUniqueStrings = (values) => (
+  Array.isArray(values)
+    ? [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
+    : []
+);
+
+const buildProfilePayload = async (user, viewerUsername = '') => {
+  const postsCount = await Post.countDocuments({ author: user.username });
+  const followerCount = await User.countDocuments({ following: user.username });
+  const following = getUniqueStrings(user.following);
+  const bookmarkedPostIds = getUniqueStrings(user.bookmarkedPostIds);
+  const solutionsProposed = 8;
+
+  return {
+    username: user.username,
+    role: user.role,
+    reputation: 540 + postsCount * 10,
+    badges: ['Public Watchdog', 'Active Reporter'],
+    streak: '7d',
+    postsCount,
+    solutionsProposed,
+    profilePhotoUrl: user.profilePhotoUrl || '',
+    bookmarkedPostIds,
+    following,
+    followerCount,
+    followingCount: following.length,
+    isFollowing: !!viewerUsername && following.includes(viewerUsername),
+  };
+};
+
 // --- Auth Routes ---
 
 app.post('/api/auth/firebaseLogin', async (req, res) => {
@@ -532,19 +599,98 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
 app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const postsCount = await Post.countDocuments({ author: req.user.username });
-    
-    res.json({
-      username: req.user.username,
-      role: req.user.role,
-      reputation: 540 + postsCount * 10,
-      badges: ['Public Watchdog', 'Active Reporter'],
-      streak: '7d',
-      postsCount: postsCount,
-      solutionsProposed: 8
-    });
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    res.json(await buildProfilePayload(user, req.user.username));
   } catch {
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.get('/api/users/:username', attachOptionalUser, async (req, res) => {
+  try {
+    const targetUsername = `${req.params.username ?? ''}`.trim();
+    if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
+
+    const user = await User.findOne({ username: targetUsername });
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const payload = await buildProfilePayload(user, req.user?.username || '');
+    const viewerFollowing = req.user
+      ? getUniqueStrings((await User.findById(req.user.id).select('following').lean())?.following)
+      : [];
+
+    res.json({
+      ...payload,
+      isFollowing: !!req.user?.username && viewerFollowing.includes(targetUsername),
+    });
+  } catch (error) {
+    console.error('Error fetching public profile:', error);
+    res.status(500).json({ error: 'Failed to fetch public profile' });
+  }
+});
+
+app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Photo is required' });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const nextPhotoUrl = `/uploads/${req.file.filename}`;
+    const previousPhotoUrl = user.profilePhotoUrl;
+    user.profilePhotoUrl = nextPhotoUrl;
+    await user.save();
+
+    if (previousPhotoUrl && previousPhotoUrl !== nextPhotoUrl) {
+      try {
+        await deleteFileIfExists(path.resolve('uploads', path.basename(previousPhotoUrl)));
+      } catch (error) {
+        console.error(`Failed to delete old profile photo ${previousPhotoUrl}:`, error.message);
+      }
+    }
+
+    res.json({ profilePhotoUrl: nextPhotoUrl });
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    res.status(500).json({ error: 'Failed to upload profile photo' });
+  }
+});
+
+app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
+  try {
+    const targetUsername = `${req.params.username ?? ''}`.trim();
+    if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
+    if (targetUsername === req.user.username) return res.status(400).json({ error: 'You cannot follow yourself' });
+
+    const [viewer, targetUser] = await Promise.all([
+      User.findById(req.user.id),
+      User.findOne({ username: targetUsername }),
+    ]);
+
+    if (!viewer) return res.status(404).json({ error: 'Profile not found' });
+    if (!targetUser) return res.status(404).json({ error: 'Target profile not found' });
+
+    const following = getUniqueStrings(viewer.following);
+    const isFollowing = following.includes(targetUsername);
+    viewer.following = isFollowing
+      ? following.filter((username) => username !== targetUsername)
+      : [...following, targetUsername];
+
+    await viewer.save();
+
+    const followerCount = await User.countDocuments({ following: targetUsername });
+    res.json({
+      following: getUniqueStrings(viewer.following),
+      targetUsername,
+      isFollowing: !isFollowing,
+      followerCount,
+      followingCount: getUniqueStrings(targetUser.following).length,
+    });
+  } catch (error) {
+    console.error('Error toggling follow:', error);
+    res.status(500).json({ error: 'Failed to update follow state' });
   }
 });
 
@@ -682,6 +828,33 @@ app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error updating support:', error);
     res.status(500).json({ error: 'Failed to update support' });
+  }
+});
+
+app.post('/api/posts/:postId/bookmark', authenticateToken, async (req, res) => {
+  try {
+    const post = await Post.findOne({ id: req.params.postId }).select('id').lean();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const bookmarkedPostIds = getUniqueStrings(user.bookmarkedPostIds);
+    const isBookmarked = bookmarkedPostIds.includes(post.id);
+    user.bookmarkedPostIds = isBookmarked
+      ? bookmarkedPostIds.filter((postId) => postId !== post.id)
+      : [post.id, ...bookmarkedPostIds];
+
+    await user.save();
+
+    res.json({
+      bookmarkedPostIds: getUniqueStrings(user.bookmarkedPostIds),
+      saved: !isBookmarked,
+      postId: post.id,
+    });
+  } catch (error) {
+    console.error('Error updating bookmarks:', error);
+    res.status(500).json({ error: 'Failed to update bookmarks' });
   }
 });
 

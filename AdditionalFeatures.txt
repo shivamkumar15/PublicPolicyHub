@@ -3,3 +3,5 @@ bookmark button= keep all the shaved posts like reddit
 Inprofile= following, followers, coverPhoto, profilePhoto, and all the posts have done till now, 
 
 Activity section inside profile click= shows all the posts i have liked, all the posts i have commented, 
+
+Implementation of AI to show the best solution given by max people and which solution got most votes
