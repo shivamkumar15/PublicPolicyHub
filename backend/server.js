@@ -10,6 +10,7 @@ import Notification from './models/Notification.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 
 dotenv.config();
 
@@ -38,6 +39,100 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage });
+const VIDEO_QUALITY_PRESETS = [
+  { label: '144p', height: 144, videoBitrate: '180k', audioBitrate: '48k', bufferSize: '300k' },
+  { label: '480p', height: 480, videoBitrate: '1200k', audioBitrate: '96k', bufferSize: '1800k' },
+];
+const ffmpegAvailability = {
+  checked: false,
+  available: false,
+};
+
+const runCommand = (command, args) => new Promise((resolve, reject) => {
+  const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  child.on('error', reject);
+  child.on('close', (code) => {
+    if (code === 0) {
+      resolve();
+      return;
+    }
+    reject(new Error(`${command} exited with code ${code}. ${stderr.trim()}`));
+  });
+});
+
+const ensureFfmpegAvailable = async () => {
+  if (ffmpegAvailability.checked) return ffmpegAvailability.available;
+
+  try {
+    await runCommand('ffmpeg', ['-version']);
+    ffmpegAvailability.available = true;
+  } catch {
+    ffmpegAvailability.available = false;
+    console.warn('ffmpeg was not found. Video quality variants (144p/480p) will be skipped.');
+  }
+
+  ffmpegAvailability.checked = true;
+  return ffmpegAvailability.available;
+};
+
+const transcodeVideoQualities = async (file) => {
+  const isFfmpegReady = await ensureFfmpegAvailable();
+  if (!isFfmpegReady) return {};
+
+  const qualities = {};
+  const parsedFileName = path.parse(file.filename);
+  const sourcePath = path.resolve(file.path);
+
+  for (const preset of VIDEO_QUALITY_PRESETS) {
+    const outputFilename = `${parsedFileName.name}-${preset.label}.mp4`;
+    const outputPath = path.resolve('uploads', outputFilename);
+
+    try {
+      await runCommand('ffmpeg', [
+        '-y',
+        '-i',
+        sourcePath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0?',
+        '-vf',
+        `scale=-2:${preset.height}`,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-b:v',
+        preset.videoBitrate,
+        '-maxrate',
+        preset.videoBitrate,
+        '-bufsize',
+        preset.bufferSize,
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+        '-c:a',
+        'aac',
+        '-b:a',
+        preset.audioBitrate,
+        outputPath,
+      ]);
+
+      qualities[preset.label] = `/uploads/${outputFilename}`;
+    } catch (error) {
+      console.error(`Failed to transcode ${file.filename} at ${preset.label}:`, error.message);
+    }
+  }
+
+  return qualities;
+};
 
 const toCount = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -52,6 +147,142 @@ const toCount = (value) => {
   return 0;
 };
 
+const normalizeDiscussionEntry = (entry, index, path = []) => {
+  if (typeof entry === 'string') {
+    const text = entry.trim();
+    if (!text) return null;
+    return {
+      author: 'Community member',
+      text,
+      createdAt: null,
+      upvoters: [],
+      downvoters: [],
+      score: 0,
+      replies: [],
+      replyCount: 0,
+      path,
+      sourceIndex: index,
+      key: `legacy-${path.length > 0 ? path.join('-') : index}`,
+    };
+  }
+
+  const text = `${entry?.text ?? ''}`.trim();
+  if (!text) return null;
+
+  const upvoters = Array.isArray(entry?.upvoters)
+    ? [...new Set(entry.upvoters.filter((value) => typeof value === 'string' && value.trim()))]
+    : [];
+  const downvoters = Array.isArray(entry?.downvoters)
+    ? [...new Set(entry.downvoters.filter((value) => typeof value === 'string' && value.trim()))]
+    : [];
+  const replies = (Array.isArray(entry?.replies) ? entry.replies : [])
+    .map((reply, replyIndex) => normalizeDiscussionEntry(reply, index, [...path, replyIndex]))
+    .filter(Boolean);
+
+  return {
+    author: `${entry?.author ?? 'Community member'}`.trim() || 'Community member',
+    text,
+    createdAt: entry?.createdAt ?? null,
+    upvoters,
+    downvoters,
+    score: upvoters.length - downvoters.length,
+    replies,
+    replyCount: replies.length,
+    path,
+    sourceIndex: index,
+    key: entry?.key || `${entry?.author ?? 'community'}-${path.length > 0 ? path.join('-') : index}-${entry?.createdAt ?? index}`,
+  };
+};
+
+const normalizeSolution = (solution, index) => normalizeDiscussionEntry(solution, index, []);
+
+const getSolutionIndex = (value) => {
+  const parsed = Number.parseInt(`${value ?? ''}`, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : -1;
+};
+
+const parseReplyPath = (value) => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => Number.parseInt(`${entry}`, 10))
+    .filter((entry) => Number.isInteger(entry) && entry >= 0);
+};
+
+const createDiscussionEntry = (author, text) => ({
+  author,
+  text,
+  createdAt: new Date(),
+  upvoters: [],
+  downvoters: [],
+  replies: [],
+});
+
+const ensureWritableSolution = (post, solutionIndex) => {
+  if (!Array.isArray(post?.solutionsList)) post.solutionsList = [];
+
+  const rawSolution = post.solutionsList[solutionIndex];
+  if (!rawSolution) return null;
+
+  if (typeof rawSolution === 'string') {
+    const text = rawSolution.trim();
+    if (!text) return null;
+    post.solutionsList[solutionIndex] = {
+      ...createDiscussionEntry('Community member', text),
+    };
+  }
+
+  const solution = post.solutionsList[solutionIndex];
+  if (!solution?.text) return null;
+  if (!Array.isArray(solution.upvoters)) solution.upvoters = [];
+  if (!Array.isArray(solution.downvoters)) solution.downvoters = [];
+  if (!Array.isArray(solution.replies)) solution.replies = [];
+  return solution;
+};
+
+const ensureWritableDiscussionEntry = (entry, fallbackAuthor = 'Community member') => {
+  if (!entry) return null;
+
+  if (typeof entry === 'string') {
+    const text = entry.trim();
+    if (!text) return null;
+    return createDiscussionEntry(fallbackAuthor, text);
+  }
+
+  const text = `${entry?.text ?? ''}`.trim();
+  if (!text) return null;
+
+  if (!Array.isArray(entry.upvoters)) entry.upvoters = [];
+  if (!Array.isArray(entry.downvoters)) entry.downvoters = [];
+  if (!Array.isArray(entry.replies)) entry.replies = [];
+  return entry;
+};
+
+const ensureWritableDiscussionTarget = (solution, replyPath = []) => {
+  const normalizedPath = parseReplyPath(replyPath);
+  let currentEntry = ensureWritableDiscussionEntry(solution);
+  if (!currentEntry) return null;
+
+  for (let index = 0; index < normalizedPath.length; index += 1) {
+    const replyIndex = normalizedPath[index];
+    if (!Array.isArray(currentEntry.replies)) currentEntry.replies = [];
+
+    const rawReply = currentEntry.replies[replyIndex];
+    if (rawReply == null) return null;
+
+    if (typeof rawReply === 'string') {
+      const upgradedReply = ensureWritableDiscussionEntry(rawReply);
+      if (!upgradedReply) return null;
+      currentEntry.replies[replyIndex] = upgradedReply;
+    }
+
+    currentEntry = ensureWritableDiscussionEntry(currentEntry.replies[replyIndex]);
+    if (!currentEntry) return null;
+  }
+
+  return currentEntry;
+};
+
 const normalizePost = (post) => {
   const source = post?.toObject ? post.toObject() : post;
   return {
@@ -62,9 +293,26 @@ const normalizePost = (post) => {
     shares: toCount(source?.shares),
     supporters: Array.isArray(source?.supporters) ? source.supporters : [],
     commentsList: Array.isArray(source?.commentsList) ? source.commentsList : [],
-    solutionsList: Array.isArray(source?.solutionsList) ? source.solutionsList : [],
+    solutionsList: Array.isArray(source?.solutionsList)
+      ? source.solutionsList.map(normalizeSolution).filter(Boolean)
+      : [],
     fixes: Array.isArray(source?.fixes) ? source.fixes : [],
-    mediaList: Array.isArray(source?.mediaList) ? source.mediaList : [],
+    mediaList: Array.isArray(source?.mediaList)
+      ? source.mediaList.map((item) => {
+          const mediaItem = item?.toObject ? item.toObject() : item;
+          const qualities = mediaItem?.qualities instanceof Map
+            ? Object.fromEntries(mediaItem.qualities.entries())
+            : mediaItem?.qualities && typeof mediaItem.qualities === 'object'
+              ? mediaItem.qualities
+              : undefined;
+
+          return {
+            ...mediaItem,
+            qualities,
+            sources: Array.isArray(mediaItem?.sources) ? mediaItem.sources : [],
+          };
+        })
+      : [],
   };
 };
 
@@ -80,18 +328,135 @@ const broadcastPostUpdate = (post, eventType = 'updated') => {
   }
 };
 
+const broadcastPostDelete = (postId) => {
+  const payload = JSON.stringify({
+    type: 'deleted',
+    postId,
+  });
+
+  for (const client of sseClients) {
+    client.write(`event: post_update\n`);
+    client.write(`data: ${payload}\n\n`);
+  }
+};
+
+const addUploadFilePathFromUrl = (url, filePaths) => {
+  if (typeof url !== 'string') return;
+  const normalizedUrl = url.trim();
+  if (!normalizedUrl.startsWith('/uploads/')) return;
+
+  const filename = path.basename(normalizedUrl);
+  if (!filename) return;
+
+  filePaths.add(path.resolve('uploads', filename));
+};
+
+const collectPostMediaFilePaths = (post) => {
+  const filePaths = new Set();
+  const mediaList = Array.isArray(post?.mediaList) ? post.mediaList : [];
+
+  for (const mediaItemRaw of mediaList) {
+    const mediaItem = mediaItemRaw?.toObject ? mediaItemRaw.toObject() : mediaItemRaw;
+    addUploadFilePathFromUrl(mediaItem?.url, filePaths);
+
+    if (mediaItem?.qualities instanceof Map) {
+      for (const qualityUrl of mediaItem.qualities.values()) {
+        addUploadFilePathFromUrl(qualityUrl, filePaths);
+      }
+    } else if (mediaItem?.qualities && typeof mediaItem.qualities === 'object') {
+      for (const qualityUrl of Object.values(mediaItem.qualities)) {
+        addUploadFilePathFromUrl(qualityUrl, filePaths);
+      }
+    }
+
+    if (Array.isArray(mediaItem?.sources)) {
+      for (const source of mediaItem.sources) {
+        addUploadFilePathFromUrl(source?.url, filePaths);
+      }
+    }
+  }
+
+  return [...filePaths];
+};
+
+const deleteFileIfExists = async (filePath) => {
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+};
+
+const normalizeEmail = (emailValue) => `${emailValue ?? ''}`.trim().toLowerCase();
+
+const sanitizeUsername = (value) => {
+  const cleaned = `${value ?? ''}`
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_]/g, '');
+  return cleaned || 'citizen';
+};
+
+const generateUniqueUsername = async (rawUsername, uid) => {
+  const baseUsername = sanitizeUsername(rawUsername).slice(0, 24);
+  if (!await User.exists({ username: baseUsername })) return baseUsername;
+
+  const uidSuffix = sanitizeUsername(uid).slice(-6) || `${Date.now()}`.slice(-6);
+  const candidateWithUid = `${baseUsername.slice(0, Math.max(1, 24 - uidSuffix.length - 1))}_${uidSuffix}`;
+  if (!await User.exists({ username: candidateWithUid })) return candidateWithUid;
+
+  let counter = 1;
+  while (counter <= 5000) {
+    const suffix = `_${counter}`;
+    const candidate = `${baseUsername.slice(0, Math.max(1, 24 - suffix.length))}${suffix}`;
+    if (!await User.exists({ username: candidate })) return candidate;
+    counter += 1;
+  }
+
+  throw new Error('Unable to generate a unique username');
+};
+
 // Auth Middleware
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
-  
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid or expired token.' });
-    req.user = user;
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    let user = null;
+    if (decoded?.sub) {
+      user = await User.findById(decoded.sub);
+      if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
+    }
+
+    if (!user && decoded?.uid) {
+      user = await User.findOne({ firebase_uid: decoded.uid });
+    }
+
+    if (!user && decoded?.email) {
+      user = await User.findOne({ email: normalizeEmail(decoded.email) });
+    }
+
+    if (!user && decoded?.username) {
+      user = await User.findOne({ username: decoded.username });
+    }
+
+    if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
+
+    req.user = {
+      id: user._id.toString(),
+      uid: user.firebase_uid || '',
+      username: user.username,
+      role: user.role,
+      email: user.email || '',
+    };
     next();
-  });
+  } catch {
+    return res.status(403).json({ error: 'Invalid or expired token.' });
+  }
 };
 
 // --- Auth Routes ---
@@ -102,25 +467,61 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
   if (!uid || !email) return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
 
   try {
-    const usernameDisplay = displayName || email.split('@')[0];
-    let user = await User.findOne({ username: usernameDisplay });
+    const normalizedUid = `${uid}`.trim();
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedUid || !normalizedEmail.includes('@')) {
+      return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
+    }
+
+    let user = await User.findOne({ firebase_uid: normalizedUid });
     
     if (!user) {
+      user = await User.findOne({ email: normalizedEmail });
+    }
+
+    if (!user) {
+      const preferredName = displayName || normalizedEmail.split('@')[0];
+      const username = await generateUniqueUsername(preferredName, normalizedUid);
       user = new User({
-        username: usernameDisplay,
+        username,
+        firebase_uid: normalizedUid,
+        email: normalizedEmail,
         role: 'CitizenReporter',
         password_hash: 'firebase_oauth'
       });
-      await user.save();
+    } else {
+      if (user.firebase_uid && user.firebase_uid !== normalizedUid) {
+        return res.status(409).json({ error: 'This account is already linked to another login.' });
+      }
+
+      if (!user.firebase_uid) user.firebase_uid = normalizedUid;
+
+      const canUpdateEmail = !user.email || user.email === normalizedEmail;
+      if (!canUpdateEmail) {
+        const emailOwner = await User.findOne({ email: normalizedEmail, _id: { $ne: user._id } });
+        if (emailOwner) {
+          return res.status(409).json({ error: 'Email already belongs to another account.' });
+        }
+      }
+
+      user.email = normalizedEmail;
     }
+
+    await user.save();
     
     const token = jwt.sign(
-      { username: user.username, role: user.role, email }, 
+      {
+        sub: user._id.toString(),
+        uid: user.firebase_uid || '',
+        username: user.username,
+        role: user.role,
+        email: user.email || normalizedEmail,
+      }, 
       JWT_SECRET, 
       { expiresIn: '7d' }
     );
     
-    res.json({ token, username: user.username, role: user.role });
+    res.json({ token, username: user.username, role: user.role, uid: user.firebase_uid || '' });
   } catch (error) {
     console.error('Firebase Login error:', error);
     res.status(500).json({ error: 'Internal server error.' });
@@ -142,7 +543,7 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
       postsCount: postsCount,
       solutionsProposed: 8
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
 });
@@ -186,9 +587,29 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
 
   let mediaList = [];
   if (req.files && req.files.length > 0) {
-    mediaList = req.files.map(f => ({
-      type: f.mimetype.startsWith('video/') ? 'VIDEO' : 'IMAGE',
-      url: `/uploads/${f.filename}`
+    mediaList = await Promise.all(req.files.map(async (file) => {
+      const isVideo = file.mimetype.startsWith('video/');
+      const baseMedia = {
+        type: isVideo ? 'VIDEO' : 'IMAGE',
+        url: `/uploads/${file.filename}`,
+      };
+
+      if (!isVideo) return baseMedia;
+
+      const qualities = await transcodeVideoQualities(file);
+      if (Object.keys(qualities).length === 0) return baseMedia;
+
+      const sources = Object.entries(qualities).map(([quality, url]) => ({
+        label: quality,
+        quality,
+        url,
+      }));
+
+      return {
+        ...baseMedia,
+        qualities,
+        sources,
+      };
     }));
   }
 
@@ -206,6 +627,36 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
   } catch (error) {
     console.error('Error creating post:', error);
     res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.delete('/api/posts/:postId', authenticateToken, async (req, res) => {
+  try {
+    const post = await Post.findOne({ id: req.params.postId });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    if (post.author !== req.user.username) {
+      return res.status(403).json({ error: 'You can only delete your own posts.' });
+    }
+
+    const mediaFilePaths = collectPostMediaFilePaths(post);
+    await Post.deleteOne({ _id: post._id });
+
+    await Promise.all(
+      mediaFilePaths.map(async (mediaFilePath) => {
+        try {
+          await deleteFileIfExists(mediaFilePath);
+        } catch (error) {
+          console.error(`Failed to delete media file ${mediaFilePath}:`, error.message);
+        }
+      })
+    );
+
+    broadcastPostDelete(post.id);
+    res.json({ ok: true, id: post.id });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    res.status(500).json({ error: 'Failed to delete post' });
   }
 });
 
@@ -272,6 +723,9 @@ app.post('/api/posts/:postId/solutions', authenticateToken, async (req, res) => 
       author: req.user.username,
       text,
       createdAt: new Date(),
+      upvoters: [],
+      downvoters: [],
+      replies: [],
     });
     post.solutions = post.solutionsList.length;
 
@@ -279,12 +733,84 @@ app.post('/api/posts/:postId/solutions', authenticateToken, async (req, res) => 
     if (!post.fixes.includes(text)) post.fixes.unshift(text);
     post.fixes = post.fixes.slice(0, 8);
 
+    post.markModified('solutionsList');
     await post.save();
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
     console.error('Error adding solution:', error);
     res.status(500).json({ error: 'Failed to add solution' });
+  }
+});
+
+app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, async (req, res) => {
+  const solutionIndex = getSolutionIndex(req.params.solutionIndex);
+  const voteType = `${req.body?.voteType ?? ''}`.trim().toLowerCase();
+  const targetPath = parseReplyPath(req.body?.targetPath);
+
+  if (solutionIndex < 0) return res.status(400).json({ error: 'Solution not found' });
+  if (!['up', 'down', 'clear-up', 'clear-down'].includes(voteType)) {
+    return res.status(400).json({ error: 'Vote type must be up, down, clear-up, or clear-down' });
+  }
+
+  try {
+    const post = await Post.findOne({ id: req.params.postId });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const solution = ensureWritableSolution(post, solutionIndex);
+    if (!solution) return res.status(404).json({ error: 'Solution not found' });
+    const targetEntry = ensureWritableDiscussionTarget(solution, targetPath);
+    if (!targetEntry) return res.status(404).json({ error: 'Reply not found' });
+
+    const username = req.user.username;
+    const hadUpvote = Array.isArray(targetEntry.upvoters) && targetEntry.upvoters.includes(username);
+    const hadDownvote = Array.isArray(targetEntry.downvoters) && targetEntry.downvoters.includes(username);
+    targetEntry.upvoters = targetEntry.upvoters.filter((value) => value !== username);
+    targetEntry.downvoters = targetEntry.downvoters.filter((value) => value !== username);
+
+    if (voteType === 'up' && !hadUpvote) {
+      targetEntry.upvoters.push(username);
+    }
+    if (voteType === 'down' && !hadDownvote) {
+      targetEntry.downvoters.push(username);
+    }
+
+    post.markModified('solutionsList');
+    await post.save();
+    broadcastPostUpdate(post);
+    res.json(normalizePost(post));
+  } catch (error) {
+    console.error('Error voting on solution:', error);
+    res.status(500).json({ error: 'Failed to update solution vote' });
+  }
+});
+
+app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToken, async (req, res) => {
+  const solutionIndex = getSolutionIndex(req.params.solutionIndex);
+  const text = `${req.body?.text ?? ''}`.trim();
+  const parentPath = parseReplyPath(req.body?.parentPath);
+
+  if (solutionIndex < 0) return res.status(400).json({ error: 'Solution not found' });
+  if (!text) return res.status(400).json({ error: 'Reply text is required' });
+
+  try {
+    const post = await Post.findOne({ id: req.params.postId });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const solution = ensureWritableSolution(post, solutionIndex);
+    if (!solution) return res.status(404).json({ error: 'Solution not found' });
+    const parentEntry = ensureWritableDiscussionTarget(solution, parentPath);
+    if (!parentEntry) return res.status(404).json({ error: 'Reply target not found' });
+
+    parentEntry.replies.push(createDiscussionEntry(req.user.username, text));
+
+    post.markModified('solutionsList');
+    await post.save();
+    broadcastPostUpdate(post);
+    res.json(normalizePost(post));
+  } catch (error) {
+    console.error('Error replying to solution:', error);
+    res.status(500).json({ error: 'Failed to add solution reply' });
   }
 });
 

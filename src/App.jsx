@@ -1,19 +1,29 @@
-﻿import { createElement, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   BadgeCheck,
   Bell,
   Building2,
+  ChevronLeft,
+  ChevronRight,
   House,
   Image as ImageIcon,
   Lightbulb,
+  Maximize2,
   MapPin,
+  Minimize2,
+  Pause,
   Play,
+  Settings,
   Share2,
   SquarePen,
+  Trash2,
   TrendingUp,
   User,
   Video as VideoIcon,
   LogOut,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 
@@ -32,10 +42,10 @@ const Logo = new URL('../Logo.svg', import.meta.url).href;
 const API_BASE_URL = '';
 
 const navItems = [
-  { id: 'home', label: 'Home', icon: House },
-  { id: 'create', label: 'Report', icon: SquarePen, requiresAuth: true },
-  { id: 'alerts', label: 'Alerts', icon: Bell },
-  { id: 'profile', label: 'Profile', icon: User, requiresAuth: true },
+  { id: 'home', label: 'Home', Icon: (props) => <House {...props} /> },
+  { id: 'create', label: 'Report', Icon: (props) => <SquarePen {...props} />, requiresAuth: true },
+  { id: 'alerts', label: 'Alerts', Icon: (props) => <Bell {...props} /> },
+  { id: 'profile', label: 'Profile', Icon: (props) => <User {...props} />, requiresAuth: true },
 ];
 
 const defaultPosts = [
@@ -115,6 +125,7 @@ function getInitialTheme() {
 
 function App() {
   const [activeView, setActiveView] = useState('home');
+  const [activePostId, setActivePostId] = useState(null);
   const [apiPosts, setApiPosts] = useState(defaultPosts);
   const [apiNotifications, setApiNotifications] = useState(defaultNotifications);
   const [isLoading, setIsLoading] = useState(true);
@@ -125,14 +136,21 @@ function App() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [mediaSlideIndexByPost, setMediaSlideIndexByPost] = useState({});
   const [solutionInputsByPost, setSolutionInputsByPost] = useState({});
-  const [isSolutionComposerOpenByPost, setIsSolutionComposerOpenByPost] = useState({});
+  const [solutionReplyInputsByKey, setSolutionReplyInputsByKey] = useState({});
+  const [visibleRepliesByKey, setVisibleRepliesByKey] = useState({});
+  const [activeReplyComposerByKey, setActiveReplyComposerByKey] = useState({});
+  const [expandedDescriptionByPost, setExpandedDescriptionByPost] = useState({});
   const [isActionSubmittingByPost, setIsActionSubmittingByPost] = useState({});
+  const [isSolutionActionSubmittingByKey, setIsSolutionActionSubmittingByKey] = useState({});
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [profileViewUsername, setProfileViewUsername] = useState(null);
   const [theme, setTheme] = useState(getInitialTheme);
   const profileMenuRef = useRef(null);
   const profilePhotoInputRef = useRef(null);
+  const solutionInputRefs = useRef({});
+  const solutionReplyInputRefs = useRef({});
+  const mediaScrollerRefs = useRef({});
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
   const [mediaFiles, setMediaFiles] = useState([]);
@@ -155,6 +173,36 @@ function App() {
     ));
   };
 
+  const setMediaScrollerRef = (postId, element) => {
+    if (!postId) return;
+    if (element) {
+      mediaScrollerRefs.current[postId] = element;
+      return;
+    }
+    delete mediaScrollerRefs.current[postId];
+  };
+
+  const scrollMediaByStep = (postId, direction) => {
+    const container = mediaScrollerRefs.current[postId];
+    if (!container) return;
+
+    const slideCount = container.children?.length ?? 0;
+    if (slideCount <= 1) return;
+
+    const currentIndex = mediaSlideIndexByPost[postId] ?? 0;
+    const targetIndex = Math.max(0, Math.min(currentIndex + direction, slideCount - 1));
+    if (targetIndex === currentIndex) return;
+
+    container.scrollTo({
+      left: targetIndex * container.clientWidth,
+      behavior: 'smooth',
+    });
+
+    setMediaSlideIndexByPost((current) => (
+      current[postId] === targetIndex ? current : { ...current, [postId]: targetIndex }
+    ));
+  };
+
   const normalizePost = (post) => ({
     ...post,
     support: toCount(post?.support),
@@ -163,7 +211,9 @@ function App() {
     shares: toCount(post?.shares),
     supporters: Array.isArray(post?.supporters) ? post.supporters : [],
     commentsList: Array.isArray(post?.commentsList) ? post.commentsList : [],
-    solutionsList: Array.isArray(post?.solutionsList) ? post.solutionsList : [],
+    solutionsList: Array.isArray(post?.solutionsList)
+      ? post.solutionsList.map(normalizeSolutionEntry).filter(Boolean)
+      : [],
     fixes: Array.isArray(post?.fixes) ? post.fixes : [],
     mediaList: Array.isArray(post?.mediaList) ? post.mediaList : [],
   });
@@ -180,8 +230,55 @@ function App() {
     });
   };
 
+  const removePostFromState = (postId) => {
+    if (!postId) return;
+
+    setApiPosts((currentPosts) => currentPosts.filter((post) => post.id !== postId));
+    setMediaSlideIndexByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setSolutionInputsByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setSolutionReplyInputsByKey((current) => {
+      const nextEntries = Object.entries(current).filter(([key]) => !key.startsWith(`${postId}:`));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+    setVisibleRepliesByKey((current) => {
+      const nextEntries = Object.entries(current).filter(([key]) => !key.startsWith(`${postId}:`));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+    setActiveReplyComposerByKey((current) => {
+      const nextEntries = Object.entries(current).filter(([key]) => !key.startsWith(`${postId}:`));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+    setExpandedDescriptionByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setIsActionSubmittingByPost((current) => {
+      if (!(postId in current)) return current;
+      const next = { ...current };
+      delete next[postId];
+      return next;
+    });
+    setIsSolutionActionSubmittingByKey((current) => {
+      const nextEntries = Object.entries(current).filter(([key]) => !key.startsWith(`${postId}:`));
+      return nextEntries.length === Object.keys(current).length ? current : Object.fromEntries(nextEntries);
+    });
+  };
+
   const openAuthPage = () => {
     setAuthError('');
+    setProfileViewUsername(null);
     setActiveView('auth');
   };
 
@@ -256,6 +353,10 @@ function App() {
     const onPostUpdate = (event) => {
       try {
         const payload = JSON.parse(event.data);
+        if (payload?.type === 'deleted' && payload?.postId) {
+          removePostFromState(payload.postId);
+          return;
+        }
         if (payload?.post) upsertPostInState(payload.post);
       } catch (error) {
         console.error('Failed to parse realtime event:', error);
@@ -279,7 +380,7 @@ function App() {
       return;
     }
 
-    const storedPhoto = localStorage.getItem(`profilePhoto:${profileDisplay.username}`);
+    const storedPhoto = localStorage.getItem(`profilePhoto:${userProfile.username}`);
     setProfilePhotoUrl(storedPhoto || '');
   }, [userProfile?.username]);
 
@@ -305,7 +406,10 @@ function App() {
     } else {
       if (id === 'profile' && userProfile?.username) {
         setProfileViewUsername(userProfile.username);
+      } else if (id !== 'profile') {
+        setProfileViewUsername(null);
       }
+      setActivePostId(null);
       setActiveView(id);
     }
   };
@@ -328,6 +432,7 @@ function App() {
     localStorage.setItem('token', data.token);
     setToken(data.token);
     await fetchProfile(data.token);
+    setProfileViewUsername(null);
     setActiveView('home');
   };
 
@@ -371,6 +476,7 @@ function App() {
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
+    setProfileViewUsername(null);
     setIsProfileMenuOpen(false);
     setAuthError('');
     if (activeView === 'profile' || activeView === 'create') setActiveView('home');
@@ -386,7 +492,7 @@ function App() {
       if (!nextPhoto) return;
 
       setProfilePhotoUrl(nextPhoto);
-      localStorage.setItem(`profilePhoto:${profileDisplay.username}`, nextPhoto);
+      localStorage.setItem(`profilePhoto:${userProfile.username}`, nextPhoto);
       setIsProfileMenuOpen(false);
     };
     reader.readAsDataURL(file);
@@ -443,6 +549,26 @@ function App() {
     return data;
   };
 
+  const updateSolutionInteraction = async (postId, solutionIndex, action, body = null, requiresAuth = true) => {
+    if (requiresAuth && !ensureAuthenticated()) return null;
+
+    const headers = {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const res = await fetch(`${API_BASE_URL}/api/posts/${postId}/solutions/${solutionIndex}/${action}`, {
+      method: 'POST',
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || `Failed to ${action} solution`);
+    upsertPostInState(data);
+    return data;
+  };
+
   const withPostActionSubmitting = async (postId, actionFn) => {
     setIsActionSubmittingByPost((current) => ({ ...current, [postId]: true }));
     try {
@@ -452,9 +578,54 @@ function App() {
     }
   };
 
+  const withSolutionActionSubmitting = async (solutionStateKey, actionFn) => {
+    setIsSolutionActionSubmittingByKey((current) => ({ ...current, [solutionStateKey]: true }));
+    try {
+      await actionFn();
+    } finally {
+      setIsSolutionActionSubmittingByKey((current) => ({ ...current, [solutionStateKey]: false }));
+    }
+  };
+
   const handleSupport = async (postId) => {
     try {
       await withPostActionSubmitting(postId, () => updatePostInteraction(postId, 'support', null, true));
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleDeletePost = async (postId) => {
+    if (!ensureAuthenticated()) return;
+    if (!window.confirm('Delete this post permanently? This cannot be undone.')) return;
+
+    try {
+      await withPostActionSubmitting(postId, async () => {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`${API_BASE_URL}/api/posts/${postId}`, {
+          method: 'DELETE',
+          headers,
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || 'Failed to delete post');
+
+        removePostFromState(postId);
+        if (activePostId === postId) {
+          setActivePostId(null);
+          setActiveView('home');
+        }
+
+        setUserProfile((currentProfile) => {
+          if (!currentProfile) return currentProfile;
+          const nextPostsCount = Math.max(toCount(currentProfile.postsCount) - 1, 0);
+          return {
+            ...currentProfile,
+            postsCount: nextPostsCount,
+            reputation: 540 + nextPostsCount * 10,
+          };
+        });
+      });
     } catch (error) {
       alert(error.message);
     }
@@ -487,10 +658,61 @@ function App() {
     try {
       await withPostActionSubmitting(postId, () => updatePostInteraction(postId, 'solutions', { text }, true));
       setSolutionInputsByPost((current) => ({ ...current, [postId]: '' }));
-      setIsSolutionComposerOpenByPost((current) => ({ ...current, [postId]: false }));
     } catch (error) {
       alert(error.message);
     }
+  };
+
+  const handleSolutionVote = async (postId, solutionIndex, voteType, targetPath = []) => {
+    const solutionStateKey = getSolutionStateKey(postId, solutionIndex, targetPath);
+
+    try {
+      await withSolutionActionSubmitting(solutionStateKey, () =>
+        updateSolutionInteraction(postId, solutionIndex, 'vote', { voteType, targetPath }, true)
+      );
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleSolutionReplySubmit = async (postId, solutionIndex, parentPath = []) => {
+    const solutionStateKey = getSolutionStateKey(postId, solutionIndex, parentPath);
+    const text = `${solutionReplyInputsByKey[solutionStateKey] ?? ''}`.trim();
+    if (!text) return;
+
+    try {
+      await withSolutionActionSubmitting(solutionStateKey, () =>
+        updateSolutionInteraction(postId, solutionIndex, 'replies', { text, parentPath }, true)
+      );
+      setSolutionReplyInputsByKey((current) => ({ ...current, [solutionStateKey]: '' }));
+      setVisibleRepliesByKey((current) => ({ ...current, [solutionStateKey]: true }));
+      setActiveReplyComposerByKey((current) => ({ ...current, [solutionStateKey]: false }));
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const focusSolutionReplyInput = (postId, solutionIndex, parentPath = []) => {
+    const solutionStateKey = getSolutionStateKey(postId, solutionIndex, parentPath);
+    setActiveReplyComposerByKey((current) => ({ ...current, [solutionStateKey]: true }));
+    setVisibleRepliesByKey((current) => ({ ...current, [solutionStateKey]: true }));
+    setTimeout(() => {
+      const inputElement = solutionReplyInputRefs.current[solutionStateKey];
+      if (inputElement) inputElement.focus();
+    }, 0);
+  };
+
+  const toggleSolutionReplies = (solutionStateKey) => {
+    setVisibleRepliesByKey((current) => ({ ...current, [solutionStateKey]: !current[solutionStateKey] }));
+  };
+
+  const handleSolutionClick = (postId) => {
+    setActivePostId(postId);
+    setActiveView('post');
+    setTimeout(() => {
+      const inputElement = solutionInputRefs.current[postId];
+      if (inputElement) inputElement.focus();
+    }, 0);
   };
 
   const openAuthorProfile = (username) => {
@@ -520,6 +742,12 @@ function App() {
   }
 
   const visiblePosts = apiPosts;
+  const trendingPosts = [...visiblePosts]
+    .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
+    .slice(0, 8);
+  const activePost = activePostId ? apiPosts.find((post) => post.id === activePostId) ?? null : null;
+  const activePostSolutions = getPostSolutions(activePost);
+  const accountUsername = userProfile?.username || '';
   const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
   const isOwnProfile = !!userProfile && resolvedProfileUsername === userProfile.username;
   const authorPostsCount = resolvedProfileUsername ? apiPosts.filter((post) => post.author === resolvedProfileUsername).length : 0;
@@ -542,13 +770,251 @@ function App() {
         badgesCount: Math.max(Math.floor(authorPostsCount / 2), 1),
         streak: `${Math.max(authorPostsCount, 1)}d`,
       };
+  const accountInitials = accountUsername ? accountUsername.substring(0, 2) : 'PP';
+  const profileInitials = profileDisplay.username ? profileDisplay.username.substring(0, 2) : 'PP';
+
+  const renderPostMedia = (post) => {
+    const mediaList = Array.isArray(post?.mediaList) ? post.mediaList : [];
+    const activeSlideIndex = mediaSlideIndexByPost[post.id] ?? 0;
+    const canGoPrev = activeSlideIndex > 0;
+    const canGoNext = activeSlideIndex < mediaList.length - 1;
+
+    return (
+      <>
+        <div className="video-shell order-1 relative overflow-hidden">
+          {mediaList.length > 0 ? (
+            <div
+              ref={(element) => setMediaScrollerRef(post.id, element)}
+              className="flex w-full h-full overflow-x-auto snap-x snap-mandatory hide-scrollbar"
+              onScroll={(event) => handleMediaScroll(post.id, event)}
+            >
+              {mediaList.map((media, index) => {
+                const resolvedMediaUrl = resolveMediaUrl(media?.url);
+                const qualityOptions = buildMediaQualityOptions(media, resolvedMediaUrl);
+                return (
+                  <div key={`${post.id}-media-${index}`} className="w-full h-full flex-shrink-0 snap-center relative" data-media-slide="true">
+                    {media.type === 'VIDEO' ? (
+                      <EnhancedVideoPlayer
+                        src={resolvedMediaUrl}
+                        title={post.title}
+                        qualityOptions={qualityOptions}
+                      />
+                    ) : (
+                      <img src={resolvedMediaUrl} alt={post.title} className="h-full w-full object-contain bg-slate-950" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,_transparent_0%,_rgba(2,6,23,0.62)_100%)]" />
+              <div className="absolute left-3 top-3 rounded-md bg-slate-950/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
+              <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white">
+                <Play className="ml-1 h-7 w-7 fill-current" />
+              </button>
+            </>
+          )}
+
+          {mediaList.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => scrollMediaByStep(post.id, -1)}
+                disabled={!canGoPrev}
+                className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollMediaByStep(post.id, 1)}
+                disabled={!canGoNext}
+                className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {mediaList.length > 1 && (
+          <div className="flex items-center justify-center gap-2 pt-2">
+            {mediaList.map((_, dotIndex) => (
+              <button
+                key={`${post.id}-dot-${dotIndex}`}
+                type="button"
+                onClick={() => {
+                  const container = mediaScrollerRefs.current[post.id];
+                  if (!container) return;
+                  container.scrollTo({
+                    left: dotIndex * container.clientWidth,
+                    behavior: 'smooth',
+                  });
+                  setMediaSlideIndexByPost((current) => (
+                    current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
+                  ));
+                }}
+                className={`h-2.5 w-2.5 rounded-full transition ${
+                  activeSlideIndex === dotIndex ? 'bg-blue-600' : 'bg-slate-300'
+                }`}
+                aria-label={`Go to media ${dotIndex + 1}`}
+              />
+            ))}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const renderDiscussionEntry = (postId, entry, depth = 0) => {
+    const solutionIndex = entry.sourceIndex ?? 0;
+    const replyPath = Array.isArray(entry.path) ? entry.path : [];
+    const solutionStateKey = getSolutionStateKey(postId, solutionIndex, replyPath);
+    const currentVote = getSolutionVoteForUser(entry, userProfile?.username);
+    const replyInput = solutionReplyInputsByKey[solutionStateKey] ?? '';
+    const isSolutionActionSubmitting = !!isSolutionActionSubmittingByKey[solutionStateKey];
+    const replies = Array.isArray(entry.replies) ? entry.replies : [];
+    const canInteract = !entry.isFallback && Number.isInteger(solutionIndex) && solutionIndex >= 0;
+    const areRepliesVisible = replies.length > 0 ? !!visibleRepliesByKey[solutionStateKey] : false;
+    const isReplyComposerOpen = !!activeReplyComposerByKey[solutionStateKey];
+    const agreeCount = Array.isArray(entry.upvoters) ? entry.upvoters.length : 0;
+    const disagreeCount = Array.isArray(entry.downvoters) ? entry.downvoters.length : 0;
+    const indentPx = depth > 0 ? Math.min(depth, 6) * 18 : 0;
+
+    return (
+      <div
+        key={`${solutionStateKey}-${entry.key ?? formatTimestamp(entry.createdAt)}`}
+        className={`${depth === 0 ? 'border-b border-slate-200/80 pb-4 last:border-b-0 last:pb-0' : ''}`}
+        style={indentPx > 0 ? { marginLeft: `${indentPx}px` } : undefined}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
+            {getInitials(entry.author || 'Community member')}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="pr-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{entry.author || 'Community member'}</p>
+              <p className="mt-1 text-sm leading-6 text-slate-700">{entry.text}</p>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
+              <span>{formatTimestamp(entry.createdAt)}</span>
+              <button
+                type="button"
+                disabled={isSolutionActionSubmitting || !canInteract}
+                onClick={() => handleSolutionVote(postId, solutionIndex, currentVote === 'up' ? 'clear-up' : 'up', replyPath)}
+                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  currentVote === 'up' ? 'text-emerald-700' : 'hover:text-slate-800'
+                }`}
+              >
+                Agree {agreeCount > 0 ? agreeCount : ''}
+              </button>
+              <button
+                type="button"
+                disabled={isSolutionActionSubmitting || !canInteract}
+                onClick={() => handleSolutionVote(postId, solutionIndex, currentVote === 'down' ? 'clear-down' : 'down', replyPath)}
+                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  currentVote === 'down' ? 'text-red-600' : 'hover:text-slate-800'
+                }`}
+              >
+                Disagree {disagreeCount > 0 ? disagreeCount : ''}
+              </button>
+              <button
+                type="button"
+                disabled={!canInteract}
+                onClick={() => focusSolutionReplyInput(postId, solutionIndex, replyPath)}
+                className="transition hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Reply
+              </button>
+              <span className={`rounded-full px-2 py-0.5 ${entry.score > 0 ? 'bg-emerald-50 text-emerald-700' : entry.score < 0 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                Net {entry.score}
+              </span>
+            </div>
+
+            {replies.length > 0 && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => toggleSolutionReplies(solutionStateKey)}
+                  className="text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+                >
+                  {areRepliesVisible ? 'Hide replies' : `View replies (${replies.length})`}
+                </button>
+              </div>
+            )}
+
+            {areRepliesVisible && replies.length > 0 && (
+              <div className="mt-3 space-y-3 border-l border-slate-200/80 pl-3">
+                {replies.map((reply) => renderDiscussionEntry(postId, reply, depth + 1))}
+              </div>
+            )}
+
+            {canInteract && isReplyComposerOpen && (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  handleSolutionReplySubmit(postId, solutionIndex, replyPath);
+                }}
+                className="mt-3 flex items-start gap-3"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold uppercase text-white">
+                  {getInitials(userProfile?.username || 'You')}
+                </div>
+                <div className="flex-1 rounded-[22px] border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <textarea
+                    ref={(element) => {
+                      solutionReplyInputRefs.current[solutionStateKey] = element;
+                    }}
+                    value={replyInput}
+                    onChange={(event) => setSolutionReplyInputsByKey((current) => ({ ...current, [solutionStateKey]: event.target.value }))}
+                    rows={2}
+                    placeholder="Write a reply..."
+                    className="w-full resize-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    disabled={isSolutionActionSubmitting}
+                  />
+                  <div className="mt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveReplyComposerByKey((current) => ({ ...current, [solutionStateKey]: false }))}
+                      className="text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSolutionActionSubmitting || !replyInput.trim()}
+                      className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Post
+                    </button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-[1200px] items-center px-4">
+        <div className="mx-auto flex h-16 w-full max-w-[1580px] items-center px-4 lg:px-6">
           <div className="flex w-full items-center gap-3">
-            <button type="button" onClick={() => setActiveView('home')} className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setActivePostId(null);
+                setProfileViewUsername(null);
+                setActiveView('home');
+              }}
+              className="flex items-center gap-2.5"
+            >
               <img src={Logo} alt="Public Policy Hub Logo" style={{ height: '90px' }} className="w-auto object-contain -my-4" />
               <div className="hidden sm:block">
                 <p className="font-display text-xs uppercase tracking-[0.2em] text-slate-500">Public Policy Hub</p>
@@ -574,14 +1040,14 @@ function App() {
                       onClick={() => setIsProfileMenuOpen((current) => !current)}
                       className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 pr-3"
                     >
-                      {isOwnProfile && profilePhotoUrl ? (
+                      {profilePhotoUrl ? (
                         <img src={profilePhotoUrl} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
                       ) : (
                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-white uppercase">
-                          {profileDisplay.username.substring(0,2)}
+                          {accountInitials}
                         </span>
                       )}
-                      <span className="hidden text-sm font-semibold sm:block">{profileDisplay.username}</span>
+                      <span className="hidden text-sm font-semibold sm:block">{accountUsername}</span>
                     </button>
 
                     {isProfileMenuOpen && (
@@ -591,7 +1057,7 @@ function App() {
                           onClick={() => profilePhotoInputRef.current?.click()}
                           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
                         >
-                          Edit Profile Photo
+                          Edit Profile
                         </button>
                         <button
                           type="button"
@@ -610,7 +1076,7 @@ function App() {
                           className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
                         >
                           <Lightbulb className="h-4 w-4" />
-                          {theme === 'dark' ? 'Change Theme (Light)' : 'Change Theme (Dark)'}
+                          {theme === 'dark' ? 'Change Theme' : 'Change Theme'}
                         </button>
                         <button
                           type="button"
@@ -634,44 +1100,48 @@ function App() {
         </div>
       </header>
 
-      <main className="mobile-safe mx-auto grid max-w-[1200px] gap-5 px-4 pb-24 pt-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <aside className="hidden space-y-4 lg:block">
-          <div className="soft-card p-3">
-            <p className="px-2 text-xs font-semibold text-slate-500">Navigation</p>
-            <div className="mt-3 space-y-1.5">
-              {navItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavClick(item.id)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
-                    activeView === item.id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {createElement(item.icon, { className: 'h-4 w-4' })}
-                  {item.label}
-                </button>
-              ))}
+      <main className="mobile-safe mx-auto grid w-full max-w-[1580px] gap-5 px-4 pb-24 pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6">
+        <aside className="hidden space-y-4 lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4">
+          <div className="soft-card p-4">
+            <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
+            <div className="mt-3 space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.Icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleNavClick(item.id)}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${
+                      activeView === item.id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {item.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </aside>
 
-        <section className="space-y-6">
+        <section className="mx-auto w-full max-w-[980px] space-y-6">
           {activeView === 'home' && (
             <>
-              <div className="soft-card p-6">
+              <div className="soft-card p-7">
                 <div>
-                  <p className="text-xs font-semibold text-slate-500">Issue Feed</p>
-                  <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">Recent civic reports from the community</h2>
-                  <p className="mt-2 text-sm text-slate-500">Focus: clear evidence, exact location, and actionable fixes.</p>
+                  <p className="text-sm font-semibold text-slate-500">Post Section</p>
+                  <h2 className="mt-1.5 font-display text-[30px] font-bold text-slate-950">Community reports and updates</h2>
+                  <p className="mt-2 text-base text-slate-500">Evidence-first reports from citizens and contributors.</p>
                 </div>
               </div>
 
               <div className="space-y-5">
                 {visiblePosts.map((post) => {
                   const isSupportedByUser = !!userProfile?.username && post.supporters?.includes(userProfile.username);
-                  const solutionInput = solutionInputsByPost[post.id] ?? '';
-                  const isSolutionComposerOpen = !!isSolutionComposerOpenByPost[post.id];
+                  const isOwnPost = !!userProfile?.username && post.author === userProfile.username;
                   const isSubmittingAction = !!isActionSubmittingByPost[post.id];
+                  const isDescriptionExpanded = !!expandedDescriptionByPost[post.id];
+                  const { previewText, isTruncated } = getDescriptionPreview(post.description, isDescriptionExpanded);
 
                   return (
                     <article
@@ -695,55 +1165,28 @@ function App() {
                           <p className="text-xs text-slate-500">{post.time}</p>
                         </div>
                       </button>
-                      <div className="video-shell order-1 relative overflow-hidden">
-                        {post.mediaList && post.mediaList.length > 0 ? (
-                          <div
-                            className="flex w-full h-full overflow-x-auto snap-x snap-mandatory hide-scrollbar"
-                            onScroll={(event) => handleMediaScroll(post.id, event)}
+                      <div>
+                        <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
+                        <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
+                        {isTruncated && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedDescriptionByPost((current) => ({ ...current, [post.id]: !isDescriptionExpanded }))
+                            }
+                            className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
                           >
-                            {post.mediaList.map((media, i) => (
-                              <div key={i} className="w-full h-full flex-shrink-0 snap-center relative">
-                                {media.type === 'VIDEO' ? (
-                                  <video src={`${API_BASE_URL}${media.url}`} className="h-full w-full object-contain bg-black" controls preload="metadata" playsInline />
-                                ) : (
-                                  <img src={`${API_BASE_URL}${media.url}`} alt={post.title} className="h-full w-full object-contain bg-slate-950" />
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <>
-                            <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
-                            <div className="absolute inset-0 bg-[linear-gradient(180deg,_transparent_0%,_rgba(2,6,23,0.62)_100%)]" />
-                            <div className="absolute left-3 top-3 rounded-md bg-slate-950/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
-                            <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white">
-                              <Play className="ml-1 h-7 w-7 fill-current" />
-                            </button>
-                          </>
+                            {isDescriptionExpanded ? 'Read less' : 'Read more'}
+                          </button>
                         )}
                       </div>
-                      {post.mediaList && post.mediaList.length > 1 && (
-                        <div className="flex items-center justify-center gap-2 pt-2">
-                          {post.mediaList.map((_, dotIndex) => (
-                            <span
-                              key={`${post.id}-dot-${dotIndex}`}
-                              className={`h-2 w-2 rounded-full transition ${
-                                (mediaSlideIndexByPost[post.id] ?? 0) === dotIndex ? 'bg-blue-600' : 'bg-slate-300'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
+                      {renderPostMedia(post)}
 
                       <div className="order-2 space-y-3">
                         <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700"><MapPin className="h-3.5 w-3.5" />{post.location}</span>
                           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{post.department}</span>
                           {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
-                        </div>
-                        <div>
-                          <h3 className="mt-1.5 font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
-                          <p className="mt-2 text-sm leading-7 text-slate-600">{post.description}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           <button
@@ -762,14 +1205,8 @@ function App() {
                           <button
                             type="button"
                             disabled={isSubmittingAction}
-                            onClick={() =>
-                              setIsSolutionComposerOpenByPost((current) => ({ ...current, [post.id]: !current[post.id] }))
-                            }
-                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                              isSolutionComposerOpen
-                                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                            }`}
+                            onClick={() => handleSolutionClick(post.id)}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Lightbulb className="h-4 w-4" />
                             Solution {formatCount(post.solutions)}
@@ -784,20 +1221,188 @@ function App() {
                             Share {formatCount(post.shares)}
                           </button>
                         </div>
-                        {isSolutionComposerOpen && (
+                        {isOwnPost && (
+                          <button
+                            type="button"
+                            disabled={isSubmittingAction}
+                            onClick={() => handleDeletePost(post.id)}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete Post
+                          </button>
+                        )}
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-xs font-semibold text-slate-500">Top Fix</p>
+                          <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-900">{post.fixes?.[0] || 'Awaiting suggested fixes'}</p>
+                        </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {visiblePosts.length === 0 && (
+                  <div className="soft-card p-6 text-sm text-slate-600">
+                    No posts available yet. Trending posts will appear here once issues are published.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {activeView === 'post' && (
+            <div className="space-y-0">
+              {!activePost && (
+                <div className="soft-card p-6">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePostId(null);
+                      setActiveView('home');
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to feed
+                  </button>
+                  <p className="mt-4 text-sm text-slate-600">This post is no longer available.</p>
+                </div>
+              )}
+
+              {activePost && (() => {
+                const isSupportedByUser = !!userProfile?.username && activePost.supporters?.includes(userProfile.username);
+                const isOwnActivePost = !!userProfile?.username && activePost.author === userProfile.username;
+                const solutionInput = solutionInputsByPost[activePost.id] ?? '';
+                const isSubmittingAction = !!isActionSubmittingByPost[activePost.id];
+                const isDescriptionExpanded = !!expandedDescriptionByPost[activePost.id];
+                const {
+                  previewText: activeDescriptionPreview,
+                  isTruncated: isActiveDescriptionTruncated
+                } = getDescriptionPreview(activePost.description, isDescriptionExpanded, 260);
+
+                return (
+                  <>
+                    <article className="soft-card overflow-hidden rounded-b-none border-b-0 p-5">
+                      <div className="space-y-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePostId(null);
+                            setActiveView('home');
+                          }}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          <ArrowLeft className="h-4 w-4" />
+                          Back to feed
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openAuthorProfile(activePost.author);
+                          }}
+                          className="flex w-full items-center gap-3 rounded-xl px-1 text-left"
+                        >
+                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white">
+                            {activePost.author.slice(0, 2)}
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{activePost.author}</p>
+                            <p className="text-xs text-slate-500">{activePost.time}</p>
+                          </div>
+                        </button>
+
+                        <div>
+                          <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{activePost.title}</h3>
+                          <p className="mt-2 text-sm leading-7 text-slate-600">{activeDescriptionPreview}</p>
+                          {isActiveDescriptionTruncated && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setExpandedDescriptionByPost((current) => ({ ...current, [activePost.id]: !isDescriptionExpanded }))
+                              }
+                              className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
+                            >
+                              {isDescriptionExpanded ? 'Read less' : 'Read more'}
+                            </button>
+                          )}
+                        </div>
+
+                        {renderPostMedia(activePost)}
+
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700"><MapPin className="h-3.5 w-3.5" />{activePost.location}</span>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{activePost.department}</span>
+                            {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={() => handleSupport(activePost.id)}
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                isSupportedByUser
+                                  ? 'border-blue-700 bg-blue-600 text-white shadow-[0_10px_24px_-14px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              <TrendingUp className="h-4 w-4" />
+                              Support {formatCount(activePost.support)}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={() => handleSolutionClick(activePost.id)}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Lightbulb className="h-4 w-4" />
+                              Solution {formatCount(activePost.solutions)}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={() => handleShare(activePost.id)}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Share2 className="h-4 w-4" />
+                              Share {formatCount(activePost.shares)}
+                            </button>
+                          </div>
+
+                          {isOwnActivePost && (
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={() => handleDeletePost(activePost.id)}
+                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete Post
+                            </button>
+                          )}
+
                           <form
                             onSubmit={(event) => {
                               event.preventDefault();
-                              handleSolutionSubmit(post.id);
+                              handleSolutionSubmit(activePost.id);
                             }}
-                            className="flex items-center gap-2"
+                            className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
                           >
-                            <input
-                              type="text"
+                            <textarea
+                              ref={(element) => {
+                                solutionInputRefs.current[activePost.id] = element;
+                              }}
                               value={solutionInput}
-                              onChange={(event) => setSolutionInputsByPost((current) => ({ ...current, [post.id]: event.target.value }))}
+                              onChange={(event) => setSolutionInputsByPost((current) => ({ ...current, [activePost.id]: event.target.value }))}
                               placeholder="Write your solution..."
-                              className="form-input h-10"
+                              rows={3}
+                              wrap="soft"
+                              className="w-full min-h-[96px] resize-y rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 whitespace-pre-wrap break-words"
+                              autoFocus
                               disabled={isSubmittingAction}
                             />
                             <button
@@ -806,21 +1411,32 @@ function App() {
                               className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <Lightbulb className="h-4 w-4" />
-                              Submit
+                              Post
                             </button>
                           </form>
-                        )}
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-xs font-semibold text-slate-500">Top Fix</p>
-                          <p className="mt-2 text-sm font-semibold leading-6 text-slate-900">{post.fixes?.[0] || 'Awaiting suggested fixes'}</p>
                         </div>
                       </div>
-                      </div>
                     </article>
-                  );
-                })}
-              </div>
-            </>
+
+                    <div className="soft-card rounded-t-none p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Comments & Solutions</p>
+                      <h3 className="mt-1.5 font-display text-2xl font-bold text-slate-950">{formatCount(activePost.solutions)} community responses</h3>
+                      <p className="mt-2 text-sm text-slate-500">Structured like an Instagram comment sheet, with Agree, Disagree, Reply, and Net kept intact.</p>
+
+                      <div className="mt-5 space-y-5">
+                        {activePostSolutions.length === 0 && (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                            No solutions yet. Be the first to post one.
+                          </div>
+                        )}
+
+                        {activePostSolutions.map((solution) => renderDiscussionEntry(activePost.id, solution, 0))}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           )}
 
           {activeView === 'create' && (
@@ -889,7 +1505,7 @@ function App() {
                 {isOwnProfile && profilePhotoUrl ? (
                   <img src={profilePhotoUrl} alt="Profile" className="h-24 w-24 rounded-2xl object-cover" />
                 ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800 text-3xl font-bold text-white uppercase">{profileDisplay.username.substring(0,2)}</div>
+                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800 text-3xl font-bold text-white uppercase">{profileInitials}</div>
                 )}
                 <div className="flex-1">
                   <p className="text-xs font-semibold text-slate-500">{profileDisplay.role}</p>
@@ -912,22 +1528,53 @@ function App() {
           )}
         </section>
 
+        <aside className="hidden lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-l lg:border-slate-200 lg:pl-4">
+          <div className="soft-card p-4">
+            <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Trending Issues</p>
+            <div className="mt-3 space-y-2">
+              {trendingPosts.slice(0, 6).map((post, index) => (
+                <button
+                  key={`${post.id}-trend-rail`}
+                  type="button"
+                  onClick={() => {
+                    setActivePostId(post.id);
+                    setActiveView('post');
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+                  <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
+                  <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
+                </button>
+              ))}
+              {trendingPosts.length === 0 && (
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                  No trending issues yet.
+                </p>
+              )}
+            </div>
+          </div>
+        </aside>
+
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur-md lg:hidden">
         <div className="mx-auto flex max-w-xl items-center justify-between gap-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => handleNavClick(item.id)}
-              className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold ${
-                activeView === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-500'
-              }`}
-            >
-              {createElement(item.icon, { className: 'h-4 w-4' })}
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const Icon = item.Icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleNavClick(item.id)}
+                className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold ${
+                  activeView === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-500'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
     </div>
@@ -961,6 +1608,480 @@ function formatCount(value) {
   if (numeric >= 1000000) return `${(numeric / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
   if (numeric >= 1000) return `${(numeric / 1000).toFixed(1).replace(/\.0$/, '')}k`;
   return `${numeric}`;
+}
+
+function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
+  return `${API_BASE_URL}${url}`;
+}
+
+function buildMediaQualityOptions(media, fallbackUrl) {
+  const options = [];
+  const seen = new Set();
+
+  const appendOption = (label, url, value = label.toLowerCase()) => {
+    const normalizedUrl = resolveMediaUrl(url);
+    if (!normalizedUrl) return;
+    const key = `${label}|${normalizedUrl}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    options.push({ label, url: normalizedUrl, value });
+  };
+
+  if (Array.isArray(media?.sources) && media.sources.length > 0) {
+    media.sources.forEach((source, index) => {
+      const label = `${source?.label ?? source?.quality ?? `Source ${index + 1}`}`.trim();
+      appendOption(label, source?.url, `${label.toLowerCase()}-${index}`);
+    });
+  } else if (media?.qualities && typeof media.qualities === 'object') {
+    Object.entries(media.qualities).forEach(([qualityLabel, qualityUrl]) => {
+      appendOption(`${qualityLabel}`, qualityUrl, `${qualityLabel}`.toLowerCase());
+    });
+  }
+
+  // If we still have no options, use the fallback provided but don't fake other qualities.
+  if (options.length === 0) {
+    appendOption('Auto', fallbackUrl, 'auto');
+  } else if (!options.some((option) => option.value === 'auto')) {
+    // If we have specific qualities from the backend, add an "Auto" option that points 
+    // to the highest quality (fallbackUrl) for convenience.
+    appendOption('Auto', fallbackUrl, 'auto');
+  }
+
+  return options;
+}
+
+function formatMediaTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const wholeSeconds = Math.floor(seconds);
+  const mins = Math.floor(wholeSeconds / 60);
+  const secs = wholeSeconds % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
+  const containerRef = useRef(null);
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [selectedQuality, setSelectedQuality] = useState(() => qualityOptions?.[0]?.value ?? 'auto');
+  const [activeSource, setActiveSource] = useState(() => qualityOptions?.[0]?.url || src);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const options = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
+    const matchingOption = options.find((option) => option.value === selectedQuality) ?? options[0];
+    setActiveSource(matchingOption?.url || src);
+  }, [qualityOptions, selectedQuality, src]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const syncPlayState = () => setIsPlaying(!video.paused && !video.ended);
+    const syncTime = () => setCurrentTime(video.currentTime || 0);
+    const syncDuration = () => setDuration(video.duration || 0);
+    const syncVolume = () => {
+      setIsMuted(video.muted);
+      setVolume(video.volume);
+    };
+
+    video.addEventListener('play', syncPlayState);
+    video.addEventListener('pause', syncPlayState);
+    video.addEventListener('ended', syncPlayState);
+    video.addEventListener('timeupdate', syncTime);
+    video.addEventListener('loadedmetadata', syncDuration);
+    video.addEventListener('durationchange', syncDuration);
+    video.addEventListener('volumechange', syncVolume);
+
+    syncPlayState();
+    syncTime();
+    syncDuration();
+    syncVolume();
+
+    return () => {
+      video.removeEventListener('play', syncPlayState);
+      video.removeEventListener('pause', syncPlayState);
+      video.removeEventListener('ended', syncPlayState);
+      video.removeEventListener('timeupdate', syncTime);
+      video.removeEventListener('loadedmetadata', syncDuration);
+      video.removeEventListener('durationchange', syncDuration);
+      video.removeEventListener('volumechange', syncVolume);
+    };
+  }, [activeSource]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const togglePlayPause = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  };
+
+  const onSeek = (event) => {
+    const nextTime = Number(event.target.value);
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(nextTime)) return;
+    video.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
+  const onVolumeChange = (event) => {
+    const nextVolume = Number(event.target.value);
+    const video = videoRef.current;
+    if (!video || !Number.isFinite(nextVolume)) return;
+    video.volume = nextVolume;
+    video.muted = nextVolume === 0;
+    setVolume(nextVolume);
+    setIsMuted(video.muted);
+  };
+
+  const toggleMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setIsMuted(video.muted);
+  };
+
+  const onChangePlaybackRate = (nextRate) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = nextRate;
+    setPlaybackRate(nextRate);
+  };
+
+  const onChangeQuality = (qualityValue) => {
+    const video = videoRef.current;
+    const options = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
+    const nextOption = options.find((option) => option.value === qualityValue);
+    if (!video || !nextOption) return;
+
+    // Don't do anything if the source URL is actually the same to avoid unnecessary reload.
+    if (nextOption.url === activeSource) {
+      setSelectedQuality(qualityValue);
+      setIsSettingsOpen(false);
+      return;
+    }
+
+    const previousTime = video.currentTime || 0;
+    const wasPlaying = !video.paused;
+
+    setSelectedQuality(qualityValue);
+    setActiveSource(nextOption.url);
+    setIsSettingsOpen(false);
+
+    // We use a one-time event listener for 'loadedmetadata' to ensure the video has 
+    // initialized the new source before we attempt a seek.
+    const onMetadataLoaded = () => {
+      const updatedVideo = videoRef.current;
+      if (!updatedVideo) return;
+      const resumeAt = Math.min(previousTime, updatedVideo.duration || previousTime || 0);
+      if (Number.isFinite(resumeAt)) updatedVideo.currentTime = resumeAt;
+      if (wasPlaying) updatedVideo.play().catch(() => {});
+      video.removeEventListener('loadedmetadata', onMetadataLoaded);
+    };
+
+    video.addEventListener('loadedmetadata', onMetadataLoaded);
+  };
+
+  const toggleFullscreen = async () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (document.fullscreenElement === container) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+
+    if (container.requestFullscreen) {
+      await container.requestFullscreen().catch(() => {});
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative h-full w-full bg-black">
+      <video
+        ref={videoRef}
+        src={activeSource || src}
+        className="h-full w-full object-contain bg-black"
+        preload="metadata"
+        playsInline
+        onClick={togglePlayPause}
+      />
+
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_rgba(2,6,23,0.06)_35%,_rgba(2,6,23,0.86)_100%)]" />
+
+      <div className="absolute right-3 top-3 z-20">
+        <button
+          type="button"
+          onClick={() => setIsSettingsOpen((current) => !current)}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 text-white backdrop-blur"
+          aria-label="Open video settings"
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+
+        {isSettingsOpen && (
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl">
+            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Quality</p>
+            {(qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }]).map((option) => (
+              <button
+                key={`${option.value}-${option.label}`}
+                type="button"
+                onClick={() => onChangeQuality(option.value)}
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${
+                  selectedQuality === option.value ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-800'
+                }`}
+              >
+                <span>{option.label}</span>
+                {selectedQuality === option.value && <span className="text-[11px] uppercase">Active</span>}
+              </button>
+            ))}
+
+            <p className="mt-2 px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Speed</p>
+            <div className="grid grid-cols-4 gap-1 px-1 pb-1">
+              {[0.75, 1, 1.25, 1.5].map((speed) => (
+                <button
+                  key={`${speed}x`}
+                  type="button"
+                  onClick={() => onChangePlaybackRate(speed)}
+                  className={`rounded-md px-1 py-1 text-xs font-semibold ${
+                    playbackRate === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 z-10 p-3">
+        <input
+          type="range"
+          min={0}
+          max={duration || 0}
+          step={0.1}
+          value={Math.min(currentTime, duration || currentTime)}
+          onChange={onSeek}
+          className="w-full accent-blue-500"
+          aria-label={`Seek video ${title}`}
+        />
+
+        <div className="mt-2 flex items-center gap-2 text-white">
+          <button
+            type="button"
+            onClick={togglePlayPause}
+            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            aria-label={isPlaying ? 'Pause video' : 'Play video'}
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleMute}
+            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            aria-label={isMuted ? 'Unmute video' : 'Mute video'}
+          >
+            {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+          </button>
+
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={isMuted ? 0 : volume}
+            onChange={onVolumeChange}
+            className="w-20 accent-blue-500"
+            aria-label="Adjust volume"
+          />
+
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">Q</span>
+            <select
+              value={selectedQuality}
+              onChange={(event) => onChangeQuality(event.target.value)}
+              className="bg-transparent text-xs font-semibold text-white outline-none"
+              aria-label="Select video quality"
+            >
+              {(qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }]).map((option) => (
+                <option key={`bar-${option.value}`} value={option.value} className="bg-slate-900 text-white">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <p className="ml-auto text-xs font-semibold text-slate-200">
+            {formatMediaTime(currentTime)} / {formatMediaTime(duration)}
+          </p>
+
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getDescriptionPreview(description, isExpanded, previewLength = 190) {
+  const text = `${description ?? ''}`.trim();
+  if (isExpanded || text.length <= previewLength) {
+    return { previewText: text, isTruncated: false };
+  }
+
+  const truncated = text.slice(0, previewLength).trimEnd();
+  return { previewText: `${truncated}...`, isTruncated: true };
+}
+
+function getTrendingScore(post) {
+  const support = toCount(post?.support);
+  const comments = toCount(post?.comments);
+  const shares = toCount(post?.shares);
+  return (support * 3) + (comments * 2) + shares;
+}
+
+function normalizeDiscussionEntry(entry, index, path = []) {
+  if (typeof entry === 'string') {
+    const text = entry.trim();
+    if (!text) return null;
+    return {
+      author: 'Community member',
+      text,
+      createdAt: null,
+      upvoters: [],
+      downvoters: [],
+      score: 0,
+      replies: [],
+      replyCount: 0,
+      path,
+      sourceIndex: index,
+      key: `legacy-${path.length > 0 ? path.join('-') : index}`,
+    };
+  }
+
+  const text = `${entry?.text ?? ''}`.trim();
+  if (!text) return null;
+
+  const upvoters = Array.isArray(entry?.upvoters) ? entry.upvoters.filter(Boolean) : [];
+  const downvoters = Array.isArray(entry?.downvoters) ? entry.downvoters.filter(Boolean) : [];
+  const replies = (Array.isArray(entry?.replies) ? entry.replies : [])
+    .map((reply, replyIndex) => normalizeDiscussionEntry(reply, index, [...path, replyIndex]))
+    .filter(Boolean);
+
+  return {
+    author: `${entry?.author ?? 'Community member'}`.trim() || 'Community member',
+    text,
+    createdAt: entry?.createdAt ?? null,
+    upvoters,
+    downvoters,
+    score: typeof entry?.score === 'number' ? entry.score : upvoters.length - downvoters.length,
+    replies,
+    replyCount: typeof entry?.replyCount === 'number' ? entry.replyCount : replies.length,
+    path,
+    sourceIndex: Number.isInteger(entry?.sourceIndex) ? entry.sourceIndex : index,
+    key: entry?.key || `${entry?.author ?? 'community'}-${entry?.createdAt ?? index}-${index}`,
+  };
+}
+
+function normalizeSolutionEntry(entry, index) {
+  return normalizeDiscussionEntry(entry, index, []);
+}
+
+function getSolutionStateKey(postId, solutionIndex, replyPath = []) {
+  return `${postId}:${solutionIndex}:${replyPath.join('.')}`;
+}
+
+function getInitials(value, maxLength = 2) {
+  const text = `${value ?? ''}`.trim();
+  if (!text) return 'PP';
+
+  const parts = text.split(/\s+|_/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+  }
+
+  return text.slice(0, maxLength).toUpperCase();
+}
+
+function getSolutionVoteForUser(solution, username) {
+  if (!username || !solution) return null;
+  if (Array.isArray(solution.upvoters) && solution.upvoters.includes(username)) return 'up';
+  if (Array.isArray(solution.downvoters) && solution.downvoters.includes(username)) return 'down';
+  return null;
+}
+
+function getPostSolutions(post) {
+  if (!post) return [];
+
+  const normalizedSolutions = (Array.isArray(post.solutionsList) ? post.solutionsList : [])
+    .map(normalizeSolutionEntry)
+    .filter(Boolean);
+
+  if (normalizedSolutions.length > 0) {
+    return [...normalizedSolutions].reverse();
+  }
+
+  const fallbackFixes = (Array.isArray(post.fixes) ? post.fixes : [])
+    .map((fix, index) => {
+      const text = `${fix ?? ''}`.trim();
+      if (!text || text.toLowerCase() === 'awaiting suggested fixes') return null;
+      return {
+        author: 'Community member',
+        text,
+        createdAt: null,
+        upvoters: [],
+        downvoters: [],
+        score: 0,
+        replies: [],
+        replyCount: 0,
+        sourceIndex: index,
+        key: `fix-${index}`,
+        isFallback: true,
+      };
+    })
+    .filter(Boolean);
+
+  return fallbackFixes;
+}
+
+function formatTimestamp(value) {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 export default App;

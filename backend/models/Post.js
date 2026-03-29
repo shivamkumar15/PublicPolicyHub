@@ -1,5 +1,25 @@
 import mongoose from 'mongoose';
 
+const solutionReplySchema = new mongoose.Schema({
+  author: { type: String, required: true },
+  text: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  upvoters: [{ type: String }],
+  downvoters: [{ type: String }],
+}, { _id: false });
+solutionReplySchema.add({
+  replies: [solutionReplySchema],
+});
+
+const solutionSchema = new mongoose.Schema({
+  author: { type: String, required: true },
+  text: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  upvoters: [{ type: String }],
+  downvoters: [{ type: String }],
+  replies: [solutionReplySchema],
+}, { _id: false });
+
 const postSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   location: { type: String, required: true },
@@ -18,15 +38,20 @@ const postSchema = new mongoose.Schema({
     text: { type: String, required: true },
     createdAt: { type: Date, default: Date.now },
   }],
-  solutionsList: [{
-    author: { type: String, required: true },
-    text: { type: String, required: true },
-    createdAt: { type: Date, default: Date.now },
-  }],
+  solutionsList: [solutionSchema],
   media: { type: String, default: 'IMAGE' },
   mediaList: [{
     type: { type: String, enum: ['IMAGE', 'VIDEO'] },
-    url: { type: String }
+    url: { type: String },
+    qualities: {
+      type: Map,
+      of: String,
+    },
+    sources: [{
+      label: { type: String },
+      quality: { type: String },
+      url: { type: String },
+    }],
   }],
   verified: { type: Boolean, default: false },
   nearby: { type: Boolean, default: false },
