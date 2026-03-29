@@ -9,6 +9,10 @@
     color-scheme: light;
   }
 
+  html[data-theme='dark'] {
+    color-scheme: dark;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -20,15 +24,60 @@
   body {
     margin: 0;
     min-width: 320px;
-    background-color: #f8fafc;
-    background-image:
-      radial-gradient(circle at top, rgba(37, 99, 235, 0.1), transparent 34%),
-      radial-gradient(circle at 100% 0%, rgba(249, 115, 22, 0.08), transparent 24%),
-      linear-gradient(180deg, rgba(249, 115, 22, 0.07), transparent 24%);
+    background-color: #f1f5f9;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(241, 245, 249, 0.92));
     font-family: 'Roboto', 'Segoe UI', sans-serif;
     color: #0f172a;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  html[data-theme='dark'] body {
+    background-color: #020617;
+    background-image: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 23, 0.96));
+    color: #e2e8f0;
+  }
+
+  html[data-theme='dark'] .bg-slate-50,
+  html[data-theme='dark'] .bg-slate-100,
+  html[data-theme='dark'] .bg-white,
+  html[data-theme='dark'] .bg-white\/90,
+  html[data-theme='dark'] .bg-white\/95 {
+    background-color: #0f172a;
+  }
+
+  html[data-theme='dark'] .border-slate-200,
+  html[data-theme='dark'] .border-slate-200\/80,
+  html[data-theme='dark'] .border-slate-300 {
+    border-color: #334155;
+  }
+
+  html[data-theme='dark'] .text-slate-900,
+  html[data-theme='dark'] .text-slate-950 {
+    color: #f8fafc;
+  }
+
+  html[data-theme='dark'] .text-slate-800,
+  html[data-theme='dark'] .text-slate-700,
+  html[data-theme='dark'] .text-slate-600,
+  html[data-theme='dark'] .text-slate-500,
+  html[data-theme='dark'] .text-slate-400 {
+    color: #cbd5e1;
+  }
+
+  html[data-theme='dark'] .hover\:bg-slate-100:hover {
+    background-color: #1e293b;
+  }
+
+  html[data-theme='dark'] .soft-card {
+    border-color: rgba(148, 163, 184, 0.3);
+    background-color: rgba(15, 23, 42, 0.9);
+    box-shadow: 0 10px 30px -24px rgba(2, 6, 23, 0.9);
+  }
+
+  html[data-theme='dark'] .glass-panel {
+    border-color: rgba(148, 163, 184, 0.26);
+    background-color: rgba(15, 23, 42, 0.64);
   }
 
   button,
@@ -66,35 +115,19 @@
 
 @layer components {
   .glass-panel {
-    @apply rounded-[28px] border border-white/15 bg-white/10 backdrop-blur-xl;
+    @apply rounded-2xl border border-white/35 bg-white/60 backdrop-blur-md;
   }
 
   .soft-card {
-    @apply rounded-[28px] border border-white/80 bg-white/90 shadow-[0_24px_70px_-38px_rgba(15,23,42,0.22)] backdrop-blur-sm;
+    @apply rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_12px_32px_-24px_rgba(15,23,42,0.34)];
   }
 
   .video-shell {
-    @apply relative h-[260px] w-full overflow-hidden rounded-[20px] bg-slate-950 shadow-[0_18px_45px_-28px_rgba(15,23,42,0.45)] transition duration-300 sm:h-[340px] lg:h-[440px];
+    @apply relative h-[220px] w-full overflow-hidden rounded-xl bg-slate-900/95 shadow-[0_10px_30px_-20px_rgba(15,23,42,0.65)] transition duration-300 sm:h-[300px] lg:h-[360px];
   }
 
   .pulse-ring {
-    @apply animate-pulse-soft;
-  }
-
-  .notification-dot {
-    @apply absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-orange-500 ring-4 ring-orange-500/15;
-  }
-
-  .skeleton-line {
-    @apply rounded-full bg-slate-200;
-    background-image: linear-gradient(
-      90deg,
-      rgba(226, 232, 240, 1) 0%,
-      rgba(255, 255, 255, 0.9) 50%,
-      rgba(226, 232, 240, 1) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.8s linear infinite;
+    @apply transition;
   }
 
   .mobile-safe {
@@ -102,7 +135,7 @@
   }
 
   .form-input {
-    @apply h-12 w-full rounded-[22px] border border-slate-200 bg-slate-50 px-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-100;
+    @apply h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100;
   }
 
   /* Hide scrollbar for side-scrolling galleries but keep functionality */

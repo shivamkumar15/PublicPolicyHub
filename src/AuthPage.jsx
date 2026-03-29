@@ -60,46 +60,46 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
   const visibleError = localError || error;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(37,99,235,0.14),_transparent_32%),linear-gradient(135deg,_#eff6ff_0%,_#f8fafc_55%,_#fff7ed_100%)] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl flex-col overflow-hidden rounded-[40px] border border-white/70 bg-white/75 shadow-[0_32px_100px_-42px_rgba(15,23,42,0.4)] backdrop-blur-xl lg:flex-row">
-        <section className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-blue-700 px-6 py-8 text-white sm:px-8 lg:w-[46%] lg:px-10 lg:py-10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.22),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(249,115,22,0.32),_transparent_26%)]" />
+    <div className="min-h-screen bg-slate-100 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-7xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_14px_40px_-26px_rgba(15,23,42,0.35)] lg:flex-row">
+        <section className="relative overflow-hidden bg-gradient-to-br from-slate-900 to-slate-800 px-6 py-8 text-white sm:px-8 lg:w-[44%] lg:px-10 lg:py-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(148,163,184,0.24),_transparent_32%)]" />
           <div className="relative flex h-full flex-col">
             <div className="flex items-center justify-between gap-4">
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </button>
-              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-blue-100 backdrop-blur">
+              <span className="rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-200">
                 Firebase Auth
               </span>
             </div>
 
             <div className="mt-10">
-              <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2 backdrop-blur">
+              <div className="inline-flex items-center gap-3 rounded-xl border border-white/20 bg-white/10 px-4 py-2">
                 <img src={logo} alt="Public Policy Hub" className="h-10 w-auto" />
                 <div>
-                  <p className="font-display text-sm font-bold uppercase tracking-[0.3em] text-blue-100">Public Policy Hub</p>
-                  <p className="text-sm text-white/70">Civic reporting that feels current, fast, and credible.</p>
+                  <p className="font-display text-sm font-bold uppercase tracking-[0.15em] text-slate-100">Public Policy Hub</p>
+                  <p className="text-sm text-slate-300">Civic reporting that stays practical and accountable.</p>
                 </div>
               </div>
 
-              <h1 className="mt-8 max-w-lg font-display text-4xl font-bold leading-tight sm:text-5xl">
-                Sign in or create an account from a page built for the job.
+              <h1 className="mt-8 max-w-lg font-display text-4xl font-bold leading-tight sm:text-[44px]">
+                Sign in to report and track issues without friction.
               </h1>
-              <p className="mt-4 max-w-xl text-base leading-7 text-blue-100">
-                Your reporting, profile, and posting access now start from a dedicated auth screen instead of an inline card buried in the feed.
+              <p className="mt-4 max-w-xl text-base leading-7 text-slate-300">
+                Keep your reports, profile updates, and follow-up actions in one account.
               </p>
             </div>
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               {highlights.map((item) => (
-                <div key={item.label} className="rounded-[28px] border border-white/10 bg-white/10 px-4 py-4 backdrop-blur">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-blue-100/80">{item.label}</p>
+                <div key={item.label} className="rounded-xl border border-white/20 bg-white/10 px-4 py-4">
+                  <p className="text-xs font-semibold text-slate-300">{item.label}</p>
                   <p className="mt-3 font-display text-3xl font-bold text-white">{item.value}</p>
                 </div>
               ))}
@@ -107,18 +107,18 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
 
             <div className="mt-8 space-y-3">
               {benefits.map((item) => (
-                <div key={item} className="flex items-start gap-3 rounded-[24px] border border-white/10 bg-white/10 p-4 backdrop-blur">
-                  <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-orange-300" />
+                <div key={item} className="flex items-start gap-3 rounded-xl border border-white/20 bg-white/10 p-4">
+                  <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
                   <p className="text-sm leading-6 text-white/85">{item}</p>
                 </div>
               ))}
             </div>
 
             <div className="mt-auto pt-8">
-              <div className="rounded-[28px] border border-white/10 bg-white/10 p-5 backdrop-blur">
+              <div className="rounded-xl border border-white/20 bg-white/10 p-5">
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="h-5 w-5 text-emerald-300" />
-                  <p className="text-sm font-semibold uppercase tracking-[0.24em] text-white/75">Auth note</p>
+                  <p className="text-sm font-semibold text-white/80">Auth note</p>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-white/80">
                   Email/password signup requires the Firebase Email/Password provider to be enabled in your Firebase project settings.
@@ -128,11 +128,11 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
           </div>
         </section>
 
-        <section className="flex flex-1 items-center justify-center px-4 py-8 sm:px-8 lg:px-12">
-          <div className="w-full max-w-xl rounded-[36px] border border-slate-200/80 bg-white px-6 py-7 shadow-[0_28px_60px_-36px_rgba(15,23,42,0.28)] sm:px-8 sm:py-9">
+        <section className="flex flex-1 items-center justify-center px-4 py-8 sm:px-8 lg:px-10">
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-[0_12px_32px_-20px_rgba(15,23,42,0.28)] sm:px-8 sm:py-9">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">Account access</p>
+                <p className="text-xs font-semibold text-slate-500">Account access</p>
                 <h2 className="mt-2 font-display text-3xl font-bold text-slate-950">
                   {mode === 'login' ? 'Welcome back' : 'Create your account'}
                 </h2>
@@ -142,17 +142,17 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
                     : 'Create a new Firebase-backed account to report issues and save your reputation profile.'}
                 </p>
               </div>
-              <div className="hidden rounded-[28px] bg-slate-100 px-4 py-3 text-right sm:block">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">Secure session</p>
+              <div className="hidden rounded-xl bg-slate-100 px-4 py-3 text-right sm:block">
+                <p className="text-xs font-semibold text-slate-500">Secure session</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">Email, password, or Google</p>
               </div>
             </div>
 
-            <div className="mt-8 grid grid-cols-2 gap-2 rounded-[22px] bg-slate-100 p-1.5">
+            <div className="mt-8 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1.5">
               <button
                 type="button"
                 onClick={() => handleModeChange('login')}
-                className={`rounded-[18px] px-4 py-3 text-sm font-semibold transition ${
+                className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   mode === 'login' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'
                 }`}
               >
@@ -161,7 +161,7 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
               <button
                 type="button"
                 onClick={() => handleModeChange('signup')}
-                className={`rounded-[18px] px-4 py-3 text-sm font-semibold transition ${
+                className={`rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
                   mode === 'signup' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'
                 }`}
               >
@@ -239,7 +239,7 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
               )}
 
               {visibleError && (
-                <div className="rounded-[22px] border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
+                <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600">
                   {visibleError}
                 </div>
               )}
@@ -247,7 +247,7 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSubmitting ? 'Working...' : mode === 'login' ? 'Login with Firebase' : 'Create account with Firebase'}
                 <ChevronRight className="h-4 w-4" />
@@ -264,7 +264,7 @@ function AuthPage({ error, isSubmitting, logo, onBack, onEmailAuth, onGoogleAuth
               type="button"
               onClick={onGoogleAuth}
               disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-3 rounded-full border border-slate-300 bg-white px-5 py-3.5 text-[15px] font-semibold text-slate-700 shadow-[0_2px_10px_rgba(0,0,0,0.06)] transition hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_2px_10px_rgba(0,0,0,0.06)] transition hover:bg-slate-50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
             >
               <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
