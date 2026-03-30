@@ -10,6 +10,7 @@ import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
 import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import Flag from 'lucide-react/dist/esm/icons/flag.js';
 import Globe from 'lucide-react/dist/esm/icons/globe.js';
 import House from 'lucide-react/dist/esm/icons/house.js';
 import ImageIcon from 'lucide-react/dist/esm/icons/image.js';
@@ -18,6 +19,7 @@ import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2.js';
 import MessageCircle from 'lucide-react/dist/esm/icons/message-circle.js';
+import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js';
 import Pause from 'lucide-react/dist/esm/icons/pause.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
@@ -152,6 +154,10 @@ function App() {
   const [isActionSubmittingByPost, setIsActionSubmittingByPost] = useState({});
   const [isSolutionActionSubmittingByKey, setIsSolutionActionSubmittingByKey] = useState({});
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [activePostMenuId, setActivePostMenuId] = useState(null);
+  const [activeAuthorHoverCard, setActiveAuthorHoverCard] = useState('');
+  const [authorPreviewByUsername, setAuthorPreviewByUsername] = useState({});
+  const [isFollowSubmittingByUsername, setIsFollowSubmittingByUsername] = useState({});
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
   const [profileViewUsername, setProfileViewUsername] = useState(null);
   const [viewedProfileMeta, setViewedProfileMeta] = useState(null);
@@ -166,6 +172,8 @@ function App() {
   const solutionInputRefs = useRef({});
   const solutionReplyInputRefs = useRef({});
   const mediaScrollerRefs = useRef({});
+  const postMenuRefs = useRef({});
+  const authorPreviewStatusRef = useRef({});
   const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
@@ -196,6 +204,15 @@ function App() {
       return;
     }
     delete mediaScrollerRefs.current[postId];
+  };
+
+  const setPostMenuRef = (postId, element) => {
+    if (!postId) return;
+    if (element) {
+      postMenuRefs.current[postId] = element;
+      return;
+    }
+    delete postMenuRefs.current[postId];
   };
 
   const scrollMediaByStep = (postId, direction) => {
@@ -426,11 +443,18 @@ function App() {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setIsProfileMenuOpen(false);
       }
+
+      if (activePostMenuId) {
+        const activePostMenuElement = postMenuRefs.current[activePostMenuId];
+        if (activePostMenuElement && !activePostMenuElement.contains(event.target)) {
+          setActivePostMenuId(null);
+        }
+      }
     };
 
     document.addEventListener('mousedown', closeMenuOnOutsideClick);
     return () => document.removeEventListener('mousedown', closeMenuOnOutsideClick);
-  }, []);
+  }, [activePostMenuId]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -457,6 +481,98 @@ function App() {
       .then((data) => setViewedProfileMeta(data))
       .catch(() => setViewedProfileMeta(null));
   }, [resolvedProfileUsername, token]);
+
+  useEffect(() => {
+    if (!userProfile?.username) return;
+    authorPreviewStatusRef.current[userProfile.username] = 'success';
+
+    setAuthorPreviewByUsername((current) => ({
+      ...current,
+      [userProfile.username]: {
+        status: 'success',
+        data: {
+          ...(current[userProfile.username]?.data ?? {}),
+          ...userProfile,
+          profilePhotoUrl: userProfile.profilePhotoUrl || '',
+        },
+      },
+    }));
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (!viewedProfileMeta?.username) return;
+    authorPreviewStatusRef.current[viewedProfileMeta.username] = 'success';
+
+    setAuthorPreviewByUsername((current) => ({
+      ...current,
+      [viewedProfileMeta.username]: {
+        status: 'success',
+        data: {
+          ...(current[viewedProfileMeta.username]?.data ?? {}),
+          ...viewedProfileMeta,
+          profilePhotoUrl: viewedProfileMeta.profilePhotoUrl || '',
+        },
+      },
+    }));
+  }, [viewedProfileMeta]);
+
+  useEffect(() => {
+    const uniqueAuthors = [...new Set(
+      apiPosts
+        .map((post) => `${post?.author ?? ''}`.trim())
+        .filter(Boolean)
+    )];
+    const missingAuthors = uniqueAuthors.filter((username) => {
+      const currentStatus = authorPreviewStatusRef.current[username];
+      return currentStatus !== 'loading' && currentStatus !== 'success';
+    });
+    if (missingAuthors.length === 0) return;
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    missingAuthors.forEach((username) => {
+      authorPreviewStatusRef.current[username] = 'loading';
+      setAuthorPreviewByUsername((current) => {
+        if (current[username]?.status === 'loading' || current[username]?.status === 'success') {
+          return current;
+        }
+
+        return {
+          ...current,
+          [username]: {
+            status: 'loading',
+            data: current[username]?.data ?? null,
+          },
+        };
+      });
+
+      fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(username)}`, { headers })
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to load author preview');
+          return res.json();
+        })
+        .then((data) => {
+          authorPreviewStatusRef.current[username] = 'success';
+          setAuthorPreviewByUsername((current) => ({
+            ...current,
+            [username]: {
+              status: 'success',
+              data,
+            },
+          }));
+        })
+        .catch(() => {
+          authorPreviewStatusRef.current[username] = 'error';
+          setAuthorPreviewByUsername((current) => ({
+            ...current,
+            [username]: {
+              status: 'error',
+              data: current[username]?.data ?? null,
+            },
+          }));
+        });
+    });
+  }, [apiPosts, token]);
 
   useEffect(() => {
     if (activeView !== 'post' || !activePostId) return;
@@ -849,12 +965,74 @@ function App() {
     setIsProfileMenuOpen(false);
   };
 
-  const handleToggleProfileFollow = async () => {
-    if (!resolvedProfileUsername || resolvedProfileUsername === userProfile?.username) return;
+  const syncFollowState = (targetUsername, data) => {
+    const normalizedTargetUsername = `${targetUsername ?? ''}`.trim();
+    if (!normalizedTargetUsername) return;
+
+    setUserProfile((currentProfile) => (
+      currentProfile
+        ? {
+            ...currentProfile,
+            following: Array.isArray(data.following) ? data.following : currentProfile.following,
+          }
+        : currentProfile
+    ));
+    setViewedProfileMeta((currentProfile) => (
+      currentProfile && currentProfile.username === normalizedTargetUsername
+        ? {
+            ...currentProfile,
+            followerCount: data.followerCount,
+            followingCount: data.followingCount,
+            isFollowing: data.isFollowing,
+          }
+        : currentProfile
+    ));
+    setAuthorPreviewByUsername((current) => {
+      const targetPreview = current[normalizedTargetUsername];
+      const viewerUsername = `${userProfile?.username ?? ''}`.trim();
+      const viewerPreview = viewerUsername ? current[viewerUsername] : null;
+      let hasChanges = false;
+      const next = { ...current };
+
+      if (targetPreview?.data) {
+        next[normalizedTargetUsername] = {
+          ...targetPreview,
+          data: {
+            ...targetPreview.data,
+            followerCount: data.followerCount,
+            followingCount: data.followingCount,
+            isFollowing: data.isFollowing,
+          },
+        };
+        hasChanges = true;
+      }
+
+      if (viewerUsername && viewerPreview?.data && Array.isArray(data.following)) {
+        next[viewerUsername] = {
+          ...viewerPreview,
+          data: {
+            ...viewerPreview.data,
+            following: data.following,
+            followingCount: data.following.length,
+          },
+        };
+        hasChanges = true;
+      }
+
+      return hasChanges ? next : current;
+    });
+  };
+
+  const handleToggleFollow = async (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername || normalizedUsername === userProfile?.username) return;
     if (!ensureAuthenticated()) return;
+    if (isFollowSubmittingByUsername[normalizedUsername]) return;
+
+    setIsFollowSubmittingByUsername((current) => ({ ...current, [normalizedUsername]: true }));
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/users/${resolvedProfileUsername}/follow`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(normalizedUsername)}/follow`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -864,24 +1042,21 @@ function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to update follow state');
 
-      setUserProfile((currentProfile) => (
-        currentProfile
-          ? { ...currentProfile, following: Array.isArray(data.following) ? data.following : currentProfile.following }
-          : currentProfile
-      ));
-      setViewedProfileMeta((currentProfile) => (
-        currentProfile && currentProfile.username === resolvedProfileUsername
-          ? {
-              ...currentProfile,
-              followerCount: data.followerCount,
-              followingCount: data.followingCount,
-              isFollowing: data.isFollowing,
-            }
-          : currentProfile
-      ));
+      syncFollowState(normalizedUsername, data);
     } catch (error) {
       alert(error.message);
+    } finally {
+      setIsFollowSubmittingByUsername((current) => {
+        if (!(normalizedUsername in current)) return current;
+        const next = { ...current };
+        delete next[normalizedUsername];
+        return next;
+      });
     }
+  };
+
+  const handleToggleProfileFollow = () => {
+    handleToggleFollow(resolvedProfileUsername);
   };
 
   const handleProfileShare = async () => {
@@ -941,6 +1116,105 @@ function App() {
     setIsProfileMenuOpen(false);
   };
 
+  const preloadAuthorPreview = async (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername) return;
+    const existingPreviewStatus = authorPreviewStatusRef.current[normalizedUsername];
+    if (existingPreviewStatus === 'loading' || existingPreviewStatus === 'success') return;
+
+    authorPreviewStatusRef.current[normalizedUsername] = 'loading';
+    setAuthorPreviewByUsername((current) => {
+      if (current[normalizedUsername]?.status === 'loading' || current[normalizedUsername]?.status === 'success') {
+        return current;
+      }
+
+      return {
+        ...current,
+        [normalizedUsername]: {
+          status: 'loading',
+          data: current[normalizedUsername]?.data ?? null,
+        },
+      };
+    });
+
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/${encodeURIComponent(normalizedUsername)}`, { headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to load author preview');
+
+      authorPreviewStatusRef.current[normalizedUsername] = 'success';
+      setAuthorPreviewByUsername((current) => ({
+        ...current,
+        [normalizedUsername]: {
+          status: 'success',
+          data,
+        },
+      }));
+    } catch {
+      authorPreviewStatusRef.current[normalizedUsername] = 'error';
+      setAuthorPreviewByUsername((current) => ({
+        ...current,
+        [normalizedUsername]: {
+          status: 'error',
+          data: current[normalizedUsername]?.data ?? null,
+        },
+      }));
+    }
+  };
+
+  const showAuthorHoverCard = (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername) return;
+
+    setActiveAuthorHoverCard(normalizedUsername);
+    preloadAuthorPreview(normalizedUsername);
+  };
+
+  const hideAuthorHoverCard = () => {
+    setActiveAuthorHoverCard('');
+  };
+
+  const getAuthorAvatarUrl = (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername) return '';
+
+    if (normalizedUsername === userProfile?.username) return profilePhotoUrl || userProfile?.profilePhotoUrl || '';
+    if (normalizedUsername === viewedProfileMeta?.username) return viewedProfileMeta?.profilePhotoUrl || '';
+    return authorPreviewByUsername[normalizedUsername]?.data?.profilePhotoUrl || '';
+  };
+
+  const handleReportPost = async (postId) => {
+    if (!postId) return;
+    if (!ensureAuthenticated()) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/posts/${postId}/report`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to report post');
+
+      setUserProfile((currentProfile) => (
+        currentProfile
+          ? {
+              ...currentProfile,
+              reportedPostIds: Array.isArray(data.reportedPostIds) ? data.reportedPostIds : currentProfile.reportedPostIds,
+            }
+          : currentProfile
+      ));
+
+      alert(data?.alreadyReported ? 'You already reported this post.' : 'Post reported. Our team will review it.');
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-semibold text-slate-500">Connecting to server...</div>;
 
   if (activeView === 'auth') {
@@ -988,8 +1262,14 @@ function App() {
         .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
     : [];
   const accountUsername = userProfile?.username || '';
+  const followingUsernames = Array.isArray(userProfile?.following)
+    ? [...new Set(userProfile.following.filter(Boolean))]
+    : [];
   const savedPostIds = Array.isArray(userProfile?.bookmarkedPostIds)
     ? [...new Set(userProfile.bookmarkedPostIds.filter(Boolean))]
+    : [];
+  const reportedPostIds = Array.isArray(userProfile?.reportedPostIds)
+    ? [...new Set(userProfile.reportedPostIds.filter(Boolean))]
     : [];
   const bookmarkedPosts = apiPosts.filter((post) => savedPostIds.includes(post.id));
   const bookmarkedDepartmentsCount = new Set(bookmarkedPosts.map((post) => post.department).filter(Boolean)).size;
@@ -1016,7 +1296,7 @@ function App() {
   const profileFollowingCount = viewedProfileMeta?.followingCount ?? profileFollowingBase;
   const isFollowingViewedProfile = !!accountUsername
     && accountUsername !== resolvedProfileUsername
-    && !!viewedProfileMeta?.isFollowing;
+    && followingUsernames.includes(resolvedProfileUsername);
   const profileDisplay = isOwnProfile
     ? {
         username: userProfile.username,
@@ -1038,7 +1318,10 @@ function App() {
   const profileBio = isOwnProfile
     ? `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`
     : `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`;
-  const profileJoinLabel = getProfileJoinLabel(resolvedProfileUsername);
+  const profileJoinLabel = getProfileJoinLabel(
+    isOwnProfile ? userProfile?.memberSince : viewedProfileMeta?.memberSince,
+    resolvedProfileUsername,
+  );
   const profileImpactScore = Math.max(
     61,
     Math.min(98, 62 + (profilePosts.length * 4) + (profileSolutions.length * 3) + Math.round(profileCommentsReceived / 12)),
@@ -1174,7 +1457,6 @@ function App() {
       </>
     );
   };
-
   const renderDiscussionEntry = (postId, entry, depth = 0) => {
     const solutionIndex = entry.sourceIndex ?? 0;
     const replyPath = Array.isArray(entry.path) ? entry.path : [];
@@ -1189,7 +1471,6 @@ function App() {
     const agreeCount = Array.isArray(entry.upvoters) ? entry.upvoters.length : 0;
     const disagreeCount = Array.isArray(entry.downvoters) ? entry.downvoters.length : 0;
     const indentPx = depth > 0 ? Math.min(depth, 6) * 18 : 0;
-
     return (
       <div
         key={`${solutionStateKey}-${entry.key ?? formatTimestamp(entry.createdAt)}`}
@@ -1598,9 +1879,19 @@ function App() {
                 {filteredHomePosts.map((post) => {
                   const isSupportedByUser = !!userProfile?.username && post.supporters?.includes(userProfile.username);
                   const isSavedByUser = savedPostIds.includes(post.id);
+                  const hasReportedPost = reportedPostIds.includes(post.id);
                   const isOwnPost = !!userProfile?.username && post.author === userProfile.username;
+                  const isFollowingAuthor = !!accountUsername && post.author !== accountUsername && followingUsernames.includes(post.author);
+                  const isSubmittingAuthorFollow = !!isFollowSubmittingByUsername[post.author];
                   const isSubmittingAction = !!isActionSubmittingByPost[post.id];
                   const isDescriptionExpanded = !!expandedDescriptionByPost[post.id];
+                  const isPostMenuOpen = activePostMenuId === post.id;
+                  const isAuthorHoverOpen = activeAuthorHoverCard === post.author;
+                  const authorPreviewState = authorPreviewByUsername[post.author];
+                  const authorPreviewData = authorPreviewState?.data ?? null;
+                  const authorAvatarUrl = getAuthorAvatarUrl(post.author);
+                  const authorPreviewMemberLabel = formatMemberSinceLabel(authorPreviewData?.memberSince, post.author);
+                  const authorPreviewDurationLabel = formatMembershipDuration(authorPreviewData?.memberSince);
                   const { previewText, isTruncated } = getDescriptionPreview(post.description, isDescriptionExpanded);
 
                   return (
@@ -1617,31 +1908,206 @@ function App() {
                       className="soft-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
                     >
                       <div className="space-y-4">
-                      <div className="flex w-full items-center gap-3 rounded-xl px-1 text-left">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openAuthorProfile(post.author);
-                          }}
-                          className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
-                        >
-                          {post.author.slice(0, 2)}
-                        </button>
-                        <div>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openAuthorProfile(post.author);
-                            }}
-                            className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                        <div className="flex w-full items-start justify-between gap-3 rounded-xl px-1 text-left">
+                          <div
+                            className="relative flex min-w-0 items-center gap-3"
+                            onMouseEnter={() => showAuthorHoverCard(post.author)}
+                            onMouseLeave={hideAuthorHoverCard}
                           >
-                            {post.author}
-                          </button>
-                          <p className="text-xs text-slate-500">{post.time}</p>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openAuthorProfile(post.author);
+                              }}
+                              onFocus={() => showAuthorHoverCard(post.author)}
+                              onBlur={hideAuthorHoverCard}
+                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
+                            >
+                              {authorAvatarUrl ? (
+                                <img src={authorAvatarUrl} alt={post.author} className="h-full w-full rounded-full object-cover" />
+                              ) : (
+                                post.author.slice(0, 2)
+                              )}
+                            </button>
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAuthorProfile(post.author);
+                                }}
+                                onFocus={() => showAuthorHoverCard(post.author)}
+                                onBlur={hideAuthorHoverCard}
+                                className="truncate text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                              >
+                                {post.author}
+                              </button>
+                              <p className="text-xs text-slate-500">{post.time}</p>
+                            </div>
+
+                            {isAuthorHoverOpen && (
+                              <div
+                                className="absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <div className="flex items-start gap-3">
+                                  {authorPreviewData?.profilePhotoUrl ? (
+                                    <img
+                                      src={authorPreviewData.profilePhotoUrl}
+                                      alt={post.author}
+                                      className="h-14 w-14 rounded-2xl object-cover"
+                                    />
+                                  ) : (
+                                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-sm font-bold uppercase text-white">
+                                      {getInitials(post.author)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openAuthorProfile(post.author);
+                                      }}
+                                      className="truncate text-left text-base font-bold text-slate-950 transition hover:text-blue-700"
+                                    >
+                                      {post.author}
+                                    </button>
+                                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                      {authorPreviewData?.role || 'CitizenReporter'}
+                                    </p>
+                                    <p className="mt-2 text-sm text-slate-600">
+                                      {authorPreviewState?.status === 'loading'
+                                        ? 'Loading profile details...'
+                                        : `${authorPreviewDurationLabel} on Public Policy Hub`}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 grid grid-cols-3 gap-2">
+                                  <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Followers</p>
+                                    <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(authorPreviewData?.followerCount ?? 0)}</p>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Following</p>
+                                    <p className="mt-1 text-lg font-bold text-slate-950">{formatCount(authorPreviewData?.followingCount ?? 0)}</p>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 px-3 py-2.5">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Member</p>
+                                    <p className="mt-1 text-lg font-bold text-slate-950">{authorPreviewDurationLabel}</p>
+                                  </div>
+                                </div>
+
+                                <p className="mt-3 text-xs text-slate-500">
+                                  Member since {authorPreviewMemberLabel}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-shrink-0 items-start gap-2">
+                            {!isOwnPost && (
+                              <button
+                                type="button"
+                                disabled={isSubmittingAuthorFollow}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleToggleFollow(post.author);
+                                }}
+                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                  isFollowingAuthor
+                                    ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                    : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                }`}
+                              >
+                                {isFollowingAuthor ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+                                {isSubmittingAuthorFollow ? 'Updating...' : isFollowingAuthor ? 'Following' : 'Follow'}
+                              </button>
+                            )}
+
+                            <div
+                              className="relative flex-shrink-0"
+                              ref={(element) => setPostMenuRef(post.id, element)}
+                            >
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setActivePostMenuId((current) => (current === post.id ? null : post.id));
+                                }}
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                                aria-label="Open post menu"
+                                aria-expanded={isPostMenuOpen}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </button>
+
+                              {isPostMenuOpen && (
+                                <div
+                                  className="absolute right-0 top-12 z-40 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.5)]"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={isSubmittingAction}
+                                    onClick={() => {
+                                      setActivePostMenuId(null);
+                                      handleToggleSavedPost(post.id);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Bookmark className={`h-4 w-4 ${isSavedByUser ? 'fill-current text-amber-600' : ''}`} />
+                                    {isSavedByUser ? 'Remove bookmark' : 'Bookmark post'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSubmittingAction}
+                                    onClick={() => {
+                                      setActivePostMenuId(null);
+                                      handleShare(post.id);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Share2 className="h-4 w-4" />
+                                    Share post
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSubmittingAction || isOwnPost || hasReportedPost}
+                                    onClick={() => {
+                                      setActivePostMenuId(null);
+                                      handleReportPost(post.id);
+                                    }}
+                                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      isOwnPost || hasReportedPost
+                                        ? 'text-slate-400'
+                                        : 'text-rose-600 hover:bg-rose-50'
+                                    }`}
+                                  >
+                                    <Flag className="h-4 w-4" />
+                                    {isOwnPost ? 'Cannot report your post' : hasReportedPost ? 'Already reported' : 'Report post'}
+                                  </button>
+                                  {isOwnPost && (
+                                    <button
+                                      type="button"
+                                      disabled={isSubmittingAction}
+                                      onClick={() => {
+                                        setActivePostMenuId(null);
+                                        handleDeletePost(post.id);
+                                      }}
+                                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Delete post
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
                       <div>
                         <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
                         <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
@@ -1666,7 +2132,7 @@ function App() {
                           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{post.department}</span>
                           {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                         </div>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                           <button
                             type="button"
                             disabled={isSubmittingAction}
@@ -1707,37 +2173,7 @@ function App() {
                             <Share2 className="h-4 w-4" />
                             Share {formatCount(post.shares)}
                           </button>
-                          <button
-                            type="button"
-                            disabled={isSubmittingAction}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleToggleSavedPost(post.id);
-                            }}
-                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                              isSavedByUser
-                                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                            }`}
-                          >
-                            <Bookmark className={`h-4 w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
-                            {isSavedByUser ? 'Saved' : 'Save'}
-                          </button>
                         </div>
-                        {isOwnPost && (
-                          <button
-                            type="button"
-                            disabled={isSubmittingAction}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleDeletePost(post.id);
-                            }}
-                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Delete Post
-                          </button>
-                        )}
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                           <p className="text-xs font-semibold text-slate-500">Top Fix</p>
                           <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-900">{post.fixes?.[0] || 'Awaiting suggested fixes'}</p>
@@ -1851,9 +2287,12 @@ function App() {
                 const isSupportedByUser = !!userProfile?.username && activePost.supporters?.includes(userProfile.username);
                 const isSavedByUser = savedPostIds.includes(activePost.id);
                 const isOwnActivePost = !!userProfile?.username && activePost.author === userProfile.username;
+                const isFollowingActiveAuthor = !!accountUsername && activePost.author !== accountUsername && followingUsernames.includes(activePost.author);
+                const isSubmittingActiveAuthorFollow = !!isFollowSubmittingByUsername[activePost.author];
                 const solutionInput = solutionInputsByPost[activePost.id] ?? '';
                 const isSubmittingAction = !!isActionSubmittingByPost[activePost.id];
                 const isDescriptionExpanded = !!expandedDescriptionByPost[activePost.id];
+                const activeAuthorAvatarUrl = getAuthorAvatarUrl(activePost.author);
                 const {
                   previewText: activeDescriptionPreview,
                   isTruncated: isActiveDescriptionTruncated
@@ -1875,30 +2314,61 @@ function App() {
                           Back to feed
                         </button>
 
-                        <div className="flex w-full items-center gap-3 rounded-xl px-1 text-left">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openAuthorProfile(activePost.author);
-                            }}
-                            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
-                          >
-                            {activePost.author.slice(0, 2)}
-                          </button>
-                          <div>
+                        <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl px-1 text-left">
+                          <div className="flex items-center gap-3">
+                            {activeAuthorAvatarUrl ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAuthorProfile(activePost.author);
+                                }}
+                                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
+                              >
+                                <img src={activeAuthorAvatarUrl} alt={activePost.author} className="h-full w-full object-cover" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAuthorProfile(activePost.author);
+                                }}
+                                className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-xs font-bold uppercase text-white transition hover:bg-slate-700"
+                              >
+                                {activePost.author.slice(0, 2)}
+                              </button>
+                            )}
+                            <div>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAuthorProfile(activePost.author);
+                                }}
+                                className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                              >
+                                {activePost.author}
+                              </button>
+                              <p className="text-xs text-slate-500">{activePost.time}</p>
+                            </div>
+                          </div>
+
+                          {!isOwnActivePost && (
                             <button
                               type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                openAuthorProfile(activePost.author);
-                              }}
-                              className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                              disabled={isSubmittingActiveAuthorFollow}
+                              onClick={() => handleToggleFollow(activePost.author)}
+                              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                isFollowingActiveAuthor
+                                  ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                  : 'bg-slate-900 text-white hover:bg-slate-800'
+                              }`}
                             >
-                              {activePost.author}
+                              {isFollowingActiveAuthor ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                              {isSubmittingActiveAuthorFollow ? 'Updating...' : isFollowingActiveAuthor ? 'Following' : 'Follow'}
                             </button>
-                            <p className="text-xs text-slate-500">{activePost.time}</p>
-                          </div>
+                          )}
                         </div>
 
                         <div>
@@ -3485,19 +3955,48 @@ function buildProfileActivityFeed(profilePosts, profileSolutions) {
   return [...reportFeed, ...solutionFeed].sort((a, b) => b.sortValue - a.sortValue);
 }
 
-function getProfileJoinLabel(username) {
-  const normalized = `${username ?? ''}`.trim().toLowerCase();
+function formatMemberSinceLabel(value, fallbackUsername = '') {
+  const parsedDate = value ? new Date(value) : null;
+  if (parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())) {
+    return parsedDate.toLocaleString(undefined, {
+      month: 'long',
+      year: 'numeric',
+    });
+  }
+
+  const normalized = `${fallbackUsername ?? ''}`.trim().toLowerCase();
   if (!normalized) return 'recently';
 
   const total = [...normalized].reduce((sum, character) => sum + character.charCodeAt(0), 0);
   const year = 2022 + (total % 4);
   const monthIndex = total % 12;
-  const labelDate = new Date(Date.UTC(year, monthIndex, 1));
+  const fallbackDate = new Date(Date.UTC(year, monthIndex, 1));
 
-  return labelDate.toLocaleString(undefined, {
+  return fallbackDate.toLocaleString(undefined, {
     month: 'long',
     year: 'numeric',
   });
+}
+
+function formatMembershipDuration(value) {
+  const parsedDate = value ? new Date(value) : null;
+  if (!(parsedDate instanceof Date) || Number.isNaN(parsedDate.getTime())) return 'New';
+
+  const now = new Date();
+  let monthDiff = ((now.getFullYear() - parsedDate.getFullYear()) * 12) + (now.getMonth() - parsedDate.getMonth());
+  if (now.getDate() < parsedDate.getDate()) monthDiff -= 1;
+
+  if (monthDiff <= 0) return 'New';
+  if (monthDiff < 12) return `${monthDiff} mo`;
+
+  const years = Math.floor(monthDiff / 12);
+  const remainingMonths = monthDiff % 12;
+  if (remainingMonths === 0) return `${years} yr`;
+  return `${years}.${remainingMonths} yr`;
+}
+
+function getProfileJoinLabel(usernameOrDate, fallbackUsername = '') {
+  return formatMemberSinceLabel(usernameOrDate, fallbackUsername);
 }
 
 export default App;

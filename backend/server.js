@@ -511,14 +511,37 @@ const getUniqueStrings = (values) => (
     : []
 );
 
-const buildProfilePayload = async (user, viewerUsername = '') => {
+const getUserJoinedAt = (user) => {
+  if (user?.createdAt instanceof Date && !Number.isNaN(user.createdAt.getTime())) {
+    return user.createdAt;
+  }
+
+  if (user?.createdAt) {
+    const parsedCreatedAt = new Date(user.createdAt);
+    if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
+  }
+
+  if (user?._id && typeof user._id.getTimestamp === 'function') {
+    const objectIdTimestamp = user._id.getTimestamp();
+    if (objectIdTimestamp instanceof Date && !Number.isNaN(objectIdTimestamp.getTime())) {
+      return objectIdTimestamp;
+    }
+  }
+
+  return null;
+};
+
+const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
+  const includePrivateFields = !!options?.includePrivateFields;
   const postsCount = await Post.countDocuments({ author: user.username });
   const followerCount = await User.countDocuments({ following: user.username });
   const following = getUniqueStrings(user.following);
   const bookmarkedPostIds = getUniqueStrings(user.bookmarkedPostIds);
+  const reportedPostIds = getUniqueStrings(user.reportedPostIds);
   const solutionsProposed = 8;
+  const memberSince = getUserJoinedAt(user);
 
-  return {
+  const payload = {
     username: user.username,
     role: user.role,
     reputation: 540 + postsCount * 10,
@@ -532,7 +555,14 @@ const buildProfilePayload = async (user, viewerUsername = '') => {
     followerCount,
     followingCount: following.length,
     isFollowing: !!viewerUsername && following.includes(viewerUsername),
+    memberSince: memberSince ? memberSince.toISOString() : null,
   };
+
+  if (includePrivateFields) {
+    payload.reportedPostIds = reportedPostIds;
+  }
+
+  return payload;
 };
 
 const buildFallbackSolutionSummary = (solutionEntries) => {
@@ -779,7 +809,7 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
-    res.json(await buildProfilePayload(user, req.user.username));
+    res.json(await buildProfilePayload(user, req.user.username, { includePrivateFields: true }));
   } catch {
     res.status(500).json({ error: 'Failed to fetch profile' });
   }
@@ -1045,6 +1075,37 @@ app.post('/api/posts/:postId/bookmark', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error updating bookmarks:', error);
     res.status(500).json({ error: 'Failed to update bookmarks' });
+  }
+});
+
+app.post('/api/posts/:postId/report', authenticateToken, async (req, res) => {
+  try {
+    const post = await Post.findOne({ id: req.params.postId }).select('id author').lean();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    if (post.author === req.user.username) {
+      return res.status(400).json({ error: 'You cannot report your own post' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const reportedPostIds = getUniqueStrings(user.reportedPostIds);
+    const alreadyReported = reportedPostIds.includes(post.id);
+
+    if (!alreadyReported) {
+      user.reportedPostIds = [post.id, ...reportedPostIds];
+      await user.save();
+    }
+
+    res.json({
+      postId: post.id,
+      reported: true,
+      alreadyReported,
+      reportedPostIds: alreadyReported ? reportedPostIds : getUniqueStrings(user.reportedPostIds),
+    });
+  } catch (error) {
+    console.error('Error reporting post:', error);
+    res.status(500).json({ error: 'Failed to report post' });
   }
 });
 

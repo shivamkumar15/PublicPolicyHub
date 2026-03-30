@@ -8,7 +8,8 @@ const userSchema = new mongoose.Schema({
   password_hash: { type: String },
   profilePhotoUrl: { type: String, default: '' },
   bookmarkedPostIds: [{ type: String }],
+  reportedPostIds: [{ type: String }],
   following: [{ type: String }],
-});
+}, { timestamps: true });
 
 export default mongoose.model('User', userSchema);
