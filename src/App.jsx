@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
@@ -41,12 +41,13 @@ import Zap from 'lucide-react/dist/esm/icons/zap.js';
 import AuthPage from './AuthPage.jsx';
 import {
   auth,
-  createUserWithEmailAndPassword,
+  getRedirectResult,
   provider,
-  signInWithEmailAndPassword,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
   signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
-  updateProfile,
 } from './firebase.js';
 
 const Logo = new URL('../Logo.svg', import.meta.url).href;
@@ -126,6 +127,8 @@ const defaultNotifications = [
 ];
 
 const THEME_STORAGE_KEY = 'pph-theme';
+const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
+const GOOGLE_AUTH_MODE_STORAGE_KEY = 'pph-google-auth-mode';
 
 function getInitialTheme() {
   if (typeof window === 'undefined') return 'light';
@@ -145,6 +148,11 @@ function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isGenderPromptOpen, setIsGenderPromptOpen] = useState(false);
+  const [isGenderPromptDismissed, setIsGenderPromptDismissed] = useState(false);
+  const [genderPromptValue, setGenderPromptValue] = useState('');
+  const [genderPromptError, setGenderPromptError] = useState('');
+  const [isGenderPromptSubmitting, setIsGenderPromptSubmitting] = useState(false);
   const [mediaSlideIndexByPost, setMediaSlideIndexByPost] = useState({});
   const [solutionInputsByPost, setSolutionInputsByPost] = useState({});
   const [solutionReplyInputsByKey, setSolutionReplyInputsByKey] = useState({});
@@ -164,6 +172,14 @@ function App() {
   const [aiSummaryByPost, setAiSummaryByPost] = useState({});
   const [aiSummaryStatusByPost, setAiSummaryStatusByPost] = useState({});
   const [profileTab, setProfileTab] = useState('reports');
+  const [profileConnectionsState, setProfileConnectionsState] = useState({
+    open: false,
+    type: 'followers',
+    username: '',
+    status: 'idle',
+    items: [],
+    error: '',
+  });
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
   const [profileShareFeedback, setProfileShareFeedback] = useState('');
   const [theme, setTheme] = useState(getInitialTheme);
@@ -174,6 +190,8 @@ function App() {
   const mediaScrollerRefs = useRef({});
   const postMenuRefs = useRef({});
   const authorPreviewStatusRef = useRef({});
+  const phoneRecaptchaVerifierRef = useRef(null);
+  const phoneConfirmationResultRef = useRef(null);
   const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
@@ -439,6 +457,70 @@ function App() {
   }, [userProfile?.profilePhotoUrl]);
 
   useEffect(() => {
+    let isCancelled = false;
+
+    const finalizeRedirectLogin = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (isCancelled || !result?.user) return;
+
+        setIsAuthSubmitting(true);
+        setAuthError('');
+
+        const redirectMode = getStoredGoogleAuthMode();
+        clearStoredGoogleAuthMode();
+
+        await finalizeFirebaseAuth({
+          firebaseUser: result.user,
+          mode: redirectMode,
+          preferredDisplayName: result.user.displayName,
+          signupProfile: null,
+        });
+      } catch (error) {
+        if (isCancelled) return;
+        clearStoredGoogleAuthMode();
+        firebaseSignOut(auth).catch(() => {});
+        setAuthError(getGoogleAuthErrorMessage(error));
+        setActiveView('auth');
+      } finally {
+        if (!isCancelled) {
+          setIsAuthSubmitting(false);
+        }
+      }
+    };
+
+    finalizeRedirectLogin();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userProfile?.username) {
+      setIsGenderPromptOpen(false);
+      setIsGenderPromptDismissed(false);
+      setGenderPromptValue('');
+      setGenderPromptError('');
+      setIsGenderPromptSubmitting(false);
+      return;
+    }
+
+    if (userProfile.gender) {
+      setIsGenderPromptOpen(false);
+      setIsGenderPromptDismissed(false);
+      setGenderPromptValue(userProfile.gender);
+      setGenderPromptError('');
+      setIsGenderPromptSubmitting(false);
+      return;
+    }
+
+    if (!isGenderPromptDismissed) {
+      setIsGenderPromptOpen(true);
+    }
+  }, [isGenderPromptDismissed, userProfile?.gender, userProfile?.username]);
+
+  useEffect(() => {
     const closeMenuOnOutsideClick = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setIsProfileMenuOpen(false);
@@ -464,6 +546,17 @@ function App() {
   useEffect(() => {
     setProfileTab('reports');
     setProfileShareFeedback('');
+    setProfileConnectionsState((current) => (
+      current.open
+        ? {
+            ...current,
+            open: false,
+            status: 'idle',
+            items: [],
+            error: '',
+          }
+        : current
+    ));
   }, [profileViewUsername, userProfile?.username]);
 
   useEffect(() => {
@@ -626,35 +719,141 @@ function App() {
     setSelectedDepartmentFilter('');
   };
 
-  const finalizeFirebaseAuth = async (firebaseUser, preferredDisplayName = '') => {
-    const displayName = preferredDisplayName || firebaseUser.displayName || firebaseUser.email.split('@')[0];
+  const ensurePhoneRecaptcha = async () => {
+    if (typeof window === 'undefined') return null;
+    if (phoneRecaptchaVerifierRef.current) return phoneRecaptchaVerifierRef.current;
 
-    const res = await fetch(`${API_BASE_URL}/api/auth/firebaseLogin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        displayName
-      })
+    const verifier = new RecaptchaVerifier(auth, 'firebase-phone-recaptcha', {
+      size: 'invisible',
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Authentication failed on server');
 
-    localStorage.setItem('token', data.token);
-    setToken(data.token);
-    await fetchProfile(data.token);
+    await verifier.render();
+    phoneRecaptchaVerifierRef.current = verifier;
+    return verifier;
+  };
+
+  const resetPhoneAuthFlow = async () => {
+    phoneConfirmationResultRef.current = null;
+    if (phoneRecaptchaVerifierRef.current) {
+      phoneRecaptchaVerifierRef.current.clear();
+      phoneRecaptchaVerifierRef.current = null;
+    }
+  };
+
+  const checkUsernameAvailability = async (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername) throw new Error('Username is required.');
+
+    const res = await fetch(`${API_BASE_URL}/api/auth/username-availability?username=${encodeURIComponent(normalizedUsername)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.reason || 'Failed to check username availability');
+    if (!data?.available) throw new Error(data?.reason || 'That username is already taken.');
+    return data.normalizedUsername || normalizedUsername;
+  };
+
+  const completeAuthenticatedSession = async (nextToken) => {
+    localStorage.setItem('token', nextToken);
+    setToken(nextToken);
+    setIsGenderPromptDismissed(false);
+    setGenderPromptValue('');
+    setGenderPromptError('');
+    await fetchProfile(nextToken);
+    await resetPhoneAuthFlow();
     setProfileViewUsername(null);
     setActiveView('home');
   };
 
-  const handleGoogleAuth = async () => {
+  const finalizeFirebaseAuth = async ({
+    firebaseUser,
+    mode,
+    preferredDisplayName = '',
+    signupProfile = null,
+  }) => {
+    const fallbackIdentity = firebaseUser.email || firebaseUser.phoneNumber || 'citizen';
+    const displayName = preferredDisplayName || firebaseUser.displayName || fallbackIdentity.split('@')[0];
+
+    const createPayload = (resolvedMode) => ({
+      mode: resolvedMode,
+      uid: firebaseUser.uid,
+      ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
+      ...(firebaseUser.phoneNumber ? { phoneNumber: firebaseUser.phoneNumber } : {}),
+      displayName,
+      ...(signupProfile
+        ? {
+            username: signupProfile.username,
+            phoneNumber: signupProfile.phoneNumber,
+          }
+        : {}),
+    });
+
+    let res = await fetch(`${API_BASE_URL}/api/auth/firebaseLogin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(createPayload(mode)),
+    });
+    let data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Authentication failed on server');
+
+    await completeAuthenticatedSession(data.token);
+  };
+
+  const handleGoogleAuth = async ({ mode }) => {
     setAuthError('');
     setIsAuthSubmitting(true);
 
     try {
+      if (shouldUseGoogleRedirect()) {
+        storeGoogleAuthMode(mode);
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
       const result = await signInWithPopup(auth, provider);
-      await finalizeFirebaseAuth(result.user);
+      await finalizeFirebaseAuth({
+        firebaseUser: result.user,
+        mode,
+        preferredDisplayName: result.user.displayName,
+        signupProfile: null,
+      });
+    } catch (err) {
+      clearStoredGoogleAuthMode();
+      firebaseSignOut(auth).catch(() => {});
+      setAuthError(getGoogleAuthErrorMessage(err));
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleEmailAuth = async ({ mode, username, displayName, email, password }) => {
+    setAuthError('');
+    setIsAuthSubmitting(true);
+
+    try {
+      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
+      const payload = mode === 'signup'
+        ? {
+            username,
+            displayName,
+            email,
+            password,
+          }
+        : {
+            email,
+            password,
+          };
+
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Unable to continue with email.');
+      }
+
+      await completeAuthenticatedSession(data.token);
     } catch (err) {
       setAuthError(err.message);
     } finally {
@@ -662,22 +861,52 @@ function App() {
     }
   };
 
-  const handleEmailAuth = async ({ mode, displayName, email, password }) => {
+  const handlePhoneAuth = async ({ action, mode, username, displayName, phoneNumber, otpCode }) => {
     setAuthError('');
     setIsAuthSubmitting(true);
 
     try {
-      if (mode === 'signup') {
-        const nextDisplayName = displayName || email.split('@')[0];
-        const result = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(result.user, { displayName: nextDisplayName });
-        await finalizeFirebaseAuth(result.user, nextDisplayName);
-      } else {
-        const result = await signInWithEmailAndPassword(auth, email, password);
-        await finalizeFirebaseAuth(result.user);
+      if (action === 'send-code') {
+        if (mode === 'signup') {
+          await checkUsernameAvailability(username);
+        }
+
+        await resetPhoneAuthFlow();
+        const verifier = await ensurePhoneRecaptcha();
+        phoneConfirmationResultRef.current = await signInWithPhoneNumber(auth, phoneNumber, verifier);
+        return { otpSent: true };
       }
+
+      if (!phoneConfirmationResultRef.current) {
+        throw new Error('Request a verification code first.');
+      }
+
+      const result = await phoneConfirmationResultRef.current.confirm(otpCode);
+
+      await finalizeFirebaseAuth({
+        firebaseUser: result.user,
+        mode,
+        preferredDisplayName: displayName,
+        signupProfile: mode === 'signup'
+          ? {
+              username: await checkUsernameAvailability(username),
+              phoneNumber,
+            }
+          : null,
+      });
+
+      await resetPhoneAuthFlow();
+      return { otpSent: false };
     } catch (err) {
+      if (action === 'send-code' && phoneRecaptchaVerifierRef.current) {
+        phoneRecaptchaVerifierRef.current.clear();
+        phoneRecaptchaVerifierRef.current = null;
+      }
+      if (action === 'verify-code' && mode === 'signup') {
+        firebaseSignOut(auth).catch(() => {});
+      }
       setAuthError(err.message);
+      throw err;
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -685,6 +914,7 @@ function App() {
 
   const handleLogout = () => {
     firebaseSignOut(auth).catch(() => {});
+    resetPhoneAuthFlow().catch(() => {});
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
@@ -693,7 +923,56 @@ function App() {
     setIsProfileMenuOpen(false);
     setAuthError('');
     setSelectedDepartmentFilter('');
+    setIsGenderPromptOpen(false);
+    setIsGenderPromptDismissed(false);
+    setGenderPromptValue('');
+    setGenderPromptError('');
+    setIsGenderPromptSubmitting(false);
     if (activeView === 'profile' || activeView === 'create' || activeView === 'bookmarks') setActiveView('home');
+  };
+
+  const handleGenderPromptClose = () => {
+    if (isGenderPromptSubmitting) return;
+    setIsGenderPromptOpen(false);
+    setIsGenderPromptDismissed(true);
+    setGenderPromptError('');
+  };
+
+  const handleGenderPromptSubmit = async (event) => {
+    event.preventDefault();
+    setGenderPromptError('');
+
+    if (!genderPromptValue) {
+      setGenderPromptError('Choose a gender option to continue.');
+      return;
+    }
+
+    try {
+      setIsGenderPromptSubmitting(true);
+      const res = await fetch(`${API_BASE_URL}/api/users/profile/gender`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ gender: genderPromptValue }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to update profile gender');
+
+      setUserProfile((currentProfile) => (
+        currentProfile
+          ? { ...currentProfile, gender: data.gender || genderPromptValue }
+          : currentProfile
+      ));
+      setIsGenderPromptOpen(false);
+      setIsGenderPromptDismissed(false);
+      setGenderPromptError('');
+    } catch (error) {
+      setGenderPromptError(error.message);
+    } finally {
+      setIsGenderPromptSubmitting(false);
+    }
   };
 
   const handleProfilePhotoUpload = async (event) => {
@@ -1021,6 +1300,36 @@ function App() {
 
       return hasChanges ? next : current;
     });
+    setProfileConnectionsState((current) => {
+      if (current.status !== 'success') return current;
+
+      let hasChanges = false;
+      const nextItems = current.items
+        .map((item) => (
+          item.username === normalizedTargetUsername
+            ? (() => {
+                if (item.isFollowing === data.isFollowing) return item;
+                hasChanges = true;
+                return { ...item, isFollowing: data.isFollowing };
+              })()
+            : item
+        ))
+        .filter((item) => {
+          if (
+            current.type === 'following'
+            && current.username === userProfile?.username
+            && item.username === normalizedTargetUsername
+            && !data.isFollowing
+          ) {
+            hasChanges = true;
+            return false;
+          }
+
+          return true;
+        });
+
+      return hasChanges ? { ...current, items: nextItems } : current;
+    });
   };
 
   const handleToggleFollow = async (username) => {
@@ -1057,6 +1366,58 @@ function App() {
 
   const handleToggleProfileFollow = () => {
     handleToggleFollow(resolvedProfileUsername);
+  };
+
+  const closeProfileConnections = () => {
+    setProfileConnectionsState((current) => ({ ...current, open: false }));
+  };
+
+  const handleOpenProfileConnections = async (type) => {
+    const normalizedType = type === 'following' ? 'following' : 'followers';
+    if (!resolvedProfileUsername) return;
+
+    setProfileConnectionsState({
+      open: true,
+      type: normalizedType,
+      username: resolvedProfileUsername,
+      status: 'loading',
+      items: [],
+      error: '',
+    });
+
+    try {
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(
+        `${API_BASE_URL}/api/users/${encodeURIComponent(resolvedProfileUsername)}/connections?type=${normalizedType}`,
+        { headers },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to fetch profile connections');
+
+      const connectionItems = Array.isArray(data.connections) ? data.connections : [];
+      setProfileConnectionsState({
+        open: true,
+        type: data.type === 'following' ? 'following' : 'followers',
+        username: data.username || resolvedProfileUsername,
+        status: 'success',
+        items: connectionItems,
+        error: '',
+      });
+    } catch (error) {
+      setProfileConnectionsState({
+        open: true,
+        type: normalizedType,
+        username: resolvedProfileUsername,
+        status: 'error',
+        items: [],
+        error: error.message || 'Failed to fetch profile connections',
+      });
+    }
+  };
+
+  const handleOpenConnectionProfile = (username) => {
+    closeProfileConnections();
+    openAuthorProfile(username);
   };
 
   const handleProfileShare = async () => {
@@ -1223,9 +1584,9 @@ function App() {
         error={authError}
         isSubmitting={isAuthSubmitting}
         logo={Logo}
-        onBack={() => setActiveView('home')}
         onEmailAuth={handleEmailAuth}
         onGoogleAuth={handleGoogleAuth}
+        onPhoneAuth={handlePhoneAuth}
       />
     );
   }
@@ -1363,7 +1724,11 @@ function App() {
     const canGoNext = activeSlideIndex < mediaList.length - 1;
 
     return (
-      <>
+      <div
+        className="space-y-2"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <div className="video-shell order-1 relative overflow-hidden">
           {mediaList.length > 0 ? (
             <div
@@ -1426,35 +1791,34 @@ function App() {
               </button>
             </>
           )}
+          {mediaList.length > 1 && (
+            <div className="absolute bottom-3 left-0 right-0 z-20 flex items-center justify-center gap-1.5">
+              {mediaList.map((_, dotIndex) => (
+                <button
+                  key={`${post.id}-dot-${dotIndex}`}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const container = mediaScrollerRefs.current[post.id];
+                    if (!container) return;
+                    container.scrollTo({
+                      left: dotIndex * container.clientWidth,
+                      behavior: 'smooth',
+                    });
+                    setMediaSlideIndexByPost((current) => (
+                      current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
+                    ));
+                  }}
+                  className={`h-1.5 rounded-full transition-all ${
+                    activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'
+                  }`}
+                  aria-label={`Go to media ${dotIndex + 1}`}
+                />
+              ))}
+            </div>
+          )}
         </div>
-
-        {mediaList.length > 1 && (
-          <div className="flex items-center justify-center gap-2 pt-2">
-            {mediaList.map((_, dotIndex) => (
-              <button
-                key={`${post.id}-dot-${dotIndex}`}
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  const container = mediaScrollerRefs.current[post.id];
-                  if (!container) return;
-                  container.scrollTo({
-                    left: dotIndex * container.clientWidth,
-                    behavior: 'smooth',
-                  });
-                  setMediaSlideIndexByPost((current) => (
-                    current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
-                  ));
-                }}
-                className={`h-2.5 w-2.5 rounded-full transition ${
-                  activeSlideIndex === dotIndex ? 'bg-blue-600' : 'bg-slate-300'
-                }`}
-                aria-label={`Go to media ${dotIndex + 1}`}
-              />
-            ))}
-          </div>
-        )}
-      </>
+      </div>
     );
   };
   const renderDiscussionEntry = (postId, entry, depth = 0) => {
@@ -2109,8 +2473,8 @@ function App() {
                           </div>
                         </div>
                       <div>
-                        <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
-                        <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
+                        <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
+                        <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
                         {isTruncated && (
                           <button
                             type="button"
@@ -2127,12 +2491,12 @@ function App() {
                       {renderPostMedia(post)}
 
                       <div className="order-2 space-y-3">
-                        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700"><MapPin className="h-3.5 w-3.5" />{post.location}</span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{post.department}</span>
-                          {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-blue-700"><MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.location}</span>
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-slate-600"><Building2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.department}</span>
+                          {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-700"><BadgeCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" />Verified</span>}
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
                           <button
                             type="button"
                             disabled={isSubmittingAction}
@@ -2140,14 +2504,14 @@ function App() {
                               event.stopPropagation();
                               handleSupport(post.id);
                             }}
-                            className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
                               isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_10px_24px_-14px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
+                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
                                 : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                             }`}
                           >
-                            <TrendingUp className="h-4 w-4" />
-                            Support {formatCount(post.support)}
+                            <TrendingUp className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                            <span className="truncate">Support {formatCount(post.support)}</span>
                           </button>
                           <button
                             type="button"
@@ -2156,10 +2520,10 @@ function App() {
                               event.stopPropagation();
                               handleSolutionClick(post.id);
                             }}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <Lightbulb className="h-4 w-4" />
-                            Solution {formatCount(post.solutions)}
+                            <Lightbulb className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                            <span className="truncate">Solution {formatCount(post.solutions)}</span>
                           </button>
                           <button
                             type="button"
@@ -2168,20 +2532,16 @@ function App() {
                               event.stopPropagation();
                               handleShare(post.id);
                             }}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            <Share2 className="h-4 w-4" />
-                            Share {formatCount(post.shares)}
+                            <Share2 className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                            <span className="truncate">Share {formatCount(post.shares)}</span>
                           </button>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-xs font-semibold text-slate-500">Top Fix</p>
-                          <p className="mt-2 break-words text-sm font-semibold leading-6 text-slate-900">{post.fixes?.[0] || 'Awaiting suggested fixes'}</p>
-                        </div>
-                        </div>
                       </div>
-                    </article>
-                  );
+                    </div>
+                  </article>
+                );
                 })}
 
                 {filteredHomePosts.length === 0 && (
@@ -2396,50 +2756,50 @@ function App() {
                             {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
                             <button
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleSupport(activePost.id)}
-                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
                                 isSupportedByUser
-                                  ? 'border-blue-700 bg-blue-600 text-white shadow-[0_10px_24px_-14px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
+                                  ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
                                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                               }`}
                             >
-                              <TrendingUp className="h-4 w-4" />
-                              Support {formatCount(activePost.support)}
+                              <TrendingUp className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Support {formatCount(activePost.support)}</span>
                             </button>
                             <button
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleSolutionClick(activePost.id)}
-                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex items-center justify-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-amber-700 transition hover:bg-amber-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <Lightbulb className="h-4 w-4" />
-                              Solution {formatCount(activePost.solutions)}
+                              <Lightbulb className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Solution {formatCount(activePost.solutions)}</span>
                             </button>
                             <button
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleShare(activePost.id)}
-                              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              <Share2 className="h-4 w-4" />
-                              Share {formatCount(activePost.shares)}
+                              <Share2 className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Share {formatCount(activePost.shares)}</span>
                             </button>
                             <button
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleToggleSavedPost(activePost.id)}
-                              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
                                 isSavedByUser
                                   ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
                                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                               }`}
                             >
-                              <Bookmark className={`h-4 w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
-                              {isSavedByUser ? 'Saved' : 'Save'}
+                              <Bookmark className={`h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
+                              <span className="truncate">{isSavedByUser ? 'Saved' : 'Save'}</span>
                             </button>
                           </div>
 
@@ -2619,6 +2979,7 @@ function App() {
                 latestProfilePost={latestProfilePost}
                 profileTopLocations={profileTopLocations}
                 onSelectTab={setProfileTab}
+                onOpenConnections={handleOpenProfileConnections}
                 onEditPhoto={() => profilePhotoInputRef.current?.click()}
                 onCreateReport={() => handleNavClick('create')}
                 onToggleTheme={handleThemeToggle}
@@ -2633,8 +2994,20 @@ function App() {
                   setActivePostId(postId);
                   setActiveView('post');
                 }}
-                onOpenProfile={openAuthorProfile}
                 onLogout={handleLogout}
+              />
+              <ProfileConnectionsModal
+                isOpen={profileConnectionsState.open}
+                type={profileConnectionsState.type}
+                profileUsername={profileConnectionsState.username}
+                status={profileConnectionsState.status}
+                items={profileConnectionsState.items}
+                error={profileConnectionsState.error}
+                viewerUsername={accountUsername}
+                isFollowSubmittingByUsername={isFollowSubmittingByUsername}
+                onClose={closeProfileConnections}
+                onOpenProfile={handleOpenConnectionProfile}
+                onToggleFollow={handleToggleFollow}
               />
               {profileTab === '__legacy__' && (
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
@@ -2725,25 +3098,119 @@ function App() {
 
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 py-2 backdrop-blur-md lg:hidden">
-        <div className="mx-auto flex max-w-xl items-center justify-between gap-1">
+      <GenderPromptModal
+        error={genderPromptError}
+        isOpen={isGenderPromptOpen}
+        isSubmitting={isGenderPromptSubmitting}
+        onChange={setGenderPromptValue}
+        onClose={handleGenderPromptClose}
+        onSubmit={handleGenderPromptSubmit}
+        username={userProfile?.displayName || userProfile?.username || 'there'}
+        value={genderPromptValue}
+      />
+
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <div className="mx-auto flex max-w-xl items-center justify-around gap-1 px-2 py-1.5">
           {navItems.map((item) => {
             const Icon = item.Icon;
+            const isActive = activeView === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold ${
-                  activeView === item.id ? 'bg-blue-50 text-blue-700' : 'text-slate-500'
+                className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${
+                  isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={`h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
                 <span>{item.label}</span>
+                {isActive && <span className="mt-0.5 h-1 w-1 rounded-full bg-blue-600" />}
               </button>
             );
           })}
         </div>
       </nav>
+    </div>
+  );
+}
+
+function GenderPromptModal({
+  error,
+  isOpen,
+  isSubmitting,
+  onChange,
+  onClose,
+  onSubmit,
+  username,
+  value,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_32px_80px_-40px_rgba(15,23,42,0.55)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Profile setup</p>
+            <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">One quick detail</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {`You're in, ${username}. Choose your gender now that your content is visible.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSubmitting}
+            className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Close gender prompt"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="text-sm font-semibold text-slate-700">Gender</span>
+            <select
+              className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              disabled={isSubmitting}
+            >
+              <option value="">Select gender</option>
+              {GENDER_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Later
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? 'Saving...' : 'Save gender'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -2770,6 +3237,7 @@ function ProfileView({
   latestProfilePost,
   profileTopLocations,
   onSelectTab,
+  onOpenConnections,
   onEditPhoto,
   onCreateReport,
   onToggleTheme,
@@ -2912,8 +3380,20 @@ function ProfileView({
         </div>
 
         <div className="grid gap-3 px-5 py-5 sm:px-7 md:grid-cols-2 xl:grid-cols-5">
-          <ProfileStatPill icon={<Users className="h-4 w-4" />} label="Followers" value={formatCount(profileFollowersCount)} hint="Tracking this profile" />
-          <ProfileStatPill icon={<UserPlus className="h-4 w-4" />} label="Following" value={formatCount(profileFollowingCount)} hint="Accounts in orbit" />
+          <ProfileStatPill
+            icon={<Users className="h-4 w-4" />}
+            label="Followers"
+            value={formatCount(profileFollowersCount)}
+            hint="Tracking this profile"
+            onClick={() => onOpenConnections('followers')}
+          />
+          <ProfileStatPill
+            icon={<UserPlus className="h-4 w-4" />}
+            label="Following"
+            value={formatCount(profileFollowingCount)}
+            hint="Accounts in orbit"
+            onClick={() => onOpenConnections('following')}
+          />
           <ProfileStatPill icon={<Bookmark className="h-4 w-4" />} label="Reports" value={formatCount(profileDisplay.postsCount)} hint="Published threads" />
           <ProfileStatPill icon={<Lightbulb className="h-4 w-4" />} label="Solutions" value={formatCount(profileDisplay.solutionsProposed)} hint="Idea drops" />
           <ProfileStatPill icon={<Zap className="h-4 w-4" />} label="Reputation" value={formatCount(profileDisplay.reputation)} hint="Community-earned signal" />
@@ -3021,7 +3501,27 @@ function ProfileView({
   );
 }
 
-function ProfileStatPill({ icon, label, value, hint }) {
+function ProfileStatPill({ icon, label, value, hint, onClick }) {
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
+            {icon}
+          </span>
+        </div>
+        <p className="mt-3 font-display text-3xl font-bold text-slate-950">{value}</p>
+        <p className="mt-1 text-sm text-slate-500">{hint}</p>
+        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">View list</p>
+      </button>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
       <div className="flex items-center justify-between gap-3">
@@ -3032,6 +3532,131 @@ function ProfileStatPill({ icon, label, value, hint }) {
       </div>
       <p className="mt-3 font-display text-3xl font-bold text-slate-950">{value}</p>
       <p className="mt-1 text-sm text-slate-500">{hint}</p>
+    </div>
+  );
+}
+
+function ProfileConnectionsModal({
+  isOpen,
+  type,
+  profileUsername,
+  status,
+  items,
+  error,
+  viewerUsername,
+  isFollowSubmittingByUsername,
+  onClose,
+  onOpenProfile,
+  onToggleFollow,
+}) {
+  if (!isOpen) return null;
+
+  const title = type === 'following' ? 'Following' : 'Followers';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">{title}</p>
+            <h3 className="mt-1 font-display text-2xl font-bold text-slate-950">@{profileUsername}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Close connections list"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(82vh-92px)] overflow-y-auto px-5 py-5 sm:px-6">
+          {status === 'loading' && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-medium text-slate-500">
+              Loading {title.toLowerCase()}...
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-8 text-center text-sm font-medium text-red-700">
+              {error || `Unable to load ${title.toLowerCase()}.`}
+            </div>
+          )}
+
+          {status === 'success' && items.length === 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center">
+              <p className="text-sm font-semibold text-slate-900">No {title.toLowerCase()} yet</p>
+              <p className="mt-1 text-sm text-slate-500">
+                {type === 'following'
+                  ? `@${profileUsername} has not followed anyone yet.`
+                  : `No one is following @${profileUsername} yet.`}
+              </p>
+            </div>
+          )}
+
+          {status === 'success' && items.length > 0 && (
+            <div className="space-y-3">
+              {items.map((item) => {
+                const isOwnItem = !!viewerUsername && item.username === viewerUsername;
+                const isSubmitting = !!isFollowSubmittingByUsername[item.username];
+
+                return (
+                  <div
+                    key={`${type}-${item.username}`}
+                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfile(item.username)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      {item.profilePhotoUrl ? (
+                        <img
+                          src={item.profilePhotoUrl}
+                          alt={`${item.username} profile`}
+                          className="h-12 w-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-sm font-bold uppercase text-white">
+                          {getInitials(item.username)}
+                        </div>
+                      )}
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-950">{item.username}</p>
+                        <p className="truncate text-sm text-slate-500">{item.role}</p>
+                      </div>
+                    </button>
+
+                    {isOwnItem ? (
+                      <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                        You
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onToggleFollow(item.username)}
+                        disabled={isSubmitting}
+                        className={`inline-flex min-w-[108px] items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                          item.isFollowing
+                            ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                            : 'bg-slate-900 text-white hover:bg-slate-800'
+                        } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
+                      >
+                        {isSubmitting ? 'Updating...' : item.isFollowing ? 'Following' : 'Follow'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3396,7 +4021,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -3450,6 +4075,31 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
     };
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            if (video.paused) {
+              video.play().catch(() => {});
+            }
+          } else {
+            if (!video.paused) {
+              video.pause();
+            }
+          }
+        });
+      },
+      { threshold: 0.55 }
+    );
+
+    observer.observe(video);
+    return () => observer.disconnect();
   }, []);
 
   const togglePlayPause = () => {
@@ -3549,15 +4199,23 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         className="h-full w-full object-contain bg-black"
         preload="metadata"
         playsInline
-        onClick={togglePlayPause}
+        autoPlay
+        muted={isMuted}
+        loop
+        onClick={(event) => {
+          event.stopPropagation();
+          togglePlayPause();
+        }}
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,_rgba(2,6,23,0.06)_35%,_rgba(2,6,23,0.86)_100%)]" />
+      <div
+        className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,_rgba(2,6,23,0.06)_35%,_rgba(2,6,23,0.86)_100%)]"
+      />
 
-      <div className="absolute right-3 top-3 z-20">
+      <div className="absolute right-3 top-3 z-20 hidden sm:block pointer-events-auto">
         <button
           type="button"
-          onClick={() => setIsSettingsOpen((current) => !current)}
+          onClick={(e) => { e.stopPropagation(); setIsSettingsOpen((current) => !current); }}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 text-white backdrop-blur"
           aria-label="Open video settings"
         >
@@ -3565,13 +4223,13 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         </button>
 
         {isSettingsOpen && (
-          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl">
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl pointer-events-auto">
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Quality</p>
             {sourceOptions.map((option) => (
               <button
                 key={`${option.value}-${option.label}`}
                 type="button"
-                onClick={() => onChangeQuality(option.value)}
+                onClick={(e) => { e.stopPropagation(); onChangeQuality(option.value); }}
                 className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${
                   selectedQuality === option.value ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-800'
                 }`}
@@ -3587,7 +4245,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
                 <button
                   key={`${speed}x`}
                   type="button"
-                  onClick={() => onChangePlaybackRate(speed)}
+                  onClick={(e) => { e.stopPropagation(); onChangePlaybackRate(speed); }}
                   className={`rounded-md px-1 py-1 text-xs font-semibold ${
                     playbackRate === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                   }`}
@@ -3600,23 +4258,24 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         )}
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 z-10 p-3">
+      <div className="absolute inset-x-0 bottom-0 z-20 p-3 pointer-events-none">
         <input
           type="range"
           min={0}
           max={duration || 0}
           step={0.1}
           value={Math.min(currentTime, duration || currentTime)}
+          onClick={(e) => e.stopPropagation()}
           onChange={onSeek}
-          className="w-full accent-blue-500"
+          className="pointer-events-auto w-full h-1.5 cursor-pointer appearance-none rounded-full bg-slate-600 accent-blue-500 outline-none"
           aria-label={`Seek video ${title}`}
         />
 
         <div className="mt-2 flex items-center gap-2 text-white">
           <button
             type="button"
-            onClick={togglePlayPause}
-            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            onClick={(e) => { e.stopPropagation(); togglePlayPause(); }}
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
             aria-label={isPlaying ? 'Pause video' : 'Play video'}
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
@@ -3624,8 +4283,8 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
 
           <button
             type="button"
-            onClick={toggleMute}
-            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+            className="pointer-events-auto flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
             aria-label={isMuted ? 'Unmute video' : 'Mute video'}
           >
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -3637,17 +4296,19 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
             max={1}
             step={0.05}
             value={isMuted ? 0 : volume}
+            onClick={(e) => e.stopPropagation()}
             onChange={onVolumeChange}
-            className="w-20 accent-blue-500"
+            className="pointer-events-auto hidden w-20 cursor-pointer accent-blue-500 sm:block"
             aria-label="Adjust volume"
           />
 
-          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur">
+          <div className="pointer-events-auto hidden items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur sm:flex">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">Q</span>
             <select
               value={activeQualityOption?.value ?? 'auto'}
+              onClick={(e) => e.stopPropagation()}
               onChange={(event) => onChangeQuality(event.target.value)}
-              className="bg-transparent text-xs font-semibold text-white outline-none"
+              className="bg-transparent text-xs font-semibold text-white outline-none cursor-pointer"
               aria-label="Select video quality"
             >
               {sourceOptions.map((option) => (
@@ -3658,14 +4319,14 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
             </select>
           </div>
 
-          <p className="ml-auto text-xs font-semibold text-slate-200">
+          <p className="ml-auto text-[10px] font-semibold text-slate-200 sm:text-xs">
             {formatMediaTime(currentTime)} / {formatMediaTime(duration)}
           </p>
 
           <button
             type="button"
-            onClick={toggleFullscreen}
-            className="pointer-events-auto flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
@@ -3997,6 +4658,62 @@ function formatMembershipDuration(value) {
 
 function getProfileJoinLabel(usernameOrDate, fallbackUsername = '') {
   return formatMemberSinceLabel(usernameOrDate, fallbackUsername);
+}
+
+function shouldUseGoogleRedirect() {
+  if (typeof window === 'undefined') return false;
+
+  // Force popup auth on forwarded/tunneled/localhost domains because
+  // signInWithRedirect redirects to Firebase authDomain and never returns
+  // to the tunneled URL, causing the user to appear signed-out.
+  const hostname = window.location.hostname || '';
+  const isForwardedOrLocal =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.devtunnels.ms') ||
+    hostname.endsWith('.ngrok.io') ||
+    hostname.endsWith('.ngrok-free.app') ||
+    hostname.endsWith('.loca.lt') ||
+    hostname.endsWith('.trycloudflare.com');
+  if (isForwardedOrLocal) return false;
+
+  const touchDevice = window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
+  const mobileBrowser = /android|iphone|ipad|ipod|mobile/i.test(window.navigator?.userAgent ?? '');
+  return touchDevice || mobileBrowser;
+}
+
+function storeGoogleAuthMode(mode) {
+  if (typeof window === 'undefined') return;
+  const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
+  window.sessionStorage.setItem(GOOGLE_AUTH_MODE_STORAGE_KEY, normalizedMode);
+  window.localStorage.setItem(GOOGLE_AUTH_MODE_STORAGE_KEY, normalizedMode);
+}
+
+function getStoredGoogleAuthMode() {
+  if (typeof window === 'undefined') return 'login';
+  const storedMode = window.sessionStorage.getItem(GOOGLE_AUTH_MODE_STORAGE_KEY)
+    || window.localStorage.getItem(GOOGLE_AUTH_MODE_STORAGE_KEY);
+  return storedMode === 'signup' ? 'signup' : 'login';
+}
+
+function clearStoredGoogleAuthMode() {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.removeItem(GOOGLE_AUTH_MODE_STORAGE_KEY);
+  window.localStorage.removeItem(GOOGLE_AUTH_MODE_STORAGE_KEY);
+}
+
+function getGoogleAuthErrorMessage(error) {
+  const errorCode = `${error?.code ?? ''}`.trim();
+
+  if (errorCode === 'auth/unauthorized-domain') {
+    return 'Google sign-in needs this forwarded domain added to Firebase Authorized Domains first.';
+  }
+
+  if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
+    return 'Google sign-in was interrupted. On mobile, try again and the app will continue with redirect sign-in.';
+  }
+
+  return error?.message || 'Unable to continue with Google.';
 }
 
 export default App;

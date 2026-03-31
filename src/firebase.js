@@ -1,10 +1,14 @@
 import { initializeApp } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   getAuth,
   GoogleAuthProvider,
+  RecaptchaVerifier,
   signInWithEmailAndPassword,
+  signInWithPhoneNumber,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
 } from "firebase/auth";
@@ -29,8 +33,12 @@ export {
   auth,
   createUserWithEmailAndPassword,
   provider,
+  RecaptchaVerifier,
+  getRedirectResult,
   signInWithEmailAndPassword,
+  signInWithPhoneNumber,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
 };

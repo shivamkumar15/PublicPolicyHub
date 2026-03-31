@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { connectDB } from './db.js';
 import User from './models/User.js';
 import Post from './models/Post.js';
@@ -402,19 +403,57 @@ const deleteFileIfExists = async (filePath) => {
 
 const normalizeEmail = (emailValue) => `${emailValue ?? ''}`.trim().toLowerCase();
 
-const sanitizeUsername = (value) => {
-  const cleaned = `${value ?? ''}`
-    .trim()
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9_]/g, '');
-  return cleaned || 'citizen';
+const normalizeGender = (genderValue) => {
+  const normalizedGender = `${genderValue ?? ''}`.trim().toLowerCase();
+  if (!normalizedGender) return '';
+
+  if (normalizedGender === 'female') return 'Female';
+  if (normalizedGender === 'male') return 'Male';
+  if (normalizedGender === 'non-binary' || normalizedGender === 'non binary') return 'Non-binary';
+  if (normalizedGender === 'prefer not to say') return 'Prefer not to say';
+  return '';
 };
 
+const normalizePhoneNumber = (phoneNumberValue) => `${phoneNumberValue ?? ''}`
+  .trim()
+  .replace(/[^\d+\s()-]/g, '');
+
+const normalizeDisplayName = (value) => `${value ?? ''}`.trim().replace(/\s+/g, ' ');
+
+const normalizeUsernameCandidate = (value) => `${value ?? ''}`
+  .trim()
+  .toLowerCase()
+  .replace(/\s+/g, '_')
+  .replace(/[^a-z0-9_]/g, '')
+  .slice(0, 24);
+
+const validateRequestedUsername = (value) => {
+  const normalizedUsername = normalizeUsernameCandidate(value);
+  if (!normalizedUsername) {
+    return { normalizedUsername: '', error: 'Username is required.' };
+  }
+
+  if (normalizedUsername.length < 3) {
+    return { normalizedUsername, error: 'Username must be at least 3 characters.' };
+  }
+
+  return { normalizedUsername, error: '' };
+};
+
+const findUserByNormalizedUsername = (normalizedUsername) => (
+  User.findOne({ username: new RegExp(`^${normalizedUsername}$`, 'i') })
+);
+
 const generateUniqueUsername = async (rawUsername, uid) => {
-  const baseUsername = sanitizeUsername(rawUsername).slice(0, 24);
+  const preferredBaseUsername = normalizeUsernameCandidate(rawUsername);
+  const baseUsername = (
+    preferredBaseUsername.length >= 3
+      ? preferredBaseUsername
+      : normalizeUsernameCandidate(`${preferredBaseUsername}citizen`)
+  ) || 'citizen';
   if (!await User.exists({ username: baseUsername })) return baseUsername;
 
-  const uidSuffix = sanitizeUsername(uid).slice(-6) || `${Date.now()}`.slice(-6);
+  const uidSuffix = normalizeUsernameCandidate(uid).slice(-6) || `${Date.now()}`.slice(-6);
   const candidateWithUid = `${baseUsername.slice(0, Math.max(1, 24 - uidSuffix.length - 1))}_${uidSuffix}`;
   if (!await User.exists({ username: candidateWithUid })) return candidateWithUid;
 
@@ -428,6 +467,20 @@ const generateUniqueUsername = async (rawUsername, uid) => {
 
   throw new Error('Unable to generate a unique username');
 };
+
+const issueAuthToken = (user) => (
+  jwt.sign(
+    {
+      sub: user._id.toString(),
+      uid: user.firebase_uid || '',
+      username: user.username,
+      role: user.role,
+      email: user.email || '',
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  )
+);
 
 // Auth Middleware
 const authenticateToken = async (req, res, next) => {
@@ -543,7 +596,9 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
 
   const payload = {
     username: user.username,
+    displayName: user.displayName || '',
     role: user.role,
+    gender: user.gender || '',
     reputation: 540 + postsCount * 10,
     badges: ['Public Watchdog', 'Active Reporter'],
     streak: '7d',
@@ -559,11 +614,20 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
   };
 
   if (includePrivateFields) {
+    payload.phoneNumber = user.phoneNumber || '';
     payload.reportedPostIds = reportedPostIds;
   }
 
   return payload;
 };
+
+const buildConnectionListEntry = (user, viewerFollowing = [], viewerUsername = '') => ({
+  username: user.username,
+  role: user.role || 'CitizenReporter',
+  profilePhotoUrl: user.profilePhotoUrl || '',
+  isOwnProfile: !!viewerUsername && user.username === viewerUsername,
+  isFollowing: !!viewerUsername && viewerFollowing.includes(user.username),
+});
 
 const buildFallbackSolutionSummary = (solutionEntries) => {
   const topSolution = [...solutionEntries].sort((a, b) => {
@@ -735,31 +799,192 @@ const createAiSolutionSummary = async (post) => {
 
 // --- Auth Routes ---
 
+app.get('/api/auth/username-availability', async (req, res) => {
+  try {
+    const { normalizedUsername, error } = validateRequestedUsername(req.query.username);
+    if (error) {
+      return res.json({
+        available: false,
+        normalizedUsername,
+        reason: error,
+      });
+    }
+
+    const existingUser = await findUserByNormalizedUsername(normalizedUsername);
+    res.json({
+      available: !existingUser,
+      normalizedUsername,
+      reason: existingUser ? 'That username is already taken.' : '',
+    });
+  } catch (error) {
+    console.error('Error checking username availability:', error);
+    res.status(500).json({ available: false, normalizedUsername: '', reason: 'Failed to check username.' });
+  }
+});
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { normalizedUsername, error: usernameError } = validateRequestedUsername(req.body?.username);
+    const normalizedDisplayName = normalizeDisplayName(req.body?.displayName);
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const normalizedGender = normalizeGender(req.body?.gender);
+    const password = `${req.body?.password ?? ''}`;
+
+    if (usernameError) {
+      return res.status(400).json({ error: usernameError });
+    }
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return res.status(400).json({ error: 'Enter a valid email address.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    }
+
+    const [existingUsernameOwner, existingEmailOwner] = await Promise.all([
+      findUserByNormalizedUsername(normalizedUsername),
+      User.findOne({ email: normalizedEmail }),
+    ]);
+
+    if (existingUsernameOwner) {
+      return res.status(409).json({ error: 'That username is already taken.' });
+    }
+    if (existingEmailOwner) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = new User({
+      username: normalizedUsername,
+      displayName: normalizedDisplayName,
+      email: normalizedEmail,
+      gender: normalizedGender,
+      role: 'CitizenReporter',
+      password_hash: passwordHash,
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      token: issueAuthToken(user),
+      username: user.username,
+      role: user.role,
+      uid: user.firebase_uid || '',
+    });
+  } catch (error) {
+    console.error('Email signup error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const normalizedEmail = normalizeEmail(req.body?.email);
+    const password = `${req.body?.password ?? ''}`;
+
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      return res.status(400).json({ error: 'Enter a valid email address.' });
+    }
+    if (!password) {
+      return res.status(400).json({ error: 'Enter your password.' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    if (!user.password_hash || user.password_hash === 'firebase_oauth') {
+      return res.status(400).json({ error: 'This account uses Google or phone sign-in.' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    res.json({
+      token: issueAuthToken(user),
+      username: user.username,
+      role: user.role,
+      uid: user.firebase_uid || '',
+    });
+  } catch (error) {
+    console.error('Email login error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 app.post('/api/auth/firebaseLogin', async (req, res) => {
-  const { uid, email, displayName } = req.body;
+  const { uid, email, gender, phoneNumber, username, displayName, mode } = req.body;
   
-  if (!uid || !email) return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
+  if (!uid) return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
 
   try {
     const normalizedUid = `${uid}`.trim();
     const normalizedEmail = normalizeEmail(email);
-    if (!normalizedUid || !normalizedEmail.includes('@')) {
+    const normalizedDisplayName = normalizeDisplayName(displayName);
+    const normalizedGender = normalizeGender(gender);
+    const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+    const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
+    const requestedUsername = normalizeUsernameCandidate(username);
+    const { normalizedUsername, error: usernameError } = requestedUsername
+      ? validateRequestedUsername(username)
+      : { normalizedUsername: '', error: '' };
+    const hasGender = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'gender');
+    const hasPhoneNumber = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'phoneNumber');
+    const hasEmail = !!normalizedEmail;
+    const hasValidEmail = normalizedEmail.includes('@');
+    const hasPhone = !!normalizedPhoneNumber;
+    const usernameSeed = normalizedDisplayName || normalizedEmail.split('@')[0] || normalizedPhoneNumber || normalizedUid;
+
+    if (!normalizedUid || (!hasValidEmail && !hasPhone)) {
       return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
+    }
+    if (hasEmail && !hasValidEmail) {
+      return res.status(400).json({ error: 'Email is invalid.' });
+    }
+    if (hasGender && gender && !normalizedGender) {
+      return res.status(400).json({ error: 'Gender value is invalid.' });
+    }
+    if (hasPhoneNumber && phoneNumber && normalizedPhoneNumber.replace(/\D/g, '').length < 7) {
+      return res.status(400).json({ error: 'Phone number is invalid.' });
+    }
+    if (normalizedMode === 'signup' && requestedUsername && usernameError) {
+      return res.status(400).json({ error: usernameError });
     }
 
     let user = await User.findOne({ firebase_uid: normalizedUid });
     
-    if (!user) {
+    if (!user && hasValidEmail) {
       user = await User.findOne({ email: normalizedEmail });
     }
 
+    if (!user && hasPhone) {
+      user = await User.findOne({ phoneNumber: normalizedPhoneNumber });
+    }
+
     if (!user) {
-      const preferredName = displayName || normalizedEmail.split('@')[0];
-      const username = await generateUniqueUsername(preferredName, normalizedUid);
+      if (normalizedMode !== 'signup') {
+        return res.status(404).json({ error: 'Account not found. Please sign up first.' });
+      }
+
+      const resolvedUsername = requestedUsername
+        ? normalizedUsername
+        : await generateUniqueUsername(usernameSeed, normalizedUid);
+
+      if (requestedUsername) {
+        const existingUsernameOwner = await findUserByNormalizedUsername(resolvedUsername);
+        if (existingUsernameOwner) {
+          return res.status(409).json({ error: 'That username is already taken.' });
+        }
+      }
+
       user = new User({
-        username,
+        username: resolvedUsername,
+        displayName: normalizedDisplayName,
         firebase_uid: normalizedUid,
-        email: normalizedEmail,
+        email: hasValidEmail ? normalizedEmail : undefined,
+        gender: normalizedGender,
+        phoneNumber: hasPhone ? normalizedPhoneNumber : undefined,
         role: 'CitizenReporter',
         password_hash: 'firebase_oauth'
       });
@@ -770,7 +995,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
       if (!user.firebase_uid) user.firebase_uid = normalizedUid;
 
-      const canUpdateEmail = !user.email || user.email === normalizedEmail;
+      const canUpdateEmail = !hasValidEmail || !user.email || user.email === normalizedEmail;
       if (!canUpdateEmail) {
         const emailOwner = await User.findOne({ email: normalizedEmail, _id: { $ne: user._id } });
         if (emailOwner) {
@@ -778,24 +1003,26 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
         }
       }
 
-      user.email = normalizedEmail;
+      if (hasValidEmail) user.email = normalizedEmail;
+      if (hasPhone && user.phoneNumber && user.phoneNumber !== normalizedPhoneNumber) {
+        const phoneOwner = await User.findOne({ phoneNumber: normalizedPhoneNumber, _id: { $ne: user._id } });
+        if (phoneOwner) {
+          return res.status(409).json({ error: 'Phone number already belongs to another account.' });
+        }
+      }
+      if (hasPhone) user.phoneNumber = normalizedPhoneNumber;
+      if (hasGender && normalizedGender) user.gender = normalizedGender;
+      if (!user.displayName && normalizedDisplayName) user.displayName = normalizedDisplayName;
     }
 
     await user.save();
     
-    const token = jwt.sign(
-      {
-        sub: user._id.toString(),
-        uid: user.firebase_uid || '',
-        username: user.username,
-        role: user.role,
-        email: user.email || normalizedEmail,
-      }, 
-      JWT_SECRET, 
-      { expiresIn: '7d' }
-    );
-    
-    res.json({ token, username: user.username, role: user.role, uid: user.firebase_uid || '' });
+    res.json({
+      token: issueAuthToken(user),
+      username: user.username,
+      role: user.role,
+      uid: user.firebase_uid || '',
+    });
   } catch (error) {
     console.error('Firebase Login error:', error);
     res.status(500).json({ error: 'Internal server error.' });
@@ -812,6 +1039,26 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
     res.json(await buildProfilePayload(user, req.user.username, { includePrivateFields: true }));
   } catch {
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.patch('/api/users/profile/gender', authenticateToken, async (req, res) => {
+  try {
+    const normalizedGender = normalizeGender(req.body?.gender);
+    if (!normalizedGender) {
+      return res.status(400).json({ error: 'Choose a gender option to continue.' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    user.gender = normalizedGender;
+    await user.save();
+
+    res.json({ gender: user.gender });
+  } catch (error) {
+    console.error('Error updating profile gender:', error);
+    res.status(500).json({ error: 'Failed to update profile gender' });
   }
 });
 
@@ -835,6 +1082,58 @@ app.get('/api/users/:username', attachOptionalUser, async (req, res) => {
   } catch (error) {
     console.error('Error fetching public profile:', error);
     res.status(500).json({ error: 'Failed to fetch public profile' });
+  }
+});
+
+app.get('/api/users/:username/connections', attachOptionalUser, async (req, res) => {
+  try {
+    const targetUsername = `${req.params.username ?? ''}`.trim();
+    const connectionType = `${req.query.type ?? ''}`.trim().toLowerCase();
+
+    if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!['followers', 'following'].includes(connectionType)) {
+      return res.status(400).json({ error: 'Connection type must be followers or following' });
+    }
+
+    const targetUser = await User.findOne({ username: targetUsername }).select('username following').lean();
+    if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
+
+    const viewerFollowing = req.user
+      ? getUniqueStrings((await User.findById(req.user.id).select('following').lean())?.following)
+      : [];
+
+    let connectionUsers = [];
+
+    if (connectionType === 'following') {
+      const followingUsernames = getUniqueStrings(targetUser.following);
+      if (followingUsernames.length > 0) {
+        const followingUsers = await User.find({ username: { $in: followingUsernames } })
+          .select('username role profilePhotoUrl')
+          .lean();
+        const userByUsername = new Map(
+          followingUsers.map((user) => [user.username, user]),
+        );
+        connectionUsers = followingUsernames
+          .map((username) => userByUsername.get(username))
+          .filter(Boolean);
+      }
+    } else {
+      connectionUsers = await User.find({ following: targetUsername })
+        .select('username role profilePhotoUrl')
+        .lean();
+      connectionUsers.sort((firstUser, secondUser) => firstUser.username.localeCompare(secondUser.username));
+    }
+
+    res.json({
+      username: targetUsername,
+      type: connectionType,
+      connections: connectionUsers.map((user) => (
+        buildConnectionListEntry(user, viewerFollowing, req.user?.username || '')
+      )),
+    });
+  } catch (error) {
+    console.error('Error fetching user connections:', error);
+    res.status(500).json({ error: 'Failed to fetch user connections' });
   }
 });
 
