@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
@@ -7,7 +7,6 @@ import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
-import ChevronDown from 'lucide-react/dist/esm/icons/chevron-down.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import Flag from 'lucide-react/dist/esm/icons/flag.js';
@@ -123,15 +122,140 @@ const defaultPosts = [
   },
 ];
 
-const defaultNotifications = [
-  'New comment on your Patna checkpoint post',
-  'Your solution reached 50 upvotes',
-  'Issue verified by community moderators',
-];
+const defaultNotifications = [];
 
 const THEME_STORAGE_KEY = 'pph-theme';
 const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 const GOOGLE_AUTH_MODE_STORAGE_KEY = 'pph-google-auth-mode';
+
+function buildAppHash({
+  view = 'home',
+  postId = '',
+  profileUsername = '',
+  profileTab = 'reports',
+  profileModal = '',
+  profileSettingsSection = 'personal',
+  connectionType = 'followers',
+} = {}) {
+  if (view === 'post' && postId) return `#/post/${encodeURIComponent(postId)}`;
+
+  if (view === 'profile' && profileUsername) {
+    const params = new URLSearchParams();
+    if (profileTab && profileTab !== 'reports') params.set('tab', profileTab);
+
+    if (profileModal === 'settings') {
+      params.set('modal', 'settings');
+      params.set('section', profileSettingsSection || 'personal');
+    }
+
+    if (profileModal === 'connections') {
+      params.set('modal', 'connections');
+      params.set('type', connectionType === 'following' ? 'following' : 'followers');
+    }
+
+    const queryString = params.toString();
+    return `#/profile/${encodeURIComponent(profileUsername)}${queryString ? `?${queryString}` : ''}`;
+  }
+
+  if (view === 'create') return '#/create';
+  if (view === 'bookmarks') return '#/bookmarks';
+  if (view === 'alerts') return '#/alerts';
+  if (view === 'auth') return '#/auth';
+  return '#/home';
+}
+
+function parseAppHash(hashValue) {
+  const defaultRoute = {
+    view: 'home',
+    postId: '',
+    profileUsername: '',
+    profileTab: 'reports',
+    profileModal: '',
+    profileSettingsSection: 'personal',
+    connectionType: 'followers',
+  };
+
+  const rawHash = `${hashValue ?? ''}`.trim();
+  if (!rawHash || rawHash === '#') {
+    return defaultRoute;
+  }
+
+  const normalizedHash = rawHash.startsWith('#/')
+    ? rawHash.slice(2)
+    : rawHash.replace(/^#/, '');
+
+  if (!normalizedHash || normalizedHash === 'home') {
+    return defaultRoute;
+  }
+
+  if (normalizedHash.startsWith('post/')) {
+    const [pathPart] = normalizedHash.split('?');
+    const postId = decodeURIComponent(pathPart.slice(5));
+    return postId ? { ...defaultRoute, view: 'post', postId } : defaultRoute;
+  }
+
+  if (normalizedHash.startsWith('profile/')) {
+    const [pathPart, queryString = ''] = normalizedHash.split('?');
+    const profileUsername = decodeURIComponent(pathPart.slice(8));
+    if (!profileUsername) return defaultRoute;
+
+    const params = new URLSearchParams(queryString);
+    const nextProfileTab = ['reports', 'solutions', 'activity'].includes(params.get('tab') || '')
+      ? params.get('tab')
+      : 'reports';
+    const nextModal = params.get('modal') === 'settings' || params.get('modal') === 'connections'
+      ? params.get('modal')
+      : '';
+    const nextSection = ['personal', 'change-password', 'switch-account', 'logout'].includes(params.get('section') || '')
+      ? params.get('section')
+      : 'personal';
+    const nextConnectionType = params.get('type') === 'following' ? 'following' : 'followers';
+
+    return {
+      ...defaultRoute,
+      view: 'profile',
+      profileUsername,
+      profileTab: nextProfileTab,
+      profileModal: nextModal,
+      profileSettingsSection: nextSection,
+      connectionType: nextConnectionType,
+    };
+  }
+
+  if (normalizedHash.startsWith('post-')) {
+    return {
+      ...defaultRoute,
+      view: 'post',
+      postId: decodeURIComponent(normalizedHash.slice(5)),
+    };
+  }
+
+  if (normalizedHash.startsWith('profile-')) {
+    return {
+      ...defaultRoute,
+      view: 'profile',
+      profileUsername: decodeURIComponent(normalizedHash.slice(8)),
+    };
+  }
+
+  if (normalizedHash === 'create' || normalizedHash === 'report') {
+    return { ...defaultRoute, view: 'create' };
+  }
+
+  if (normalizedHash === 'bookmarks') {
+    return { ...defaultRoute, view: 'bookmarks' };
+  }
+
+  if (normalizedHash === 'alerts') {
+    return { ...defaultRoute, view: 'alerts' };
+  }
+
+  if (normalizedHash === 'auth') {
+    return { ...defaultRoute, view: 'auth' };
+  }
+
+  return defaultRoute;
+}
 
 function getInitialTheme() {
   if (typeof window === 'undefined') return 'light';
@@ -151,6 +275,10 @@ function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [authError, setAuthError] = useState('');
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isPostSubmitting, setIsPostSubmitting] = useState(false);
+  const [postUploadProgress, setPostUploadProgress] = useState(0);
+  const [postUploadStatus, setPostUploadStatus] = useState('idle');
+  const [postUploadFeedback, setPostUploadFeedback] = useState('');
   const [isGenderPromptOpen, setIsGenderPromptOpen] = useState(false);
   const [isGenderPromptDismissed, setIsGenderPromptDismissed] = useState(false);
   const [genderPromptValue, setGenderPromptValue] = useState('');
@@ -164,7 +292,6 @@ function App() {
   const [expandedDescriptionByPost, setExpandedDescriptionByPost] = useState({});
   const [isActionSubmittingByPost, setIsActionSubmittingByPost] = useState({});
   const [isSolutionActionSubmittingByKey, setIsSolutionActionSubmittingByKey] = useState({});
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [activePostMenuId, setActivePostMenuId] = useState(null);
   const [activeAuthorHoverCard, setActiveAuthorHoverCard] = useState('');
   const [authorPreviewByUsername, setAuthorPreviewByUsername] = useState({});
@@ -187,9 +314,20 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [profileShareFeedback, setProfileShareFeedback] = useState('');
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
+  const [profileSettingsSection, setProfileSettingsSection] = useState('personal');
+  const [profileSettingsStatus, setProfileSettingsStatus] = useState({ type: '', message: '' });
+  const [isProfileSettingsSubmitting, setIsProfileSettingsSubmitting] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState('');
+  const [profileUsernameDraft, setProfileUsernameDraft] = useState('');
+  const [profilePasswordDraft, setProfilePasswordDraft] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [theme, setTheme] = useState(getInitialTheme);
-  const profileMenuRef = useRef(null);
   const searchPanelRef = useRef(null);
+  const mobileSearchPanelRef = useRef(null);
   const profilePhotoInputRef = useRef(null);
   const solutionInputRefs = useRef({});
   const solutionReplyInputRefs = useRef({});
@@ -198,6 +336,8 @@ function App() {
   const authorPreviewStatusRef = useRef({});
   const phoneRecaptchaVerifierRef = useRef(null);
   const phoneConfirmationResultRef = useRef(null);
+  const routeSyncRef = useRef({ initialized: false, skipNextPush: false });
+  const authStateRef = useRef({ hasUser: false, token: null });
   const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
@@ -219,6 +359,13 @@ function App() {
     setMediaSlideIndexByPost((current) => (
       current[postId] === nextIndex ? current : { ...current, [postId]: nextIndex }
     ));
+  };
+
+  const resetPostUploadState = () => {
+    setIsPostSubmitting(false);
+    setPostUploadProgress(0);
+    setPostUploadStatus('idle');
+    setPostUploadFeedback('');
   };
 
   const setMediaScrollerRef = (postId, element) => {
@@ -274,6 +421,34 @@ function App() {
     fixes: Array.isArray(post?.fixes) ? post.fixes : [],
     mediaList: Array.isArray(post?.mediaList) ? post.mediaList : [],
   });
+
+  const normalizeNotification = (notification, index = 0) => {
+    if (typeof notification === 'string') {
+      return {
+        id: `legacy-notification-${index}`,
+        type: 'generic',
+        message: notification,
+        actorUsername: '',
+        recipientUsername: '',
+        postId: '',
+        postTitle: '',
+        createdAt: null,
+        read: false,
+      };
+    }
+
+    return {
+      id: `${notification?.id ?? notification?._id ?? `notification-${index}`}`,
+      type: `${notification?.type ?? 'generic'}`.trim() || 'generic',
+      message: `${notification?.message ?? ''}`.trim(),
+      actorUsername: `${notification?.actorUsername ?? ''}`.trim(),
+      recipientUsername: `${notification?.recipientUsername ?? ''}`.trim(),
+      postId: `${notification?.postId ?? ''}`.trim(),
+      postTitle: `${notification?.postTitle ?? ''}`.trim(),
+      createdAt: notification?.createdAt ?? notification?.created_at ?? null,
+      read: !!notification?.read,
+    };
+  };
 
   const upsertPostInState = (incomingPost) => {
     const normalizedIncoming = normalizePost(incomingPost);
@@ -359,6 +534,7 @@ function App() {
 
   const openAuthPage = () => {
     setAuthError('');
+    setIsProfileSettingsOpen(false);
     setProfileViewUsername(null);
     setActiveView('auth');
   };
@@ -369,18 +545,22 @@ function App() {
     return false;
   };
 
-  const fetchPublicData = () => {
+  const fetchPublicData = (currentToken = token) => {
+    const notificationHeaders = currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
+
     return Promise.all([
       fetch(`${API_BASE_URL}/api/posts`).then(res => res.json()),
-      fetch(`${API_BASE_URL}/api/notifications`).then(res => res.json())
+      fetch(`${API_BASE_URL}/api/notifications`, { headers: notificationHeaders }).then(res => res.json())
     ])
-    .then(([postsData, notifsData]) => {
-      if (Array.isArray(postsData)) {
-        const normalizedPosts = postsData.map(normalizePost);
-        setApiPosts(normalizedPosts);
-      }
-      if (Array.isArray(notifsData)) setApiNotifications(notifsData);
-    });
+      .then(([postsData, notifsData]) => {
+        if (Array.isArray(postsData)) {
+          const normalizedPosts = postsData.map(normalizePost);
+          setApiPosts(normalizedPosts);
+        }
+        if (Array.isArray(notifsData)) {
+          setApiNotifications(notifsData.map(normalizeNotification).filter((item) => item.message));
+        }
+      });
   };
 
   const fetchProfile = (currentToken) => {
@@ -392,20 +572,20 @@ function App() {
     return fetch(`${API_BASE_URL}/api/users/profile`, {
       headers: { 'Authorization': `Bearer ${currentToken}` }
     })
-    .then(res => {
-      if (!res.ok) throw new Error('Invalid token');
-      return res.json();
-    })
-    .then((data) => {
-      setUserProfile(data);
-      setProfilePhotoUrl(data?.profilePhotoUrl || '');
-    })
-    .catch(() => handleLogout());
+      .then(res => {
+        if (!res.ok) throw new Error('Invalid token');
+        return res.json();
+      })
+      .then((data) => {
+        setUserProfile(data);
+        setProfilePhotoUrl(data?.profilePhotoUrl || '');
+      })
+      .catch(() => handleLogout());
   };
 
   useEffect(() => {
     setIsLoading(true);
-    fetchPublicData()
+    fetchPublicData(token)
       .then(() => {
         if (!token) {
           setUserProfile(null);
@@ -421,7 +601,7 @@ function App() {
           })
           .then((data) => setUserProfile(data))
           .catch(() => {
-            firebaseSignOut(auth).catch(() => {});
+            firebaseSignOut(auth).catch(() => { });
             localStorage.removeItem('token');
             setToken(null);
             setUserProfile(null);
@@ -430,6 +610,19 @@ function App() {
       .catch(console.error)
       .finally(() => setIsLoading(false));
   }, [token]);
+
+  useEffect(() => {
+    if (activeView !== 'alerts') return;
+
+    fetchPublicData(token).catch(console.error);
+  }, [activeView, token]);
+
+  useEffect(() => {
+    authStateRef.current = {
+      hasUser: !!userProfile,
+      token,
+    };
+  }, [token, userProfile]);
 
   useEffect(() => {
     const events = new EventSource(`${API_BASE_URL}/api/events`);
@@ -485,7 +678,7 @@ function App() {
       } catch (error) {
         if (isCancelled) return;
         clearStoredGoogleAuthMode();
-        firebaseSignOut(auth).catch(() => {});
+        firebaseSignOut(auth).catch(() => { });
         setAuthError(getGoogleAuthErrorMessage(error));
         setActiveView('auth');
       } finally {
@@ -528,11 +721,10 @@ function App() {
 
   useEffect(() => {
     const closeMenuOnOutsideClick = (event) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
-        setIsProfileMenuOpen(false);
-      }
+      const isInsideDesktopSearch = searchPanelRef.current?.contains(event.target);
+      const isInsideMobileSearch = mobileSearchPanelRef.current?.contains(event.target);
 
-      if (searchPanelRef.current && !searchPanelRef.current.contains(event.target)) {
+      if (!isInsideDesktopSearch && !isInsideMobileSearch) {
         setIsSearchOpen(false);
       }
 
@@ -549,24 +741,148 @@ function App() {
   }, [activePostMenuId]);
 
   useEffect(() => {
+    if (!userProfile) {
+      setIsProfileSettingsOpen(false);
+      setProfileSettingsStatus({ type: '', message: '' });
+      setProfileNameDraft('');
+      setProfileUsernameDraft('');
+      setProfilePasswordDraft({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      return;
+    }
+
+    setProfileNameDraft(userProfile.displayName || '');
+    setProfileUsernameDraft(userProfile.username || '');
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const applyBrowserRoute = () => {
+      const route = parseAppHash(window.location.hash);
+      const authState = authStateRef.current;
+      routeSyncRef.current.skipNextPush = true;
+      setIsProfileSettingsOpen(false);
+      setIsSearchOpen(false);
+
+      if (route.view === 'post' && route.postId) {
+        closeProfileConnections();
+        setProfileViewUsername(null);
+        setActivePostId(route.postId);
+        setActiveView('post');
+        return;
+      }
+
+      if (route.view === 'profile' && route.profileUsername) {
+        setProfileViewUsername(route.profileUsername);
+        setProfileTab(route.profileTab);
+        setActivePostId(null);
+        setActiveView('profile');
+
+        if (route.profileModal === 'settings') {
+          closeProfileConnections();
+          setProfileSettingsSection(route.profileSettingsSection);
+          setProfileSettingsStatus({ type: '', message: '' });
+          setIsProfileSettingsOpen(true);
+        } else {
+          setIsProfileSettingsOpen(false);
+        }
+
+        if (route.profileModal === 'connections') {
+          setIsProfileSettingsOpen(false);
+          openProfileConnectionsPanel(route.connectionType, route.profileUsername);
+        } else {
+          closeProfileConnections();
+        }
+        return;
+      }
+
+      if ((route.view === 'create' || route.view === 'bookmarks') && !authState.hasUser && !authState.token) {
+        closeProfileConnections();
+        setProfileViewUsername(null);
+        setActivePostId(null);
+        setActiveView('auth');
+        return;
+      }
+
+      closeProfileConnections();
+      setProfileViewUsername(null);
+      setActivePostId(null);
+      setActiveView(route.view);
+    };
+
+    applyBrowserRoute();
+    window.history.replaceState(
+      { route: window.location.hash || '#/home' },
+      '',
+      `${window.location.pathname}${window.location.search}${window.location.hash || '#/home'}`,
+    );
+    routeSyncRef.current.initialized = true;
+
+    const handleBrowserNavigation = () => {
+      applyBrowserRoute();
+    };
+
+    window.addEventListener('popstate', handleBrowserNavigation);
+    window.addEventListener('hashchange', handleBrowserNavigation);
+
+    return () => {
+      window.removeEventListener('popstate', handleBrowserNavigation);
+      window.removeEventListener('hashchange', handleBrowserNavigation);
+    };
+  }, []);
+
+  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
 
   useEffect(() => {
-    setProfileTab('reports');
+    if (typeof window === 'undefined' || !routeSyncRef.current.initialized) return;
+
+    const nextProfileUsername = activeView === 'profile' ? (profileViewUsername || userProfile?.username || '') : '';
+    const nextHash = buildAppHash({
+      view: activeView,
+      postId: activePostId,
+      profileUsername: nextProfileUsername,
+      profileTab,
+      profileModal: activeView === 'profile'
+        ? (isProfileSettingsOpen ? 'settings' : (profileConnectionsState.open ? 'connections' : ''))
+        : '',
+      profileSettingsSection,
+      connectionType: profileConnectionsState.type,
+    });
+    const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
+
+    if (routeSyncRef.current.skipNextPush) {
+      routeSyncRef.current.skipNextPush = false;
+      window.history.replaceState({ route: nextHash }, '', nextUrl);
+      return;
+    }
+
+    if (window.location.hash === nextHash) {
+      window.history.replaceState({ route: nextHash }, '', nextUrl);
+      return;
+    }
+
+    window.history.pushState({ route: nextHash }, '', nextUrl);
+  }, [
+    activePostId,
+    activeView,
+    isProfileSettingsOpen,
+    profileConnectionsState.open,
+    profileConnectionsState.type,
+    profileSettingsSection,
+    profileTab,
+    profileViewUsername,
+    userProfile?.username,
+  ]);
+
+  useEffect(() => {
     setProfileShareFeedback('');
-    setProfileConnectionsState((current) => (
-      current.open
-        ? {
-            ...current,
-            open: false,
-            status: 'idle',
-            items: [],
-            error: '',
-          }
-        : current
-    ));
   }, [profileViewUsername, userProfile?.username]);
 
   useEffect(() => {
@@ -708,6 +1024,7 @@ function App() {
     if ((id === 'create' || id === 'bookmarks') && !userProfile && !token) {
       openAuthPage();
     } else {
+      if (id === 'create') resetPostUploadState();
       setProfileViewUsername(null);
       setActivePostId(null);
       setActiveView(id);
@@ -790,9 +1107,9 @@ function App() {
       displayName,
       ...(signupProfile
         ? {
-            username: signupProfile.username,
-            phoneNumber: signupProfile.phoneNumber,
-          }
+          username: signupProfile.username,
+          phoneNumber: signupProfile.phoneNumber,
+        }
         : {}),
     });
 
@@ -828,7 +1145,7 @@ function App() {
       });
     } catch (err) {
       clearStoredGoogleAuthMode();
-      firebaseSignOut(auth).catch(() => {});
+      firebaseSignOut(auth).catch(() => { });
       setAuthError(getGoogleAuthErrorMessage(err));
     } finally {
       setIsAuthSubmitting(false);
@@ -843,15 +1160,15 @@ function App() {
       const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
       const payload = mode === 'signup'
         ? {
-            username,
-            displayName,
-            email,
-            password,
-          }
+          username,
+          displayName,
+          email,
+          password,
+        }
         : {
-            email,
-            password,
-          };
+          email,
+          password,
+        };
 
       const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
@@ -899,9 +1216,9 @@ function App() {
         preferredDisplayName: displayName,
         signupProfile: mode === 'signup'
           ? {
-              username: await checkUsernameAvailability(username),
-              phoneNumber,
-            }
+            username: await checkUsernameAvailability(username),
+            phoneNumber,
+          }
           : null,
       });
 
@@ -913,7 +1230,7 @@ function App() {
         phoneRecaptchaVerifierRef.current = null;
       }
       if (action === 'verify-code' && mode === 'signup') {
-        firebaseSignOut(auth).catch(() => {});
+        firebaseSignOut(auth).catch(() => { });
       }
       setAuthError(err.message);
       throw err;
@@ -923,14 +1240,15 @@ function App() {
   };
 
   const handleLogout = () => {
-    firebaseSignOut(auth).catch(() => {});
-    resetPhoneAuthFlow().catch(() => {});
+    firebaseSignOut(auth).catch(() => { });
+    resetPhoneAuthFlow().catch(() => { });
     localStorage.removeItem('token');
     setToken(null);
     setUserProfile(null);
     setViewedProfileMeta(null);
     setProfileViewUsername(null);
-    setIsProfileMenuOpen(false);
+    setIsProfileSettingsOpen(false);
+    setProfileSettingsStatus({ type: '', message: '' });
     setAuthError('');
     setSelectedDepartmentFilter('');
     setSearchQuery('');
@@ -1015,16 +1333,63 @@ function App() {
           ? { ...currentProfile, profilePhotoUrl: data.profilePhotoUrl || '' }
           : currentProfile
       ));
-      setIsProfileMenuOpen(false);
+      setProfileSettingsStatus({ type: 'success', message: 'Profile photo updated.' });
       event.target.value = '';
     } catch (error) {
       alert(error.message);
     }
   };
 
+  const uploadPostWithProgress = (formData) => new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', `${API_BASE_URL}/api/posts`);
+    if (token) {
+      request.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
+
+    request.upload.addEventListener('progress', (event) => {
+      if (!event.lengthComputable) return;
+      const nextProgress = Math.min(100, Math.round((event.loaded / event.total) * 100));
+      setPostUploadProgress(nextProgress);
+      setPostUploadStatus(nextProgress >= 100 ? 'publishing' : 'uploading');
+    });
+
+    request.addEventListener('load', () => {
+      let data = {};
+      try {
+        data = request.responseText ? JSON.parse(request.responseText) : {};
+      } catch {
+        data = {};
+      }
+
+      if (request.status >= 200 && request.status < 300) {
+        resolve(data);
+        return;
+      }
+
+      reject(new Error(data?.error || 'Failed to post issue'));
+    });
+
+    request.addEventListener('error', () => {
+      reject(new Error('Network error while uploading post'));
+    });
+
+    request.addEventListener('abort', () => {
+      reject(new Error('Post upload was cancelled'));
+    });
+
+    request.send(formData);
+  });
+
   const handlePostSubmit = async (e) => {
     e.preventDefault();
+    if (isPostSubmitting) return;
+
     try {
+      setIsPostSubmitting(true);
+      setPostUploadProgress(0);
+      setPostUploadStatus('uploading');
+      setPostUploadFeedback('');
       const formData = new FormData();
       formData.append('title', postForm.title);
       formData.append('description', postForm.description);
@@ -1033,21 +1398,21 @@ function App() {
       formData.append('media', postForm.media);
       mediaFiles.forEach(file => formData.append('files', file));
 
-      const res = await fetch(`${API_BASE_URL}/api/posts`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      });
-      if (!res.ok) throw new Error('Failed to post issue');
-      
+      await uploadPostWithProgress(formData);
+      setPostUploadProgress(100);
+      setPostUploadStatus('publishing');
       await fetchPublicData();
+      setPostUploadStatus('success');
+      setPostUploadFeedback('Post uploaded successfully.');
       setActiveView('home');
       setPostForm({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
       setMediaFiles([]);
     } catch (err) {
+      setPostUploadStatus('error');
+      setPostUploadFeedback(err.message || 'Failed to post issue');
       alert(err.message);
+    } finally {
+      setIsPostSubmitting(false);
     }
   };
 
@@ -1056,9 +1421,9 @@ function App() {
 
     const headers = body
       ? {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        }
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      }
       : (token ? { Authorization: `Bearer ${token}` } : {});
 
     const res = await fetch(`${API_BASE_URL}/api/posts/${postId}/${action}`, {
@@ -1158,7 +1523,10 @@ function App() {
   const handleShare = async (postId) => {
     try {
       await withPostActionSubmitting(postId, async () => {
-        const currentUrl = `${window.location.origin}${window.location.pathname}#post-${postId}`;
+        const currentUrl = `${window.location.origin}${window.location.pathname}${buildAppHash({
+          view: 'post',
+          postId,
+        })}`;
 
         if (navigator.share) {
           await navigator.share({ title: 'Public Policy Hub Post', url: currentUrl });
@@ -1241,6 +1609,8 @@ function App() {
 
   const openAuthorProfile = (username) => {
     if (!username) return;
+    closeProfileConnections();
+    setIsProfileSettingsOpen(false);
     setProfileViewUsername(username);
     setProfileTab('reports');
     setActivePostId(null);
@@ -1249,11 +1619,12 @@ function App() {
 
   const openOwnProfile = () => {
     if (!userProfile?.username) return;
+    closeProfileConnections();
+    setIsProfileSettingsOpen(false);
     setProfileViewUsername(userProfile.username);
     setProfileTab('reports');
     setActivePostId(null);
     setActiveView('profile');
-    setIsProfileMenuOpen(false);
   };
 
   const syncFollowState = (targetUsername, data) => {
@@ -1263,19 +1634,19 @@ function App() {
     setUserProfile((currentProfile) => (
       currentProfile
         ? {
-            ...currentProfile,
-            following: Array.isArray(data.following) ? data.following : currentProfile.following,
-          }
+          ...currentProfile,
+          following: Array.isArray(data.following) ? data.following : currentProfile.following,
+        }
         : currentProfile
     ));
     setViewedProfileMeta((currentProfile) => (
       currentProfile && currentProfile.username === normalizedTargetUsername
         ? {
-            ...currentProfile,
-            followerCount: data.followerCount,
-            followingCount: data.followingCount,
-            isFollowing: data.isFollowing,
-          }
+          ...currentProfile,
+          followerCount: data.followerCount,
+          followingCount: data.followingCount,
+          isFollowing: data.isFollowing,
+        }
         : currentProfile
     ));
     setAuthorPreviewByUsername((current) => {
@@ -1320,10 +1691,10 @@ function App() {
         .map((item) => (
           item.username === normalizedTargetUsername
             ? (() => {
-                if (item.isFollowing === data.isFollowing) return item;
-                hasChanges = true;
-                return { ...item, isFollowing: data.isFollowing };
-              })()
+              if (item.isFollowing === data.isFollowing) return item;
+              hasChanges = true;
+              return { ...item, isFollowing: data.isFollowing };
+            })()
             : item
         ))
         .filter((item) => {
@@ -1384,14 +1755,16 @@ function App() {
     setProfileConnectionsState((current) => ({ ...current, open: false }));
   };
 
-  const handleOpenProfileConnections = async (type) => {
+  const openProfileConnectionsPanel = async (type, usernameOverride = resolvedProfileUsername) => {
     const normalizedType = type === 'following' ? 'following' : 'followers';
-    if (!resolvedProfileUsername) return;
+    const targetUsername = `${usernameOverride ?? ''}`.trim();
+    if (!targetUsername) return;
 
+    setIsProfileSettingsOpen(false);
     setProfileConnectionsState({
       open: true,
       type: normalizedType,
-      username: resolvedProfileUsername,
+      username: targetUsername,
       status: 'loading',
       items: [],
       error: '',
@@ -1400,7 +1773,7 @@ function App() {
     try {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(
-        `${API_BASE_URL}/api/users/${encodeURIComponent(resolvedProfileUsername)}/connections?type=${normalizedType}`,
+        `${API_BASE_URL}/api/users/${encodeURIComponent(targetUsername)}/connections?type=${normalizedType}`,
         { headers },
       );
       const data = await res.json();
@@ -1410,7 +1783,7 @@ function App() {
       setProfileConnectionsState({
         open: true,
         type: data.type === 'following' ? 'following' : 'followers',
-        username: data.username || resolvedProfileUsername,
+        username: data.username || targetUsername,
         status: 'success',
         items: connectionItems,
         error: '',
@@ -1419,12 +1792,16 @@ function App() {
       setProfileConnectionsState({
         open: true,
         type: normalizedType,
-        username: resolvedProfileUsername,
+        username: targetUsername,
         status: 'error',
         items: [],
         error: error.message || 'Failed to fetch profile connections',
       });
     }
+  };
+
+  const handleOpenProfileConnections = async (type) => {
+    await openProfileConnectionsPanel(type, resolvedProfileUsername);
   };
 
   const handleOpenConnectionProfile = (username) => {
@@ -1435,7 +1812,11 @@ function App() {
   const handleProfileShare = async () => {
     if (!resolvedProfileUsername || typeof window === 'undefined') return;
 
-    const shareUrl = `${window.location.origin}${window.location.pathname}#profile-${resolvedProfileUsername}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}${buildAppHash({
+      view: 'profile',
+      profileUsername: resolvedProfileUsername,
+      profileTab,
+    })}`;
     const shareTitle = `${resolvedProfileUsername} on Public Policy Hub`;
     const shareText = `Track reports, fixes, and public signal from ${resolvedProfileUsername}.`;
 
@@ -1474,9 +1855,9 @@ function App() {
       setUserProfile((currentProfile) => (
         currentProfile
           ? {
-              ...currentProfile,
-              bookmarkedPostIds: Array.isArray(data.bookmarkedPostIds) ? data.bookmarkedPostIds : currentProfile.bookmarkedPostIds,
-            }
+            ...currentProfile,
+            bookmarkedPostIds: Array.isArray(data.bookmarkedPostIds) ? data.bookmarkedPostIds : currentProfile.bookmarkedPostIds,
+          }
           : currentProfile
       ));
     } catch (error) {
@@ -1486,7 +1867,169 @@ function App() {
 
   const handleThemeToggle = () => {
     setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'));
-    setIsProfileMenuOpen(false);
+  };
+
+  const openProfileSettings = (section = 'personal') => {
+    closeProfileConnections();
+    setProfileSettingsSection(section);
+    setProfileSettingsStatus({ type: '', message: '' });
+    setIsProfileSettingsOpen(true);
+  };
+
+  const closeProfileSettings = () => {
+    if (isProfileSettingsSubmitting) return;
+    setIsProfileSettingsOpen(false);
+    setProfileSettingsStatus({ type: '', message: '' });
+    setProfilePasswordDraft({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+  };
+
+  const handleProfileSettingsSectionChange = (section) => {
+    setProfileSettingsSection(section);
+    setProfileSettingsStatus({ type: '', message: '' });
+  };
+
+  const handleProfileNameSave = async (event) => {
+    event.preventDefault();
+    const nextDisplayName = `${profileNameDraft ?? ''}`.trim();
+    if (!nextDisplayName) {
+      setProfileSettingsStatus({ type: 'error', message: 'Enter a display name.' });
+      return;
+    }
+
+    try {
+      setIsProfileSettingsSubmitting(true);
+      setProfileSettingsStatus({ type: '', message: '' });
+      const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ displayName: nextDisplayName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to update display name');
+
+      const nextToken = data?.token || token;
+      if (nextToken) {
+        localStorage.setItem('token', nextToken);
+        setToken(nextToken);
+      }
+      await fetchProfile(nextToken);
+      setViewedProfileMeta((currentProfile) => (
+        currentProfile?.username === userProfile?.username
+          ? { ...currentProfile, ...(data?.profile ?? {}), username: userProfile?.username || currentProfile.username }
+          : currentProfile
+      ));
+      setProfileSettingsStatus({ type: 'success', message: 'Display name updated.' });
+    } catch (error) {
+      setProfileSettingsStatus({ type: 'error', message: error.message });
+    } finally {
+      setIsProfileSettingsSubmitting(false);
+    }
+  };
+
+  const handleProfileUsernameSave = async (event) => {
+    event.preventDefault();
+    const nextUsername = `${profileUsernameDraft ?? ''}`.trim().toLowerCase();
+    if (!nextUsername) {
+      setProfileSettingsStatus({ type: 'error', message: 'Enter a username.' });
+      return;
+    }
+
+    try {
+      setIsProfileSettingsSubmitting(true);
+      setProfileSettingsStatus({ type: '', message: '' });
+      const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username: nextUsername }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to update username');
+
+      const nextToken = data?.token || token;
+      if (nextToken) {
+        localStorage.setItem('token', nextToken);
+        setToken(nextToken);
+      }
+
+      const updatedUsername = data?.profile?.username || nextUsername;
+      setProfileViewUsername(updatedUsername);
+      setProfileUsernameDraft(updatedUsername);
+      await fetchPublicData(nextToken);
+      await fetchProfile(nextToken);
+      setViewedProfileMeta(data?.profile || null);
+      setProfileSettingsStatus({ type: 'success', message: 'Username updated across your profile.' });
+    } catch (error) {
+      setProfileSettingsStatus({ type: 'error', message: error.message });
+    } finally {
+      setIsProfileSettingsSubmitting(false);
+    }
+  };
+
+  const handleProfilePasswordSave = async (event) => {
+    event.preventDefault();
+    const currentPassword = `${profilePasswordDraft.currentPassword ?? ''}`;
+    const nextPassword = `${profilePasswordDraft.newPassword ?? ''}`;
+    const confirmPassword = `${profilePasswordDraft.confirmPassword ?? ''}`;
+
+    if (!currentPassword) {
+      setProfileSettingsStatus({ type: 'error', message: 'Enter your current password.' });
+      return;
+    }
+
+    if (nextPassword.length < 6) {
+      setProfileSettingsStatus({ type: 'error', message: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    if (nextPassword !== confirmPassword) {
+      setProfileSettingsStatus({ type: 'error', message: 'New password and confirmation do not match.' });
+      return;
+    }
+
+    try {
+      setIsProfileSettingsSubmitting(true);
+      setProfileSettingsStatus({ type: '', message: '' });
+      const res = await fetch(`${API_BASE_URL}/api/users/profile/password`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword: nextPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to update password');
+
+      setProfilePasswordDraft({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setProfileSettingsStatus({ type: 'success', message: 'Password updated.' });
+    } catch (error) {
+      setProfileSettingsStatus({ type: 'error', message: error.message });
+    } finally {
+      setIsProfileSettingsSubmitting(false);
+    }
+  };
+
+  const handleSwitchAccount = () => {
+    closeProfileSettings();
+    handleLogout();
+    openAuthPage();
   };
 
   const clearSearch = () => {
@@ -1602,9 +2145,9 @@ function App() {
       setUserProfile((currentProfile) => (
         currentProfile
           ? {
-              ...currentProfile,
-              reportedPostIds: Array.isArray(data.reportedPostIds) ? data.reportedPostIds : currentProfile.reportedPostIds,
-            }
+            ...currentProfile,
+            reportedPostIds: Array.isArray(data.reportedPostIds) ? data.reportedPostIds : currentProfile.reportedPostIds,
+          }
           : currentProfile
       ));
 
@@ -1711,8 +2254,8 @@ function App() {
     : trendingPosts.slice(0, 6);
   const locationTrendingPosts = activePost
     ? [...apiPosts]
-        .filter((post) => post.id !== activePost.id && isRelatedLocation(post.location, activePost.location))
-        .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
+      .filter((post) => post.id !== activePost.id && isRelatedLocation(post.location, activePost.location))
+      .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
     : [];
   const accountUsername = userProfile?.username || '';
   const followingUsernames = Array.isArray(userProfile?.following)
@@ -1727,7 +2270,10 @@ function App() {
   const bookmarkedPosts = apiPosts.filter((post) => savedPostIds.includes(post.id));
   const bookmarkedDepartmentsCount = new Set(bookmarkedPosts.map((post) => post.department).filter(Boolean)).size;
   const bookmarkedTopDepartment = getMostFrequentValue(bookmarkedPosts.map((post) => post.department)) || 'No lead category yet';
-  const isOwnProfile = !!userProfile && resolvedProfileUsername === userProfile.username;
+  const normalizedResolvedProfileUsername = `${resolvedProfileUsername ?? ''}`.trim().toLowerCase();
+  const normalizedOwnUsername = `${userProfile?.username ?? ''}`.trim().toLowerCase();
+  const normalizedAccountUsername = `${accountUsername ?? ''}`.trim().toLowerCase();
+  const isOwnProfile = !!normalizedOwnUsername && normalizedResolvedProfileUsername === normalizedOwnUsername;
   const profilePosts = resolvedProfileUsername
     ? apiPosts.filter((post) => post.author === resolvedProfileUsername)
     : [];
@@ -1747,27 +2293,27 @@ function App() {
   );
   const profileFollowersCount = viewedProfileMeta?.followerCount ?? profileFollowerBase;
   const profileFollowingCount = viewedProfileMeta?.followingCount ?? profileFollowingBase;
-  const isFollowingViewedProfile = !!accountUsername
-    && accountUsername !== resolvedProfileUsername
-    && followingUsernames.includes(resolvedProfileUsername);
+  const isFollowingViewedProfile = !!normalizedAccountUsername
+    && normalizedAccountUsername !== normalizedResolvedProfileUsername
+    && followingUsernames.some((username) => `${username ?? ''}`.trim().toLowerCase() === normalizedResolvedProfileUsername);
   const profileDisplay = isOwnProfile
     ? {
-        username: userProfile.username,
-        role: userProfile.role,
-        postsCount: Math.max(toCount(userProfile.postsCount), profilePosts.length),
-        solutionsProposed: Math.max(toCount(userProfile.solutionsProposed), profileSolutions.length),
-        reputation: Math.max(toCount(userProfile.reputation), 540 + Math.round(profileSupportReceived / 2)),
-      }
+      username: userProfile.username,
+      role: userProfile.role,
+      postsCount: Math.max(toCount(userProfile.postsCount), profilePosts.length),
+      solutionsProposed: Math.max(toCount(userProfile.solutionsProposed), profileSolutions.length),
+      reputation: Math.max(toCount(userProfile.reputation), 540 + Math.round(profileSupportReceived / 2)),
+    }
     : {
-        username: viewedProfileMeta?.username || resolvedProfileUsername,
-        role: viewedProfileMeta?.role || 'CitizenReporter',
-        postsCount: Math.max(toCount(viewedProfileMeta?.postsCount), profilePosts.length),
-        solutionsProposed: Math.max(toCount(viewedProfileMeta?.solutionsProposed), profileSolutions.length, profilePosts.length > 0 ? 1 : 0),
-        reputation: Math.max(
-          toCount(viewedProfileMeta?.reputation),
-          500 + (profilePosts.length * 10) + (profileSolutions.length * 12) + Math.round(profileSupportReceived / 3),
-        ),
-      };
+      username: viewedProfileMeta?.username || resolvedProfileUsername,
+      role: viewedProfileMeta?.role || 'CitizenReporter',
+      postsCount: Math.max(toCount(viewedProfileMeta?.postsCount), profilePosts.length),
+      solutionsProposed: Math.max(toCount(viewedProfileMeta?.solutionsProposed), profileSolutions.length, profilePosts.length > 0 ? 1 : 0),
+      reputation: Math.max(
+        toCount(viewedProfileMeta?.reputation),
+        500 + (profilePosts.length * 10) + (profileSolutions.length * 12) + Math.round(profileSupportReceived / 3),
+      ),
+    };
   const profileBio = isOwnProfile
     ? `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`
     : `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`;
@@ -1781,10 +2327,10 @@ function App() {
   );
   const viewedProfilePhotoUrl = resolvedProfileUsername
     ? (
-        resolvedProfileUsername === userProfile?.username
-          ? profilePhotoUrl
-          : (viewedProfileMeta?.profilePhotoUrl || '')
-      )
+      resolvedProfileUsername === userProfile?.username
+        ? profilePhotoUrl
+        : (viewedProfileMeta?.profilePhotoUrl || '')
+    )
     : '';
   const profileActivityFeed = buildProfileActivityFeed(profilePosts, profileSolutions).slice(0, 8);
   const latestProfilePost = profilePosts[0] ?? null;
@@ -1808,6 +2354,29 @@ function App() {
     'state',
     new Set([...exactLocationTrending, ...cityTrending].map((post) => post.id)),
   ).slice(0, 4);
+  const locationFirstTrendingPosts = mergeUniquePosts(
+    exactLocationTrending,
+    cityTrending,
+    stateTrending,
+  );
+  const preferredTrendingPosts = (
+    locationFirstTrendingPosts.length > 0 ? locationFirstTrendingPosts : trendingPosts
+  ).slice(0, 6);
+  const postViewTrendingPosts = (
+    mergeUniquePosts(
+      preferredTrendingPosts.filter((post) => post.id !== activePost?.id),
+      bottomTrendingPosts,
+    )
+  ).slice(0, 6);
+  const preferredTrendingHeading = locationFirstTrendingPosts.length > 0
+    ? (userLocationContext.locationLabel ? `Trending Near ${userLocationContext.locationLabel}` : 'Trending Near You')
+    : 'Trending Issues';
+  const preferredTrendingDescription = locationFirstTrendingPosts.length > 0
+    ? `Based on reports around ${userLocationContext.locationLabel || 'your nearby community'}.`
+    : 'Top issues gaining attention across the full community.';
+  const preferredTrendingEmptyLabel = locationFirstTrendingPosts.length > 0
+    ? `No trending issues found around ${userLocationContext.locationLabel || 'your area'} yet.`
+    : 'No trending issues yet.';
 
   const renderPostMedia = (post) => {
     const mediaList = Array.isArray(post?.mediaList) ? post.mediaList : [];
@@ -1901,9 +2470,8 @@ function App() {
                       current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
                     ));
                   }}
-                  className={`h-1.5 rounded-full transition-all ${
-                    activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'
-                  }`}
+                  className={`h-1.5 rounded-full transition-all ${activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'
+                    }`}
                   aria-label={`Go to media ${dotIndex + 1}`}
                 />
               ))}
@@ -1950,9 +2518,8 @@ function App() {
                 type="button"
                 disabled={isSolutionActionSubmitting || !canInteract}
                 onClick={() => handleSolutionVote(postId, solutionIndex, currentVote === 'up' ? 'clear-up' : 'up', replyPath)}
-                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  currentVote === 'up' ? 'text-emerald-700' : 'hover:text-slate-800'
-                }`}
+                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${currentVote === 'up' ? 'text-emerald-700' : 'hover:text-slate-800'
+                  }`}
               >
                 Agree {agreeCount > 0 ? agreeCount : ''}
               </button>
@@ -1960,9 +2527,8 @@ function App() {
                 type="button"
                 disabled={isSolutionActionSubmitting || !canInteract}
                 onClick={() => handleSolutionVote(postId, solutionIndex, currentVote === 'down' ? 'clear-down' : 'down', replyPath)}
-                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                  currentVote === 'down' ? 'text-red-600' : 'hover:text-slate-800'
-                }`}
+                className={`transition disabled:cursor-not-allowed disabled:opacity-50 ${currentVote === 'down' ? 'text-red-600' : 'hover:text-slate-800'
+                  }`}
               >
                 Disagree {disagreeCount > 0 ? disagreeCount : ''}
               </button>
@@ -2045,11 +2611,103 @@ function App() {
     );
   };
 
+  const renderSearchResultsDropdown = () => {
+    if (!(isSearchOpen && normalizedSearchQuery)) return null;
+
+    return (
+      <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 max-h-[min(70vh,calc(100vh-8.5rem))] overflow-y-auto rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)] sm:rounded-[28px]">
+        <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 sm:px-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {totalSearchResultCount > 0
+              ? `${formatCount(totalSearchResultCount)} matches across posts and people for "${searchQuery.trim()}".`
+              : `No matches found for "${searchQuery.trim()}".`}
+          </p>
+        </div>
+
+        {searchAccountResults.length > 0 && (
+          <div className="border-b border-slate-200 px-2 py-3 sm:px-3">
+            <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">People</p>
+            <div className="space-y-1">
+              {searchAccountResults.map((account) => (
+                <button
+                  key={`search-account-${account.username}`}
+                  type="button"
+                  onClick={() => handleSearchProfileOpen(account.username)}
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                >
+                  {account.profilePhotoUrl ? (
+                    <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
+                  ) : (
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold uppercase text-white">
+                      {getInitials(account.username)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-950">{account.displayName || account.username}</p>
+                    <p className="truncate text-xs text-slate-500">@{account.username} • {account.role}</p>
+                  </div>
+                  <div className="hidden text-right sm:block">
+                    <p className="text-sm font-bold text-slate-950">{formatCount(account.postsCount)}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">posts</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="px-2 py-3 sm:px-3">
+          <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Posts</p>
+          {searchPostResults.length > 0 ? (
+            <div className="space-y-1">
+              {searchPostResults.map((post) => (
+                <button
+                  key={`search-post-${post.id}`}
+                  type="button"
+                  onClick={() => handleSearchPostOpen(post.id)}
+                  className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      {post.tag && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{post.tag}</span>}
+                      <span>{post.department}</span>
+                      <span>{post.author}</span>
+                    </div>
+                  </div>
+                  <div className="hidden text-right sm:block">
+                    <p className="text-sm font-bold text-slate-950">{formatCount(post.support)}</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">supports</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
+              No posts matched this keyword, tag, or category yet.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const postUploadButtonLabel = (() => {
+    if (postUploadStatus === 'publishing') return 'Publishing';
+    if (postUploadStatus === 'uploading') return `Uploading ${postUploadProgress}%`;
+    if (postUploadStatus === 'success') return 'Uploaded';
+    if (postUploadStatus === 'error') return 'Retry upload';
+    return `Post issue as ${userProfile?.username || 'you'}`;
+  })();
+
   return (
     <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
-      <header className="app-header sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-[1580px] items-center px-4 lg:px-6">
-          <div className="flex w-full items-center gap-3">
+      <div className="sticky top-0 z-50">
+      <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
+        <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
+          <div className="flex w-full items-center gap-2 sm:gap-3">
             <button
               type="button"
               onClick={() => {
@@ -2057,9 +2715,9 @@ function App() {
                 setProfileViewUsername(null);
                 setActiveView('home');
               }}
-              className="flex shrink-0 items-center gap-2.5"
+              className="flex shrink-0 items-center gap-2 sm:gap-2.5"
             >
-              <img src={Logo} alt="Public Policy Hub Logo" style={{ height: '90px' }} className="w-auto object-contain -my-4" />
+              <img src={Logo} alt="Public Policy Hub Logo" className="h-11 w-auto object-contain sm:h-[90px] sm:-my-4" />
               <div className="hidden sm:block">
                 <p className="font-display text-xs uppercase tracking-[0.2em] text-slate-500">Public Policy Hub</p>
                 <p className="text-sm text-slate-600">Nation is our, We have the Power</p>
@@ -2067,8 +2725,8 @@ function App() {
             </button>
 
             <div ref={searchPanelRef} className="ml-auto hidden min-w-0 flex-1 md:block">
-              <form onSubmit={handleSearchSubmit} className="mx-auto max-w-2xl px-4">
-                <div className="relative">
+              <form onSubmit={handleSearchSubmit} className="mx-auto flex max-w-[52rem] items-center gap-3 px-4">
+                <div className="relative min-w-0 flex-1">
                   <SearchInput
                     value={searchQuery}
                     onChange={(event) => {
@@ -2165,83 +2823,44 @@ function App() {
                     </div>
                   )}
                 </div>
+                <ThemeSwitch checked={theme === 'dark'} onChange={handleThemeToggle} label="Theme" />
               </form>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
               {userProfile ? (
-                 <>
+                <>
                   <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 sm:inline-flex">
                     Report Issue
                   </button>
-                  <div className="relative flex items-center gap-2" ref={profileMenuRef}>
-                    <input
-                      ref={profilePhotoInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleProfilePhotoUpload}
-                    />
+                  <input
+                    ref={profilePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleProfilePhotoUpload}
+                  />
 
-                    <button
-                      type="button"
-                      onClick={openOwnProfile}
-                      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-2.5 py-1.5 transition hover:bg-slate-50"
-                    >
-                      {profilePhotoUrl ? (
-                        <img src={profilePhotoUrl} alt="Profile" className="h-10 w-10 rounded-2xl object-cover" />
-                      ) : (
-                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold text-white uppercase">
-                          {accountInitials}
-                        </span>
-                      )}
-                      <span className="hidden text-left sm:block">
-                        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Profile</span>
-                        <span className="block text-sm font-bold text-slate-900">{accountUsername}</span>
+                  <button
+                    type="button"
+                    onClick={openOwnProfile}
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50 sm:gap-3 sm:rounded-2xl sm:px-2.5"
+                  >
+                    {profilePhotoUrl ? (
+                      <img src={profilePhotoUrl} alt="Profile" className="h-9 w-9 rounded-xl object-cover sm:h-10 sm:w-10 sm:rounded-2xl" />
+                    ) : (
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-xs font-bold text-white uppercase sm:h-10 sm:w-10 sm:rounded-2xl">
+                        {accountInitials}
                       </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsProfileMenuOpen((current) => !current)}
-                      className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
-                      aria-label="Open profile menu"
-                    >
-                      <ChevronDown className={`h-4 w-4 transition ${isProfileMenuOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isProfileMenuOpen && (
-                      <div className="motion-pop absolute right-0 top-14 z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]">
-                        <button
-                          type="button"
-                          onClick={() => profilePhotoInputRef.current?.click()}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          <ImageIcon className="h-4 w-4" />
-                          Edit photo
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleThemeToggle}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          <Lightbulb className="h-4 w-4" />
-                          Switch theme
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          <LogOut className="h-4 w-4" />
-                          Logout
-                        </button>
-                      </div>
                     )}
-                  </div>
-                 </>
+                    <span className="hidden text-left sm:block">
+                      <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Profile</span>
+                      <span className="block text-sm font-bold text-slate-900">{accountUsername}</span>
+                    </span>
+                  </button>
+                </>
               ) : (
-                <button onClick={openAuthPage} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800">
+                <button onClick={openAuthPage} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 sm:px-4 sm:text-sm">
                   Sign In
                 </button>
               )}
@@ -2250,8 +2869,36 @@ function App() {
         </div>
       </header>
 
-      <main className="app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-5 px-4 pb-24 pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6">
-        <aside className="motion-slide-in-left hidden space-y-4 lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4">
+      <div className="border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
+        <div ref={mobileSearchPanelRef} className="mx-auto max-w-[1580px]">
+          <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <SearchInput
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => {
+                  if (searchQuery.trim()) setIsSearchOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setIsSearchOpen(false);
+                }}
+                onClear={clearSearch}
+                placeholder="Search posts and people"
+                showClear={!!searchQuery.trim()}
+              />
+              {renderSearchResultsDropdown()}
+            </div>
+            <ThemeSwitch checked={theme === 'dark'} onChange={handleThemeToggle} label="Theme" compact />
+          </form>
+        </div>
+      </div>
+      </div>
+
+      <main className="app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-4 px-3 pb-24 pt-4 sm:gap-5 sm:px-4 sm:pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6 lg:pt-0">
+        <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:h-fit lg:self-start lg:border-r lg:border-slate-200 lg:pr-4">
           <div className="soft-card p-4">
             <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
             <div className="mt-3 space-y-2">
@@ -2261,9 +2908,8 @@ function App() {
                   <button
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
-                    className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${
-                      activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-                    }`}
+                    className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                      }`}
                   >
                     <Icon className="nav-pill__icon h-5 w-5" />
                     {item.label}
@@ -2292,16 +2938,14 @@ function App() {
                   type="button"
                   key={`${department}-${count}`}
                   onClick={() => handleDepartmentFilterSelect(department)}
-                  className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${
-                    selectedDepartmentFilter === department
-                      ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
-                      : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
-                  }`}
+                  className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
+                    ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                    }`}
                 >
                   <div className="min-w-0">
-                    <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                      selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
-                    }`}
+                    <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
+                      }`}
                     >
                       {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
                     </p>
@@ -2401,12 +3045,12 @@ function App() {
         <section className="motion-fade-up mx-auto w-full max-w-[980px] space-y-6" style={{ '--motion-delay': '80ms' }}>
           {activeView === 'home' && (
             <>
-              <div className="soft-card signal-hero p-7">
+              <div className="soft-card signal-hero p-5 sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-slate-500">Post Section</p>
-                    <h2 className="mt-1.5 font-display text-[30px] font-bold text-slate-950">Community reports and updates</h2>
-                    <p className="mt-2 text-base text-slate-500">
+                    <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[30px]">Community reports and updates</h2>
+                    <p className="mt-2 text-sm text-slate-500 sm:text-base">
                       {normalizedSearchQuery
                         ? `Showing search matches for "${searchQuery.trim()}" across tags, categories, authors, and post keywords.`
                         : selectedDepartmentFilter
@@ -2454,7 +3098,7 @@ function App() {
                 )}
               </div>
 
-              <div className="space-y-5">
+              <div className="space-y-5 stagger-container">
                 {filteredHomePosts.map((post, index) => {
                   const isSupportedByUser = !!userProfile?.username && post.supporters?.includes(userProfile.username);
                   const isSavedByUser = savedPostIds.includes(post.id);
@@ -2484,11 +3128,11 @@ function App() {
                         event.preventDefault();
                         handleSolutionClick(post.id);
                       }}
-                      className="soft-card signal-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
+                      className="soft-card signal-card float-hover group cursor-pointer overflow-hidden p-4 focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
                       style={getMotionDelayStyle(index, 140, 70)}
                     >
                       <div className="space-y-4">
-                        <div className="flex w-full items-start justify-between gap-3 rounded-xl px-1 text-left">
+                        <div className="flex w-full flex-col gap-3 rounded-xl px-1 text-left sm:flex-row sm:items-start sm:justify-between">
                           <div
                             className="relative flex min-w-0 items-center gap-3"
                             onMouseEnter={() => showAuthorHoverCard(post.author)}
@@ -2523,7 +3167,7 @@ function App() {
                               >
                                 {post.author}
                               </button>
-                              <p className="text-xs text-slate-500">{post.time}</p>
+                              <p className="text-xs text-slate-500">{formatPostTimestamp(post)}</p>
                             </div>
 
                             {isAuthorHoverOpen && (
@@ -2587,7 +3231,7 @@ function App() {
                             )}
                           </div>
 
-                          <div className="flex flex-shrink-0 items-start gap-2">
+                          <div className="flex w-full flex-shrink-0 items-start justify-between gap-2 sm:w-auto sm:justify-start">
                             {!isOwnPost && (
                               <button
                                 type="button"
@@ -2596,11 +3240,10 @@ function App() {
                                   event.stopPropagation();
                                   handleToggleFollow(post.author);
                                 }}
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                  isFollowingAuthor
-                                    ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                    : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                }`}
+                                className={`inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${isFollowingAuthor
+                                  ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                  : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                  }`}
                               >
                                 {isFollowingAuthor ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
                                 {isSubmittingAuthorFollow ? 'Updating...' : isFollowingAuthor ? 'Following' : 'Follow'}
@@ -2660,11 +3303,10 @@ function App() {
                                       setActivePostMenuId(null);
                                       handleReportPost(post.id);
                                     }}
-                                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                      isOwnPost || hasReportedPost
-                                        ? 'text-slate-400'
-                                        : 'text-rose-600 hover:bg-rose-50'
-                                    }`}
+                                    className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${isOwnPost || hasReportedPost
+                                      ? 'text-slate-400'
+                                      : 'text-rose-600 hover:bg-rose-50'
+                                      }`}
                                   >
                                     <Flag className="h-4 w-4" />
                                     {isOwnPost ? 'Cannot report your post' : hasReportedPost ? 'Already reported' : 'Report post'}
@@ -2688,80 +3330,79 @@ function App() {
                             </div>
                           </div>
                         </div>
-                      <div>
-                        <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-slate-950">{post.title}</h3>
-                        <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
-                        {isTruncated && (
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setExpandedDescriptionByPost((current) => ({ ...current, [post.id]: !isDescriptionExpanded }))
-                            }}
-                            className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
-                          >
-                            {isDescriptionExpanded ? 'Read less' : 'Read more'}
-                          </button>
-                        )}
-                      </div>
-                      {renderPostMedia(post)}
+                        <div>
+                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
+                          <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
+                          {isTruncated && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpandedDescriptionByPost((current) => ({ ...current, [post.id]: !isDescriptionExpanded }))
+                              }}
+                              className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
+                            >
+                              {isDescriptionExpanded ? 'Read less' : 'Read more'}
+                            </button>
+                          )}
+                        </div>
+                        {renderPostMedia(post)}
 
-                      <div className="order-2 space-y-3">
-                        <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-blue-700"><MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.location}</span>
-                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-slate-600"><Building2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.department}</span>
-                          {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-700"><BadgeCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" />Verified</span>}
-                        </div>
-                        <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                          <button
-                            type="button"
-                            disabled={isSubmittingAction}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleSupport(post.id);
-                            }}
-                            className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
-                              isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
-                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                            }`}
-                          >
-                            <TrendingUp className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
-                            <span className="truncate">Support {formatCount(post.support)}</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSubmittingAction}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleSolutionClick(post.id);
-                            }}
-                            className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <Lightbulb className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
-                            <span className="truncate">Solution {formatCount(post.solutions)}</span>
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSubmittingAction}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleShare(post.id);
-                            }}
-                            className="flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            <Share2 className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
-                            <span className="truncate">Share {formatCount(post.shares)}</span>
-                          </button>
+                        <div className="order-2 space-y-3">
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-blue-700"><MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.location}</span>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-slate-600"><Building2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.department}</span>
+                            {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-700"><BadgeCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" />Verified</span>}
+                          </div>
+                          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleSupport(post.id);
+                              }}
+                              className={`btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
+                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 animate-glow'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-blue-300'
+                                }`}
+                            >
+                              <TrendingUp className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Support {formatCount(post.support)}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleSolutionClick(post.id);
+                              }}
+                              className="btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 hover:border-amber-300"
+                            >
+                              <Lightbulb className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Solution {formatCount(post.solutions)}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isSubmittingAction}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleShare(post.id);
+                              }}
+                              className="btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <Share2 className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
+                              <span className="truncate">Share {formatCount(post.shares)}</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </article>
-                );
+                    </article>
+                  );
                 })}
 
                 {filteredHomePosts.length === 0 && (
-                  <div className="soft-card p-6 text-sm text-slate-600">
+                  <div className="soft-card p-5 text-sm text-slate-600 sm:p-6">
                     {normalizedSearchQuery
                       ? `No reports matched "${searchQuery.trim()}". Try another keyword, tag, category, or account name.`
                       : selectedDepartmentFilter
@@ -2775,14 +3416,14 @@ function App() {
 
           {activeView === 'bookmarks' && (
             <>
-              <div className="soft-card signal-hero p-7">
+              <div className="soft-card signal-hero p-5 sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="max-w-2xl">
                     <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
                       <Bookmark className="h-3.5 w-3.5 fill-current" />
                       Personal Library
                     </span>
-                    <h2 className="mt-4 font-display text-[30px] font-bold text-slate-950">Saved posts</h2>
+                    <h2 className="mt-4 font-display text-[24px] font-bold text-slate-950 sm:text-[30px]">Saved posts</h2>
                     <p className="mt-2 text-base text-slate-500">
                       A clean place to revisit the reports you want to track, share, or come back to later.
                     </p>
@@ -2879,7 +3520,7 @@ function App() {
 
                 return (
                   <>
-                    <article className="soft-card signal-card overflow-hidden rounded-b-none border-b-0 p-5">
+                    <article className="soft-card signal-card overflow-hidden rounded-b-none border-b-0 p-4 sm:p-5">
                       <div className="space-y-4">
                         <button
                           type="button"
@@ -2938,11 +3579,10 @@ function App() {
                               type="button"
                               disabled={isSubmittingActiveAuthorFollow}
                               onClick={() => handleToggleFollow(activePost.author)}
-                              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                isFollowingActiveAuthor
-                                  ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                  : 'bg-slate-900 text-white hover:bg-slate-800'
-                              }`}
+                              className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${isFollowingActiveAuthor
+                                ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                : 'bg-slate-900 text-white hover:bg-slate-800'
+                                }`}
                             >
                               {isFollowingActiveAuthor ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                               {isSubmittingActiveAuthorFollow ? 'Updating...' : isFollowingActiveAuthor ? 'Following' : 'Follow'}
@@ -2975,16 +3615,15 @@ function App() {
                             {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                           </div>
 
-                          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2">
                             <button
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleSupport(activePost.id)}
-                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
-                                isSupportedByUser
-                                  ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
-                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                              }`}
+                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
+                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                }`}
                             >
                               <TrendingUp className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Support {formatCount(activePost.support)}</span>
@@ -3011,11 +3650,10 @@ function App() {
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => handleToggleSavedPost(activePost.id)}
-                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${
-                                isSavedByUser
-                                  ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                              }`}
+                              className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSavedByUser
+                                ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                }`}
                             >
                               <Bookmark className={`h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4 ${isSavedByUser ? 'fill-current' : ''}`} />
                               <span className="truncate">{isSavedByUser ? 'Saved' : 'Save'}</span>
@@ -3067,7 +3705,7 @@ function App() {
                       </div>
                     </article>
 
-                    <div className="soft-card rounded-t-none border-t-0 p-5">
+                    <div className="soft-card rounded-t-none border-t-0 p-4 sm:p-5">
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">People's Solutions</p>
 
                       <div className="mt-5 space-y-5">
@@ -3081,10 +3719,12 @@ function App() {
                       </div>
                     </div>
 
-                    <div className="soft-card rounded-t-none border-t-0 p-5">
-                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Trending Issues</p>
+                    <div className="soft-card rounded-t-none border-t-0 p-4 sm:p-5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        {locationFirstTrendingPosts.length > 0 ? 'Trending Near You' : 'Trending Issues'}
+                      </p>
                       <div className="mt-4 space-y-3">
-                        {bottomTrendingPosts.map((post, index) => (
+                        {postViewTrendingPosts.map((post, index) => (
                           <button
                             key={`${post.id}-post-trend`}
                             type="button"
@@ -3101,9 +3741,9 @@ function App() {
                             </p>
                           </button>
                         ))}
-                        {bottomTrendingPosts.length === 0 && (
+                        {postViewTrendingPosts.length === 0 && (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                            No trending issues yet.
+                            {preferredTrendingEmptyLabel}
                           </div>
                         )}
                       </div>
@@ -3115,9 +3755,9 @@ function App() {
           )}
 
           {activeView === 'create' && (
-            <div className="soft-card signal-hero p-6">
+            <div className="soft-card signal-hero p-5 sm:p-6">
               <p className="text-xs font-semibold text-slate-500">Create New Issue</p>
-              <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">Simple, mobile-friendly reporting.</h2>
+              <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Simple, mobile-friendly reporting.</h2>
               <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
                 <div className="space-y-4">
                   <label className="upload-zone flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition">
@@ -3149,27 +3789,80 @@ function App() {
                     </div>
                   )}
                 </div>
-                <input type="text" placeholder="Title" required className="form-input" value={postForm.title} onChange={e => setPostForm({...postForm, title: e.target.value})} />
+                <input type="text" placeholder="Title" required className="form-input" value={postForm.title} onChange={e => setPostForm({ ...postForm, title: e.target.value })} />
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <input type="text" placeholder="Location" required className="form-input" value={postForm.location} onChange={e => setPostForm({...postForm, location: e.target.value})} />
-                  <select className="form-input" value={postForm.department} onChange={e => setPostForm({...postForm, department: e.target.value})}>
-                      <option>General</option><option>Police</option><option>Municipality</option><option>Education</option><option>Transport</option>
+                  <input type="text" placeholder="Location" required className="form-input" value={postForm.location} onChange={e => setPostForm({ ...postForm, location: e.target.value })} />
+                  <select className="form-input" value={postForm.department} onChange={e => setPostForm({ ...postForm, department: e.target.value })}>
+                    <option>General</option><option>Police</option><option>Municipality</option><option>Education</option><option>Transport</option>
                   </select>
                 </div>
-                <textarea rows="5" placeholder="Description" required className="w-full min-h-[140px] resize-none rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100" value={postForm.description} onChange={e => setPostForm({...postForm, description: e.target.value})} />
-                <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">Post Issue as {userProfile?.username}</button>
+                <textarea rows="5" placeholder="Description" required className="w-full min-h-[140px] resize-none rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100" value={postForm.description} onChange={e => setPostForm({ ...postForm, description: e.target.value })} />
+                <div className="space-y-2">
+                  <button
+                    type="submit"
+                    disabled={isPostSubmitting}
+                    className={`upload-progress-btn ${isPostSubmitting ? 'upload-progress-btn--busy' : ''} ${postUploadStatus === 'success' ? 'upload-progress-btn--success' : ''}`}
+                    style={{ '--upload-progress': `${postUploadProgress}%` }}
+                  >
+                    <span className="upload-progress-btn__label">{postUploadButtonLabel}</span>
+                  </button>
+                  <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                    <span>
+                      {postUploadStatus === 'publishing'
+                        ? 'Upload complete. Finalizing your post...'
+                        : postUploadStatus === 'uploading'
+                          ? 'Uploading in real time.'
+                          : postUploadFeedback || 'Your button progress bar matches the live upload progress.'}
+                    </span>
+                    <span className="font-semibold text-slate-700">
+                      {isPostSubmitting || postUploadProgress > 0 ? `${postUploadProgress}%` : ''}
+                    </span>
+                  </div>
+                </div>
               </form>
             </div>
           )}
 
           {activeView === 'alerts' && (
-            <div className="soft-card signal-hero p-6">
+            <div className="soft-card signal-hero p-5 sm:p-6">
               <p className="text-xs font-semibold text-slate-500">Notifications</p>
-              <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">Updates related to your reports</h2>
+              <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Updates related to your reports</h2>
               <div className="mt-6 space-y-3">
-                {apiNotifications.map((item) => (
-                  <div key={item} className="alert-card rounded-xl border border-slate-200 bg-slate-50 p-4 pl-5 text-sm text-slate-700">{item}</div>
+                {!userProfile && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                    Sign in to receive backend-powered notifications for follows, supports, comments, solutions, replies, and shares.
+                  </div>
+                )}
+
+                {userProfile && apiNotifications.map((item) => (
+                  <div key={item.id} className="alert-card rounded-xl border border-slate-200 bg-slate-50 p-4 pl-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                          {getNotificationTypeLabel(item.type)}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.message}</p>
+                        <p className="mt-2 text-xs text-slate-500">{formatTimestamp(item.createdAt)}</p>
+                      </div>
+                      {item.postId && (
+                        <button
+                          type="button"
+                          onClick={() => handleSolutionClick(item.postId)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Open post
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
+
+                {userProfile && apiNotifications.length === 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                    No notifications yet. Activity on your reports and profile will show up here.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3199,9 +3892,8 @@ function App() {
                 profileTopLocations={profileTopLocations}
                 onSelectTab={setProfileTab}
                 onOpenConnections={handleOpenProfileConnections}
-                onEditPhoto={() => profilePhotoInputRef.current?.click()}
                 onCreateReport={() => handleNavClick('create')}
-                onToggleTheme={handleThemeToggle}
+                onOpenSettings={openProfileSettings}
                 onToggleFollow={handleToggleProfileFollow}
                 onShareProfile={handleProfileShare}
                 onOpenLatestPost={() => {
@@ -3213,7 +3905,6 @@ function App() {
                   setActivePostId(postId);
                   setActiveView('post');
                 }}
-                onLogout={handleLogout}
               />
               <ProfileConnectionsModal
                 isOpen={profileConnectionsState.open}
@@ -3228,36 +3919,59 @@ function App() {
                 onOpenProfile={handleOpenConnectionProfile}
                 onToggleFollow={handleToggleFollow}
               />
+              <ProfileSettingsModal
+                isOpen={isOwnProfile && isProfileSettingsOpen}
+                activeSection={profileSettingsSection}
+                status={profileSettingsStatus}
+                isSubmitting={isProfileSettingsSubmitting}
+                profile={userProfile}
+                profilePhotoUrl={profilePhotoUrl}
+                profileJoinLabel={profileJoinLabel}
+                nameDraft={profileNameDraft}
+                usernameDraft={profileUsernameDraft}
+                passwordDraft={profilePasswordDraft}
+                onClose={closeProfileSettings}
+                onSectionChange={handleProfileSettingsSectionChange}
+                onEditPhoto={() => profilePhotoInputRef.current?.click()}
+                onNameDraftChange={setProfileNameDraft}
+                onUsernameDraftChange={setProfileUsernameDraft}
+                onPasswordDraftChange={setProfilePasswordDraft}
+                onSaveName={handleProfileNameSave}
+                onSaveUsername={handleProfileUsernameSave}
+                onSavePassword={handleProfilePasswordSave}
+                onLogout={handleLogout}
+                onSwitchAccount={handleSwitchAccount}
+              />
               {profileTab === '__legacy__' && (
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-                {isOwnProfile && profilePhotoUrl ? (
-                  <img src={profilePhotoUrl} alt="Profile" className="h-24 w-24 rounded-2xl object-cover" />
-                ) : (
-                  <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800 text-3xl font-bold text-white uppercase">{profileInitials}</div>
-                )}
-                <div className="flex-1">
-                  <p className="text-xs font-semibold text-slate-500">{profileDisplay.role}</p>
-                  <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">{profileDisplay.username}</h2>
-                  <p className="mt-2 text-sm text-slate-500">Posts: {profileDisplay.postsCount} • Solutions Proposed: {profileDisplay.solutionsProposed}</p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <MetricBox label="Reputation" value={profileDisplay.reputation} dark={false} />
-                    <MetricBox label="Badges" value={profileDisplay.badgesCount} dark={false} />
-                    <MetricBox label="Streak" value={profileDisplay.streak} dark={false} />
-                  </div>
-                  {isOwnProfile && (
-                    <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">
-                      <LogOut className="h-4 w-4" />
-                      Sign Out
-                    </button>
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+                  {isOwnProfile && profilePhotoUrl ? (
+                    <img src={profilePhotoUrl} alt="Profile" className="h-24 w-24 rounded-2xl object-cover" />
+                  ) : (
+                    <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-slate-800 text-3xl font-bold text-white uppercase">{profileInitials}</div>
                   )}
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-slate-500">{profileDisplay.role}</p>
+                    <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">{profileDisplay.username}</h2>
+                    <p className="mt-2 text-sm text-slate-500">Posts: {profileDisplay.postsCount} • Solutions Proposed: {profileDisplay.solutionsProposed}</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <MetricBox label="Reputation" value={profileDisplay.reputation} dark={false} />
+                      <MetricBox label="Badges" value={profileDisplay.badgesCount} dark={false} />
+                      <MetricBox label="Streak" value={profileDisplay.streak} dark={false} />
+                    </div>
+                    {isOwnProfile && (
+                      <button onClick={handleLogout} className="mt-6 flex items-center gap-2 text-slate-500 font-semibold hover:text-red-600 transition cursor-pointer">
+                        <LogOut className="h-4 w-4" />
+                        Sign Out
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
               )}
             </div>
           )}
         </section>
 
-        <aside className="motion-slide-in-right hidden lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-l lg:border-slate-200 lg:pl-4" style={{ '--motion-delay': '140ms' }}>
+        <aside className="hidden lg:sticky lg:top-32 lg:block lg:h-fit lg:self-start lg:border-l lg:border-slate-200 lg:pl-4">
           {activeView === 'post' && (
             <div className="soft-card overflow-hidden p-4">
               <div className="rounded-[26px] border border-blue-100 bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.45),_rgba(255,255,255,0.96)_58%)] p-4">
@@ -3288,9 +4002,10 @@ function App() {
 
           {activeView !== 'post' && (
             <div className="soft-card p-4">
-              <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Trending Issues</p>
+              <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{preferredTrendingHeading}</p>
+              <p className="mt-1 px-2 text-xs text-slate-400">{preferredTrendingDescription}</p>
               <div className="mt-3 space-y-2">
-                {trendingPosts.slice(0, 6).map((post, index) => (
+                {preferredTrendingPosts.map((post, index) => (
                   <button
                     key={`${post.id}-trend-rail`}
                     type="button"
@@ -3305,9 +4020,9 @@ function App() {
                     <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
                   </button>
                 ))}
-                {trendingPosts.length === 0 && (
+                {preferredTrendingPosts.length === 0 && (
                   <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                    No trending issues yet.
+                    {preferredTrendingEmptyLabel}
                   </p>
                 )}
               </div>
@@ -3337,11 +4052,9 @@ function App() {
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`mobile-nav-pill flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${
-                  isActive ? 'mobile-nav-pill--active ' : ''
-                }${
-                  isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
-                }`}
+                className={`mobile-nav-pill flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${isActive ? 'mobile-nav-pill--active ' : ''
+                  }${isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
+                  }`}
               >
                 <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
                 <span>{item.label}</span>
@@ -3459,19 +4172,17 @@ function ProfileView({
   profileTopLocations,
   onSelectTab,
   onOpenConnections,
-  onEditPhoto,
   onCreateReport,
-  onToggleTheme,
+  onOpenSettings,
   onToggleFollow,
   onShareProfile,
   onOpenLatestPost,
   onOpenPost,
-  onLogout,
 }) {
   return (
     <>
-      <div className="motion-fade-up profile-hero overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)]">
-        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-5 py-5 sm:px-7 sm:py-6">
+      <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
+        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-4 py-4 sm:px-7 sm:py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
@@ -3485,9 +4196,9 @@ function ProfileView({
               </span>
             </div>
 
-            <div className="signal-score rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right">
+            <div className="signal-score w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left sm:w-auto sm:text-right">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
-              <p className="mt-1 font-display text-3xl font-bold text-slate-950">{profileImpactScore}%</p>
+              <p className="mt-1 font-display text-2xl font-bold text-slate-950 sm:text-3xl">{profileImpactScore}%</p>
             </div>
           </div>
 
@@ -3497,17 +4208,17 @@ function ProfileView({
                 <img
                   src={viewedProfilePhotoUrl}
                   alt={`${profileDisplay.username} profile`}
-                  className="h-24 w-24 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)]"
+                  className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24"
                 />
               ) : (
-                <div className="flex h-24 w-24 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-4xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)]">
+                <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-3xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24 sm:text-4xl">
                   {profileInitials}
                 </div>
               )}
 
               <div className="max-w-2xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-[34px] font-bold leading-tight text-slate-950">{profileDisplay.username}</h2>
+                  <h2 className="font-display text-[28px] font-bold leading-tight text-slate-950 sm:text-[34px]">{profileDisplay.username}</h2>
                   {profileDisplay.reputation >= 600 && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                       <BadgeCheck className="h-3.5 w-3.5" />
@@ -3534,32 +4245,24 @@ function ProfileView({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 xl:justify-end">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
               {isOwnProfile ? (
                 <>
                   <button
                     type="button"
-                    onClick={onEditPhoto}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => onOpenSettings('personal')}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
                   >
-                    <ImageIcon className="h-4 w-4" />
-                    Edit photo
+                    <Settings className="h-4 w-4" />
+                    Settings
                   </button>
                   <button
                     type="button"
                     onClick={onCreateReport}
-                    className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
-                  >
-                    <SquarePen className="h-4 w-4" />
-                    New report
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onToggleTheme}
-                    className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                  >
-                    <Lightbulb className="h-4 w-4" />
-                    Switch theme
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 sm:w-auto sm:justify-start"
+                    >
+                      <SquarePen className="h-4 w-4" />
+                      New report
                   </button>
                 </>
               ) : (
@@ -3567,11 +4270,10 @@ function ProfileView({
                   <button
                     type="button"
                     onClick={onToggleFollow}
-                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                      isFollowingViewedProfile
-                        ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
+                    className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto sm:justify-start ${isFollowingViewedProfile
+                      ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                      }`}
                   >
                     {isFollowingViewedProfile ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                     {isFollowingViewedProfile ? 'Following' : 'Follow'}
@@ -3579,7 +4281,7 @@ function ProfileView({
                   <button
                     type="button"
                     onClick={onShareProfile}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
                   >
                     <Share2 className="h-4 w-4" />
                     {profileShareFeedback || 'Share profile'}
@@ -3588,7 +4290,7 @@ function ProfileView({
                     <button
                       type="button"
                       onClick={onOpenLatestPost}
-                      className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-auto sm:justify-start"
                     >
                       <ArrowUpRight className="h-4 w-4" />
                       Latest report
@@ -3600,19 +4302,17 @@ function ProfileView({
           </div>
         </div>
 
-        <div className="grid gap-3 px-5 py-5 sm:px-7 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:px-7 sm:py-4 md:grid-cols-2 xl:grid-cols-5">
           <ProfileStatPill
             icon={<Users className="h-4 w-4" />}
             label="Followers"
             value={formatCount(profileFollowersCount)}
-            hint="Tracking this profile"
             onClick={() => onOpenConnections('followers')}
           />
           <ProfileStatPill
             icon={<UserPlus className="h-4 w-4" />}
             label="Following"
             value={formatCount(profileFollowingCount)}
-            hint="Accounts in orbit"
             onClick={() => onOpenConnections('following')}
           />
           <ProfileStatPill icon={<Bookmark className="h-4 w-4" />} label="Reports" value={formatCount(profileDisplay.postsCount)} hint="Published threads" />
@@ -3622,104 +4322,91 @@ function ProfileView({
       </div>
 
       <div className="motion-fade-up space-y-5" style={{ '--motion-delay': '120ms' }}>
-          <div className="soft-card p-2">
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[
-                { id: 'reports', label: 'Reports', count: profilePosts.length },
-                { id: 'solutions', label: 'Solutions', count: profileSolutions.length },
-                { id: 'activity', label: 'Activity', count: profileActivityFeed.length },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => onSelectTab(tab.id)}
-                  className={`nav-pill rounded-xl px-4 py-3 text-left transition ${
-                    profileTab === tab.id
-                      ? 'nav-pill--active bg-slate-900 text-white'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${profileTab === tab.id ? 'text-white/65' : 'text-slate-400'}`}>
-                    {tab.label}
-                  </p>
-                  <p className="mt-1 font-display text-2xl font-bold">{formatCount(tab.count)}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {profileTab === 'reports' && (
-            <div className="space-y-4">
-              {profilePosts.map((post, index) => (
-                <ProfileReportCard
-                  key={`${post.id}-profile-card`}
-                  post={post}
-                  delayMs={110 + (index * 65)}
-                  onOpenPost={() => onOpenPost(post.id)}
-                />
-              ))}
-              {profilePosts.length === 0 && (
-                <EmptyProfilePanel
-                  icon={<Bookmark className="h-5 w-5" />}
-                  title="No reports yet"
-                  description={`${profileDisplay.username} has not published a report yet. The profile header and stats will grow as new posts land.`}
-                />
-              )}
-            </div>
-          )}
-
-          {profileTab === 'solutions' && (
-            <div className="space-y-4">
-              {profileSolutions.map((solution, index) => (
-                <ProfileSolutionCard
-                  key={`${solution.postId}-${solution.solutionIndex}-${solution.key}`}
-                  solution={solution}
-                  delayMs={110 + (index * 65)}
-                  onOpenPost={() => onOpenPost(solution.postId)}
-                />
-              ))}
-              {profileSolutions.length === 0 && (
-                <EmptyProfilePanel
-                  icon={<Lightbulb className="h-5 w-5" />}
-                  title="No solutions posted yet"
-                  description="This profile has not added a community solution yet. Suggested fixes and threaded replies will show up here."
-                />
-              )}
-            </div>
-          )}
-
-          {profileTab === 'activity' && (
-            <div className="space-y-4">
-              {profileActivityFeed.map((activity, index) => (
-                <ProfileActivityCard
-                  key={activity.id}
-                  activity={activity}
-                  delayMs={110 + (index * 65)}
-                  onOpenPost={() => onOpenPost(activity.postId)}
-                />
-              ))}
-              {profileActivityFeed.length === 0 && (
-                <EmptyProfilePanel
-                  icon={<Activity className="h-5 w-5" />}
-                  title="No activity yet"
-                  description="New reports, solutions, and social momentum will stack here as the profile becomes more active."
-                />
-              )}
-            </div>
-          )}
-
-          {isOwnProfile && (
-            <div className="soft-card p-5">
+        <div className="soft-card p-2">
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'reports', label: 'Reports', count: profilePosts.length },
+              { id: 'solutions', label: 'Solutions', count: profileSolutions.length },
+              { id: 'activity', label: 'Activity', count: profileActivityFeed.length },
+            ].map((tab) => (
               <button
+                key={tab.id}
                 type="button"
-                onClick={onLogout}
-                className="flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-red-600"
+                onClick={() => onSelectTab(tab.id)}
+                className={`nav-pill rounded-xl px-4 py-3 text-left transition ${profileTab === tab.id
+                  ? 'nav-pill--active bg-slate-900 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+                  }`}
               >
-                <LogOut className="h-4 w-4" />
-                Sign Out
+                <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${profileTab === tab.id ? 'text-white/65' : 'text-slate-400'}`}>
+                  {tab.label}
+                </p>
+                <p className="mt-1 font-display text-2xl font-bold">{formatCount(tab.count)}</p>
               </button>
-            </div>
-          )}
+            ))}
+          </div>
+        </div>
+
+        {profileTab === 'reports' && (
+          <div className="space-y-4">
+            {profilePosts.map((post, index) => (
+              <ProfileReportCard
+                key={`${post.id}-profile-card`}
+                post={post}
+                delayMs={110 + (index * 65)}
+                onOpenPost={() => onOpenPost(post.id)}
+              />
+            ))}
+            {profilePosts.length === 0 && (
+              <EmptyProfilePanel
+                icon={<Bookmark className="h-5 w-5" />}
+                title="No reports yet"
+                description={`${profileDisplay.username} has not published a report yet. The profile header and stats will grow as new posts land.`}
+              />
+            )}
+          </div>
+        )}
+
+        {profileTab === 'solutions' && (
+          <div className="space-y-4">
+            {profileSolutions.map((solution, index) => (
+              <ProfileSolutionCard
+                key={`${solution.postId}-${solution.solutionIndex}-${solution.key}`}
+                solution={solution}
+                delayMs={110 + (index * 65)}
+                onOpenPost={() => onOpenPost(solution.postId)}
+              />
+            ))}
+            {profileSolutions.length === 0 && (
+              <EmptyProfilePanel
+                icon={<Lightbulb className="h-5 w-5" />}
+                title="No solutions posted yet"
+                description="This profile has not added a community solution yet. Suggested fixes and threaded replies will show up here."
+              />
+            )}
+          </div>
+        )}
+
+        {profileTab === 'activity' && (
+          <div className="space-y-4">
+            {profileActivityFeed.map((activity, index) => (
+              <ProfileActivityCard
+                key={activity.id}
+                activity={activity}
+                delayMs={110 + (index * 65)}
+                onOpenPost={() => onOpenPost(activity.postId)}
+              />
+            ))}
+            {profileActivityFeed.length === 0 && (
+              <EmptyProfilePanel
+                icon={<Activity className="h-5 w-5" />}
+                title="No activity yet"
+                description="New reports, solutions, and social momentum will stack here as the profile becomes more active."
+              />
+            )}
+          </div>
+        )}
+
       </div>
     </>
   );
@@ -3731,31 +4418,31 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
+        className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
       >
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
             {icon}
           </span>
         </div>
-        <p className="mt-3 font-display text-3xl font-bold text-slate-950">{value}</p>
-        <p className="mt-1 text-sm text-slate-500">{hint}</p>
-        <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">View list</p>
+        <p className="mt-2 font-display text-xl font-bold text-slate-950 sm:text-2xl">{value}</p>
+        {hint ? <p className="mt-1 text-xs text-slate-500 sm:text-sm">{hint}</p> : null}
+        {hint ? <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">View list</p> : null}
       </button>
     );
   }
 
   return (
-    <div className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
           {icon}
         </span>
       </div>
-      <p className="mt-3 font-display text-3xl font-bold text-slate-950">{value}</p>
-      <p className="mt-1 text-sm text-slate-500">{hint}</p>
+      <p className="mt-2 font-display text-xl font-bold text-slate-950 sm:text-2xl">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-slate-500 sm:text-sm">{hint}</p> : null}
     </div>
   );
 }
@@ -3831,7 +4518,7 @@ function ProfileConnectionsModal({
                 return (
                   <div
                     key={`${type}-${item.username}`}
-                    className="signal-tile flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    className="signal-tile flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center"
                   >
                     <button
                       type="button"
@@ -3865,11 +4552,10 @@ function ProfileConnectionsModal({
                         type="button"
                         onClick={() => onToggleFollow(item.username)}
                         disabled={isSubmitting}
-                        className={`inline-flex min-w-[108px] items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                          item.isFollowing
-                            ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                            : 'bg-slate-900 text-white hover:bg-slate-800'
-                        } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
+                        className={`inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition sm:min-w-[108px] sm:w-auto ${item.isFollowing
+                          ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                          : 'bg-slate-900 text-white hover:bg-slate-800'
+                          } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
                       >
                         {isSubmitting ? 'Updating...' : item.isFollowing ? 'Following' : 'Follow'}
                       </button>
@@ -3885,24 +4571,356 @@ function ProfileConnectionsModal({
   );
 }
 
+function ThemeSwitch({ checked, onChange, label = 'Theme', compact = false }) {
+  const switchId = useId();
+  const wrapperClassName = compact ? 'theme-switch theme-switch--compact' : 'theme-switch';
+
+  return (
+    <div className={wrapperClassName}>
+      {!compact && <span className="theme-switch__label">{label}</span>}
+      <div className="theme-switch__toggle-wrap">
+        <input
+          id={switchId}
+          className="theme-switch__input"
+          type="checkbox"
+          checked={checked}
+          onChange={onChange}
+          aria-label={checked ? 'Switch to light theme' : 'Switch to dark theme'}
+        />
+        <label className="theme-switch__toggle" htmlFor={switchId}>
+          <span className="theme-switch__handler">
+            <span className="theme-switch__crater theme-switch__crater--1" />
+            <span className="theme-switch__crater theme-switch__crater--2" />
+            <span className="theme-switch__crater theme-switch__crater--3" />
+          </span>
+          <span className="theme-switch__star theme-switch__star--1" />
+          <span className="theme-switch__star theme-switch__star--2" />
+          <span className="theme-switch__star theme-switch__star--3" />
+          <span className="theme-switch__star theme-switch__star--4" />
+          <span className="theme-switch__star theme-switch__star--5" />
+          <span className="theme-switch__star theme-switch__star--6" />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ProfileSettingsModal({
+  isOpen,
+  activeSection,
+  status,
+  isSubmitting,
+  profile,
+  profilePhotoUrl,
+  profileJoinLabel,
+  nameDraft,
+  usernameDraft,
+  passwordDraft,
+  onClose,
+  onSectionChange,
+  onEditPhoto,
+  onNameDraftChange,
+  onUsernameDraftChange,
+  onPasswordDraftChange,
+  onSaveName,
+  onSaveUsername,
+  onSavePassword,
+  onLogout,
+  onSwitchAccount,
+}) {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const nameInputRef = useRef(null);
+  const usernameInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsEditingName(false);
+      setIsEditingUsername(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (status?.type !== 'success') return;
+    setIsEditingName(false);
+    setIsEditingUsername(false);
+  }, [status?.type, status?.message]);
+
+  if (!isOpen || !profile) return null;
+
+  const sections = [
+    { id: 'personal', label: 'Personal details', Icon: Users },
+    { id: 'change-password', label: 'Change password', Icon: ShieldCheck },
+    { id: 'switch-account', label: 'Switch account', Icon: UserPlus },
+    { id: 'logout', label: 'Logout', Icon: LogOut },
+  ];
+
+  const profileRows = [
+    ['Email', profile.email || 'Not added'],
+    ['Phone', profile.phoneNumber || 'Not added'],
+    ['Gender', profile.gender || 'Not set'],
+    ['Role', profile.role || 'User'],
+    ['Joined', profileJoinLabel || 'Recently'],
+  ];
+
+  let sectionContent = null;
+
+  if (activeSection === 'personal') {
+    sectionContent = (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            {profilePhotoUrl ? (
+              <img src={profilePhotoUrl} alt={profile.username} className="h-16 w-16 rounded-2xl object-cover" />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-lg font-bold uppercase text-white">
+                {getInitials(profile.username)}
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-bold text-slate-950">{profile.displayName || profile.username}</p>
+              <p className="mt-1 text-sm text-slate-500">@{profile.username}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onEditPhoto}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            <ImageIcon className="h-4 w-4" />
+            Change photo
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <form onSubmit={onSaveName} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Display name</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {isEditingName ? 'Edit mode is on for this field.' : 'Click the pen icon to edit this field.'}
+                </p>
+              </div>
+              <button
+                type={isEditingName ? 'submit' : 'button'}
+                onClick={isEditingName ? undefined : () => {
+                  setIsEditingName(true);
+                  setTimeout(() => nameInputRef.current?.focus(), 0);
+                }}
+                disabled={isSubmitting}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={isEditingName ? 'Save display name' : 'Edit display name'}
+              >
+                <SquarePen className="h-4 w-4" />
+              </button>
+            </div>
+            <input
+              ref={nameInputRef}
+              value={nameDraft}
+              onChange={(event) => onNameDraftChange(event.target.value)}
+              className={`form-input mt-3 ${!isEditingName ? 'cursor-default border-slate-200 bg-slate-100 text-slate-500 focus:translate-y-0 focus:ring-0' : ''}`}
+              placeholder="Your public name"
+              disabled={isSubmitting || !isEditingName}
+              readOnly={!isEditingName}
+            />
+          </form>
+
+          <form onSubmit={onSaveUsername} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Username</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {isEditingUsername ? 'Edit mode is on for this field.' : 'Click the pen icon to edit this field.'}
+                </p>
+              </div>
+              <button
+                type={isEditingUsername ? 'submit' : 'button'}
+                onClick={isEditingUsername ? undefined : () => {
+                  setIsEditingUsername(true);
+                  setTimeout(() => usernameInputRef.current?.focus(), 0);
+                }}
+                disabled={isSubmitting}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label={isEditingUsername ? 'Save username' : 'Edit username'}
+              >
+                <SquarePen className="h-4 w-4" />
+              </button>
+            </div>
+            <input
+              ref={usernameInputRef}
+              value={usernameDraft}
+              onChange={(event) => onUsernameDraftChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+              className={`form-input mt-3 ${!isEditingUsername ? 'cursor-default border-slate-200 bg-slate-100 text-slate-500 focus:translate-y-0 focus:ring-0' : ''}`}
+              placeholder="choose_username"
+              disabled={isSubmitting || !isEditingUsername}
+              readOnly={!isEditingUsername}
+            />
+          </form>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {profileRows.map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (activeSection === 'change-password') {
+    sectionContent = profile.canChangePassword ? (
+      <form className="space-y-4" onSubmit={onSavePassword}>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700">Current password</span>
+          <input
+            type="password"
+            value={passwordDraft.currentPassword}
+            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, currentPassword: event.target.value }))}
+            className="form-input"
+            placeholder="Current password"
+            disabled={isSubmitting}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700">New password</span>
+          <input
+            type="password"
+            value={passwordDraft.newPassword}
+            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, newPassword: event.target.value }))}
+            className="form-input"
+            placeholder="New password"
+            disabled={isSubmitting}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700">Confirm new password</span>
+          <input
+            type="password"
+            value={passwordDraft.confirmPassword}
+            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, confirmPassword: event.target.value }))}
+            className="form-input"
+            placeholder="Confirm new password"
+            disabled={isSubmitting}
+          />
+        </label>
+        <button type="submit" disabled={isSubmitting} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+          {isSubmitting ? 'Updating...' : 'Update password'}
+        </button>
+      </form>
+    ) : (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+        Password changes are only available for accounts created with email and password.
+      </div>
+    );
+  }
+
+  if (activeSection === 'switch-account') {
+    sectionContent = (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+          Log out of the current account and jump back to the sign-in screen so you can continue with another profile.
+        </div>
+        <button type="button" onClick={onSwitchAccount} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+          <UserPlus className="h-4 w-4" />
+          Switch account
+        </button>
+      </div>
+    );
+  }
+
+  if (activeSection === 'logout') {
+    sectionContent = (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700">
+          This signs you out of Public Policy Hub on this device.
+        </div>
+        <button type="button" onClick={onLogout} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700">
+          <LogOut className="h-4 w-4" />
+          Logout
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-start justify-center bg-slate-950/55 px-4 py-1 backdrop-blur-sm sm:py-3" onClick={onClose}>
+      <div
+        className="motion-pop max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Profile settings</p>
+            <h3 className="mt-1 font-display text-2xl font-bold text-slate-950">@{profile.username}</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            aria-label="Close settings"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid max-h-[calc(88vh-82px)] gap-0 overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="max-h-full overflow-y-auto border-b border-slate-200 bg-slate-50/80 p-3 lg:border-b-0 lg:border-r">
+            <div className="grid gap-2">
+              {sections.map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => onSectionChange(section.id)}
+                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${activeSection === section.id
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white text-slate-700 hover:bg-slate-100'
+                    }`}
+                >
+                  <section.Icon className="h-4 w-4" />
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <div className="max-h-full overflow-y-auto px-5 py-5 sm:px-6">
+            {status?.message && (
+              <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${status.type === 'error'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}>
+                {status.message}
+              </div>
+            )}
+            {sectionContent}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProfileActivityCard({ activity, delayMs = 0, onOpenPost }) {
   const isReport = activity.kind === 'report';
 
   return (
-    <article className="soft-card signal-card overflow-hidden p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
+    <article className="soft-card signal-card overflow-hidden p-4 sm:p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-2xl">
           <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isReport ? 'text-blue-700' : 'text-amber-700'}`}>
             {activity.eyebrow}
           </p>
-          <h3 className="mt-2 font-display text-[26px] font-bold leading-tight text-slate-950">{activity.title}</h3>
+          <h3 className="mt-2 font-display text-[22px] font-bold leading-tight text-slate-950 sm:text-[26px]">{activity.title}</h3>
           <p className="mt-2 text-sm leading-7 text-slate-600">{activity.preview}</p>
         </div>
 
         <button
           type="button"
           onClick={onOpenPost}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:w-auto"
         >
           Open
           <ArrowUpRight className="h-4 w-4" />
@@ -3951,7 +4969,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
             >
               {post.author}
             </button>
-            <p className="text-xs text-slate-500">{post.time || 'Recently'}</p>
+            <p className="text-xs text-slate-500">{formatPostTimestamp(post)}</p>
           </div>
         </div>
 
@@ -4075,7 +5093,7 @@ function ProfileReportCard({ delayMs = 0, post, onOpenPost }) {
           </div>
           <h3 className="mt-3 font-display text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
           <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
-          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{post.time || 'Recently'}</p>
+          <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{formatPostTimestamp(post)}</p>
         </div>
 
         <button
@@ -4316,7 +5334,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             if (video.paused) {
-              video.play().catch(() => {});
+              video.play().catch(() => { });
             }
           } else {
             if (!video.paused) {
@@ -4337,7 +5355,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
     if (!video) return;
 
     if (video.paused) {
-      video.play().catch(() => {});
+      video.play().catch(() => { });
     } else {
       video.pause();
     }
@@ -4400,7 +5418,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
       if (!updatedVideo) return;
       const resumeAt = Math.min(previousTime, updatedVideo.duration || previousTime || 0);
       if (Number.isFinite(resumeAt)) updatedVideo.currentTime = resumeAt;
-      if (wasPlaying) updatedVideo.play().catch(() => {});
+      if (wasPlaying) updatedVideo.play().catch(() => { });
       video.removeEventListener('loadedmetadata', onMetadataLoaded);
     };
 
@@ -4412,12 +5430,12 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
     if (!container) return;
 
     if (document.fullscreenElement === container) {
-      await document.exitFullscreen().catch(() => {});
+      await document.exitFullscreen().catch(() => { });
       return;
     }
 
     if (container.requestFullscreen) {
-      await container.requestFullscreen().catch(() => {});
+      await container.requestFullscreen().catch(() => { });
     }
   };
 
@@ -4460,9 +5478,8 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
                 key={`${option.value}-${option.label}`}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onChangeQuality(option.value); }}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${
-                  selectedQuality === option.value ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-800'
-                }`}
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${selectedQuality === option.value ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-800'
+                  }`}
               >
                 <span>{option.label}</span>
                 {selectedQuality === option.value && <span className="text-[11px] uppercase">Active</span>}
@@ -4476,9 +5493,8 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
                   key={`${speed}x`}
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onChangePlaybackRate(speed); }}
-                  className={`rounded-md px-1 py-1 text-xs font-semibold ${
-                    playbackRate === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
-                  }`}
+                  className={`rounded-md px-1 py-1 text-xs font-semibold ${playbackRate === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                    }`}
                 >
                   {speed}x
                 </button>
@@ -4800,6 +5816,53 @@ function formatTimestamp(value) {
   });
 }
 
+function formatPostTimestamp(post) {
+  const createdAtValue = post?.createdAt ?? post?.created_at;
+  if (!createdAtValue) {
+    const legacyTime = `${post?.time ?? ''}`.trim();
+    return legacyTime || 'Recently';
+  }
+
+  const date = new Date(createdAtValue);
+  if (Number.isNaN(date.getTime())) {
+    const legacyTime = `${post?.time ?? ''}`.trim();
+    return legacyTime || 'Recently';
+  }
+
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 60 * 1000) return 'Just now';
+
+  const diffMinutes = Math.floor(diffMs / (60 * 1000));
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getNotificationTypeLabel(type) {
+  const normalizedType = `${type ?? ''}`.trim().toLowerCase();
+
+  if (normalizedType === 'follow') return 'New follower';
+  if (normalizedType === 'support') return 'Support';
+  if (normalizedType === 'comment') return 'Comment';
+  if (normalizedType === 'solution') return 'Solution';
+  if (normalizedType === 'solution_reply') return 'Reply';
+  if (normalizedType === 'solution_upvote') return 'Upvote';
+  if (normalizedType === 'solution_downvote') return 'Downvote';
+  if (normalizedType === 'share') return 'Share';
+  return 'Update';
+}
+
 function getMostFrequentValue(values) {
   const counts = values
     .map((value) => `${value ?? ''}`.trim())
@@ -4917,7 +5980,7 @@ function buildProfileActivityFeed(profilePosts, profileSolutions) {
     eyebrow: 'Report thread',
     title: post.title,
     preview: getDescriptionPreview(post.description, false, 180).previewText,
-    chips: [post.location, post.department, post.time || 'Recently'].filter(Boolean),
+    chips: [post.location, post.department, formatPostTimestamp(post)].filter(Boolean),
     metrics: [
       { label: 'Support', value: formatCount(post.support) },
       { label: 'Comments', value: formatCount(post.comments) },
@@ -4985,6 +6048,19 @@ function formatMembershipDuration(value) {
   return `${years}.${remainingMonths} yr`;
 }
 
+function mergeUniquePosts(...groups) {
+  const seenPostIds = new Set();
+
+  return groups.flatMap((group) => (
+    Array.isArray(group) ? group : []
+  )).filter((post) => {
+    const postId = `${post?.id ?? ''}`.trim();
+    if (!postId || seenPostIds.has(postId)) return false;
+    seenPostIds.add(postId);
+    return true;
+  });
+}
+
 function getProfileJoinLabel(usernameOrDate, fallbackUsername = '') {
   return formatMemberSinceLabel(usernameOrDate, fallbackUsername);
 }
@@ -5010,7 +6086,6 @@ function shouldUseGoogleRedirect() {
   const mobileBrowser = /android|iphone|ipad|ipod|mobile/i.test(window.navigator?.userAgent ?? '');
   return touchDevice || mobileBrowser;
 }
-
 function storeGoogleAuthMode(mode) {
   if (typeof window === 'undefined') return;
   const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
@@ -5044,5 +6119,4 @@ function getGoogleAuthErrorMessage(error) {
 
   return error?.message || 'Unable to continue with Google.';
 }
-
 export default App;

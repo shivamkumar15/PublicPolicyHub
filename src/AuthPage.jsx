@@ -510,7 +510,7 @@ function Field({ label, name, onChange, placeholder, type = 'text', value }) {
 
 function ActionButton({ icon = null, onClick, text, variant = 'white' }) {
   return (
-    <button type="button" onClick={onClick} className={`auth-action-btn auth-action-btn--${variant}`}>
+    <button type="button" onClick={onClick} className={`auth-action-btn auth-action-btn--${variant} magnetic-item btn-interactive hover-lift`}>
       {icon}
       {text}
     </button>

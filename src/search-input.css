@@ -167,3 +167,45 @@ html[data-theme='dark'] .policy-search__container:focus-within {
     gap: 0.5rem;
   }
 }
+
+@media (max-width: 767px) {
+  .policy-search {
+    gap: 0.45rem;
+  }
+
+  .policy-search__container {
+    height: 46px;
+    padding: 0 4px;
+  }
+
+  .policy-search__input {
+    height: 38px;
+    padding: 0 14px;
+    font-size: 16px;
+    letter-spacing: 0.01em;
+  }
+
+  .policy-search__clear {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.68rem;
+  }
+}
+
+@media (max-width: 479px) {
+  .policy-search {
+    gap: 0.4rem;
+  }
+
+  .policy-search__container {
+    height: 44px;
+  }
+
+  .policy-search__input {
+    padding: 0 12px;
+  }
+
+  .policy-search__clear {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.64rem;
+  }
+}

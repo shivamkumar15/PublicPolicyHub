@@ -297,10 +297,125 @@ const ensureWritableDiscussionTarget = (solution, replyPath = []) => {
   return currentEntry;
 };
 
+const replaceUsernameInDiscussionEntry = (entry, currentUsername, nextUsername) => {
+  if (!entry || typeof entry === 'string') return false;
+
+  let hasChanges = false;
+
+  if (`${entry.author ?? ''}`.trim() === currentUsername) {
+    entry.author = nextUsername;
+    hasChanges = true;
+  }
+
+  if (Array.isArray(entry.upvoters)) {
+    const nextUpvoters = entry.upvoters.map((value) => (value === currentUsername ? nextUsername : value));
+    if (nextUpvoters.some((value, index) => value !== entry.upvoters[index])) {
+      entry.upvoters = nextUpvoters;
+      hasChanges = true;
+    }
+  }
+
+  if (Array.isArray(entry.downvoters)) {
+    const nextDownvoters = entry.downvoters.map((value) => (value === currentUsername ? nextUsername : value));
+    if (nextDownvoters.some((value, index) => value !== entry.downvoters[index])) {
+      entry.downvoters = nextDownvoters;
+      hasChanges = true;
+    }
+  }
+
+  if (Array.isArray(entry.replies)) {
+    entry.replies.forEach((reply) => {
+      if (replaceUsernameInDiscussionEntry(reply, currentUsername, nextUsername)) {
+        hasChanges = true;
+      }
+    });
+  }
+
+  return hasChanges;
+};
+
+const replaceUsernameInPost = (post, currentUsername, nextUsername) => {
+  let hasChanges = false;
+
+  if (`${post.author ?? ''}`.trim() === currentUsername) {
+    post.author = nextUsername;
+    hasChanges = true;
+  }
+
+  if (Array.isArray(post.supporters)) {
+    const nextSupporters = post.supporters.map((value) => (value === currentUsername ? nextUsername : value));
+    if (nextSupporters.some((value, index) => value !== post.supporters[index])) {
+      post.supporters = nextSupporters;
+      hasChanges = true;
+    }
+  }
+
+  if (Array.isArray(post.commentsList)) {
+    post.commentsList.forEach((comment) => {
+      if (`${comment?.author ?? ''}`.trim() === currentUsername) {
+        comment.author = nextUsername;
+        hasChanges = true;
+      }
+    });
+  }
+
+  if (Array.isArray(post.solutionsList)) {
+    post.solutionsList.forEach((solution) => {
+      if (replaceUsernameInDiscussionEntry(solution, currentUsername, nextUsername)) {
+        hasChanges = true;
+      }
+    });
+  }
+
+  if (hasChanges) {
+    post.markModified('supporters');
+    post.markModified('commentsList');
+    post.markModified('solutionsList');
+  }
+
+  return hasChanges;
+};
+
+const renameUserReferences = async (currentUsername, nextUsername) => {
+  if (!currentUsername || !nextUsername || currentUsername === nextUsername) return;
+
+  await Promise.all([
+    User.updateMany(
+      { following: currentUsername },
+      { $set: { 'following.$[matchedUsername]': nextUsername } },
+      { arrayFilters: [{ matchedUsername: currentUsername }] },
+    ),
+    Notification.updateMany({ recipientUsername: currentUsername }, { $set: { recipientUsername: nextUsername } }),
+    Notification.updateMany({ actorUsername: currentUsername }, { $set: { actorUsername: nextUsername } }),
+  ]);
+
+  const posts = await Post.find({
+    $or: [
+      { author: currentUsername },
+      { supporters: currentUsername },
+      { 'commentsList.author': currentUsername },
+      { 'solutionsList.author': currentUsername },
+      { 'solutionsList.upvoters': currentUsername },
+      { 'solutionsList.downvoters': currentUsername },
+      { 'solutionsList.replies.author': currentUsername },
+      { 'solutionsList.replies.upvoters': currentUsername },
+      { 'solutionsList.replies.downvoters': currentUsername },
+    ],
+  });
+
+  for (const post of posts) {
+    if (!replaceUsernameInPost(post, currentUsername, nextUsername)) continue;
+    await post.save();
+    broadcastPostUpdate(post);
+  }
+};
+
 const normalizePost = (post) => {
   const source = post?.toObject ? post.toObject() : post;
+  const createdAt = getPostCreatedAt(source);
   return {
     ...source,
+    createdAt: createdAt ? createdAt.toISOString() : null,
     support: toCount(source?.support),
     comments: toCount(source?.comments),
     solutions: toCount(source?.solutions),
@@ -564,6 +679,76 @@ const getUniqueStrings = (values) => (
     : []
 );
 
+const getPostCreatedAt = (post) => {
+  if (post?.createdAt instanceof Date && !Number.isNaN(post.createdAt.getTime())) {
+    return post.createdAt;
+  }
+
+  if (post?.createdAt) {
+    const parsedCreatedAt = new Date(post.createdAt);
+    if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
+  }
+
+  if (post?._id && typeof post._id.getTimestamp === 'function') {
+    const objectIdTimestamp = post._id.getTimestamp();
+    if (objectIdTimestamp instanceof Date && !Number.isNaN(objectIdTimestamp.getTime())) {
+      return objectIdTimestamp;
+    }
+  }
+
+  return null;
+};
+
+const serializeNotification = (notification) => {
+  const source = notification?.toObject ? notification.toObject() : notification;
+  const createdAt = source?.created_at instanceof Date
+    ? source.created_at
+    : source?.created_at
+      ? new Date(source.created_at)
+      : null;
+
+  return {
+    id: source?._id?.toString?.() || '',
+    recipientUsername: source?.recipientUsername || '',
+    actorUsername: source?.actorUsername || '',
+    type: source?.type || 'generic',
+    message: source?.message || '',
+    postId: source?.postId || '',
+    postTitle: source?.postTitle || '',
+    read: !!source?.read,
+    createdAt: createdAt instanceof Date && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toISOString()
+      : null,
+  };
+};
+
+const createNotification = async ({
+  recipientUsername = '',
+  actorUsername = '',
+  type = 'generic',
+  message = '',
+  postId = '',
+  postTitle = '',
+}) => {
+  const normalizedRecipient = `${recipientUsername ?? ''}`.trim();
+  const normalizedActor = `${actorUsername ?? ''}`.trim();
+  const normalizedMessage = `${message ?? ''}`.trim();
+
+  if (!normalizedRecipient || !normalizedMessage) return null;
+  if (normalizedActor && normalizedActor === normalizedRecipient) return null;
+
+  const notification = await Notification.create({
+    recipientUsername: normalizedRecipient,
+    actorUsername: normalizedActor,
+    type: `${type ?? 'generic'}`.trim() || 'generic',
+    message: normalizedMessage,
+    postId: `${postId ?? ''}`.trim(),
+    postTitle: `${postTitle ?? ''}`.trim(),
+  });
+
+  return serializeNotification(notification);
+};
+
 const getUserJoinedAt = (user) => {
   if (user?.createdAt instanceof Date && !Number.isNaN(user.createdAt.getTime())) {
     return user.createdAt;
@@ -614,7 +799,9 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
   };
 
   if (includePrivateFields) {
+    payload.email = user.email || '';
     payload.phoneNumber = user.phoneNumber || '';
+    payload.canChangePassword = !!user.password_hash && user.password_hash !== 'firebase_oauth';
     payload.reportedPostIds = reportedPostIds;
   }
 
@@ -1164,6 +1351,93 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
   }
 });
 
+app.patch('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const updates = req.body && typeof req.body === 'object' ? req.body : {};
+    const hasDisplayNameUpdate = Object.prototype.hasOwnProperty.call(updates, 'displayName');
+    const hasUsernameUpdate = Object.prototype.hasOwnProperty.call(updates, 'username');
+
+    if (!hasDisplayNameUpdate && !hasUsernameUpdate) {
+      return res.status(400).json({ error: 'No profile changes were provided.' });
+    }
+
+    if (hasDisplayNameUpdate) {
+      const nextDisplayName = normalizeDisplayName(updates.displayName);
+      if (!nextDisplayName) {
+        return res.status(400).json({ error: 'Display name is required.' });
+      }
+      user.displayName = nextDisplayName;
+    }
+
+    let nextToken = '';
+    if (hasUsernameUpdate) {
+      const { normalizedUsername, error: usernameError } = validateRequestedUsername(updates.username);
+      if (usernameError) return res.status(400).json({ error: usernameError });
+
+      const currentUsername = `${user.username ?? ''}`.trim();
+      if (normalizedUsername !== currentUsername) {
+        const existingUsernameOwner = await findUserByNormalizedUsername(normalizedUsername);
+        if (existingUsernameOwner && `${existingUsernameOwner._id}` !== `${user._id}`) {
+          return res.status(409).json({ error: 'That username is already taken.' });
+        }
+
+        user.username = normalizedUsername;
+        await user.save();
+        await renameUserReferences(currentUsername, normalizedUsername);
+        nextToken = issueAuthToken(user);
+      }
+    }
+
+    if (!hasUsernameUpdate || !nextToken) {
+      await user.save();
+      nextToken = issueAuthToken(user);
+    }
+
+    res.json({
+      token: nextToken,
+      profile: await buildProfilePayload(user, user.username, { includePrivateFields: true }),
+    });
+  } catch (error) {
+    console.error('Error updating profile details:', error);
+    res.status(500).json({ error: 'Failed to update profile details' });
+  }
+});
+
+app.patch('/api/users/profile/password', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    if (!user.password_hash || user.password_hash === 'firebase_oauth') {
+      return res.status(400).json({ error: 'Password changes are only available for email and password accounts.' });
+    }
+
+    const currentPassword = `${req.body?.currentPassword ?? ''}`;
+    const nextPassword = `${req.body?.newPassword ?? ''}`;
+
+    if (!currentPassword) return res.status(400).json({ error: 'Current password is required.' });
+    if (nextPassword.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    user.password_hash = await bcrypt.hash(nextPassword, 12);
+    await user.save();
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ error: 'Failed to update password' });
+  }
+});
+
 app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
   try {
     const targetUsername = `${req.params.username ?? ''}`.trim();
@@ -1185,6 +1459,15 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
       : [...following, targetUsername];
 
     await viewer.save();
+
+    if (!isFollowing) {
+      await createNotification({
+        recipientUsername: targetUsername,
+        actorUsername: viewer.username,
+        type: 'follow',
+        message: `${viewer.username} started following you.`,
+      });
+    }
 
     const followerCount = await User.countDocuments({ following: targetUsername });
     res.json({
@@ -1247,7 +1530,6 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
 
   const id = `post_${Date.now()}`;
   const author = req.user.username; 
-  const time = 'Just now';
   const fixes = ['Awaiting suggested fixes'];
 
   let mediaList = [];
@@ -1280,9 +1562,9 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
 
   try {
     const newPost = new Post({
-      id, location: location || 'India', department: department || 'General', 
-      title, description, author, time, media: media || 'IMAGE', 
-      tag: department || 'Issue', accent: 'from-slate-900 via-slate-800 to-slate-700', 
+      id, location: location || 'India', department: department || 'General',
+      title, description, author, createdAt: new Date(), media: media || 'IMAGE',
+      tag: department || 'Issue', accent: 'from-slate-900 via-slate-800 to-slate-700',
       fixes, mediaList
     });
     
@@ -1334,6 +1616,7 @@ app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
     if (!Array.isArray(post.supporters)) post.supporters = [];
     const existingIndex = post.supporters.findIndex((username) => username === req.user.username);
 
+    const addedSupport = existingIndex < 0;
     if (existingIndex >= 0) {
       post.supporters.splice(existingIndex, 1);
       post.support = Math.max(currentSupportCount - 1, 0);
@@ -1342,6 +1625,16 @@ app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
       post.support = currentSupportCount + 1;
     }
     await post.save();
+    if (addedSupport) {
+      await createNotification({
+        recipientUsername: post.author,
+        actorUsername: req.user.username,
+        type: 'support',
+        postId: post.id,
+        postTitle: post.title,
+        message: `${req.user.username} supported your report "${post.title}".`,
+      });
+    }
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1425,6 +1718,14 @@ app.post('/api/posts/:postId/comments', authenticateToken, async (req, res) => {
     post.comments = post.commentsList.length;
 
     await post.save();
+    await createNotification({
+      recipientUsername: post.author,
+      actorUsername: req.user.username,
+      type: 'comment',
+      postId: post.id,
+      postTitle: post.title,
+      message: `${req.user.username} commented on your report "${post.title}".`,
+    });
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1458,6 +1759,14 @@ app.post('/api/posts/:postId/solutions', authenticateToken, async (req, res) => 
 
     post.markModified('solutionsList');
     await post.save();
+    await createNotification({
+      recipientUsername: post.author,
+      actorUsername: req.user.username,
+      type: 'solution',
+      postId: post.id,
+      postTitle: post.title,
+      message: `${req.user.username} proposed a solution on your report "${post.title}".`,
+    });
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1497,9 +1806,23 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
     if (voteType === 'down' && !hadDownvote) {
       targetEntry.downvoters.push(username);
     }
+    const createdUpvote = voteType === 'up' && !hadUpvote;
+    const createdDownvote = voteType === 'down' && !hadDownvote;
 
     post.markModified('solutionsList');
     await post.save();
+    if (createdUpvote || createdDownvote) {
+      await createNotification({
+        recipientUsername: targetEntry.author,
+        actorUsername: req.user.username,
+        type: createdUpvote ? 'solution_upvote' : 'solution_downvote',
+        postId: post.id,
+        postTitle: post.title,
+        message: createdUpvote
+          ? `${req.user.username} upvoted your solution on "${post.title}".`
+          : `${req.user.username} downvoted your solution on "${post.title}".`,
+      });
+    }
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1529,6 +1852,14 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
 
     post.markModified('solutionsList');
     await post.save();
+    await createNotification({
+      recipientUsername: parentEntry.author,
+      actorUsername: req.user.username,
+      type: 'solution_reply',
+      postId: post.id,
+      postTitle: post.title,
+      message: `${req.user.username} replied to your solution on "${post.title}".`,
+    });
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1537,13 +1868,23 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
   }
 });
 
-app.post('/api/posts/:postId/share', async (req, res) => {
+app.post('/api/posts/:postId/share', attachOptionalUser, async (req, res) => {
   try {
     const post = await Post.findOne({ id: req.params.postId });
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
     post.shares = toCount(post.shares) + 1;
     await post.save();
+    await createNotification({
+      recipientUsername: post.author,
+      actorUsername: req.user?.username || '',
+      type: 'share',
+      postId: post.id,
+      postTitle: post.title,
+      message: req.user?.username
+        ? `${req.user.username} shared your report "${post.title}".`
+        : `Someone shared your report "${post.title}".`,
+    });
     broadcastPostUpdate(post);
     res.json(normalizePost(post));
   } catch (error) {
@@ -1561,11 +1902,15 @@ app.get('/api/cities', async (req, res) => {
   }
 });
 
-app.get('/api/notifications', async (req, res) => {
+app.get('/api/notifications', attachOptionalUser, async (req, res) => {
   try {
-    const notifications = await Notification.find().sort({ created_at: -1 }).limit(10).lean();
-    res.json(notifications.map(n => n.message));
-  } catch {
+    const query = req.user?.username
+      ? { recipientUsername: req.user.username }
+      : { recipientUsername: '' };
+    const notifications = await Notification.find(query).sort({ created_at: -1 }).limit(20).lean();
+    res.json(notifications.map(serializeNotification));
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
     res.status(500).json({ error: 'Database connection error' });
   }
 });

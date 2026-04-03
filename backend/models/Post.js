@@ -27,6 +27,7 @@ const postSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   author: { type: String, ref: 'User' },
+  createdAt: { type: Date, default: Date.now },
   time: { type: String },
   support: { type: Number, default: 0 },
   comments: { type: Number, default: 0 },
