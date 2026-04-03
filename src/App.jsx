@@ -23,6 +23,7 @@ import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js';
 import Pause from 'lucide-react/dist/esm/icons/pause.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
+import Search from 'lucide-react/dist/esm/icons/search.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Share2 from 'lucide-react/dist/esm/icons/share-2.js';
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
@@ -40,6 +41,7 @@ import Zap from 'lucide-react/dist/esm/icons/zap.js';
 
 import AuthPage from './AuthPage.jsx';
 import PageLoader from './PageLoader.jsx';
+import SearchInput from './SearchInput.jsx';
 import {
   auth,
   getRedirectResult,
@@ -182,9 +184,12 @@ function App() {
     error: '',
   });
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [profileShareFeedback, setProfileShareFeedback] = useState('');
   const [theme, setTheme] = useState(getInitialTheme);
   const profileMenuRef = useRef(null);
+  const searchPanelRef = useRef(null);
   const profilePhotoInputRef = useRef(null);
   const solutionInputRefs = useRef({});
   const solutionReplyInputRefs = useRef({});
@@ -525,6 +530,10 @@ function App() {
     const closeMenuOnOutsideClick = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
         setIsProfileMenuOpen(false);
+      }
+
+      if (searchPanelRef.current && !searchPanelRef.current.contains(event.target)) {
+        setIsSearchOpen(false);
       }
 
       if (activePostMenuId) {
@@ -924,6 +933,8 @@ function App() {
     setIsProfileMenuOpen(false);
     setAuthError('');
     setSelectedDepartmentFilter('');
+    setSearchQuery('');
+    setIsSearchOpen(false);
     setIsGenderPromptOpen(false);
     setIsGenderPromptDismissed(false);
     setGenderPromptValue('');
@@ -1478,6 +1489,32 @@ function App() {
     setIsProfileMenuOpen(false);
   };
 
+  const clearSearch = () => {
+    setSearchQuery('');
+    setIsSearchOpen(false);
+  };
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    setProfileViewUsername(null);
+    setActivePostId(null);
+    setActiveView('home');
+    setIsSearchOpen(true);
+  };
+
+  const handleSearchPostOpen = (postId) => {
+    if (!postId) return;
+    setActivePostId(postId);
+    setActiveView('post');
+    setIsSearchOpen(false);
+  };
+
+  const handleSearchProfileOpen = (username) => {
+    if (!username) return;
+    openAuthorProfile(username);
+    setIsSearchOpen(false);
+  };
+
   const preloadAuthorPreview = async (username) => {
     const normalizedUsername = `${username ?? ''}`.trim();
     if (!normalizedUsername) return;
@@ -1592,9 +1629,63 @@ function App() {
     );
   }
 
-  const filteredHomePosts = selectedDepartmentFilter
-    ? apiPosts.filter((post) => `${post?.department ?? ''}`.trim() === selectedDepartmentFilter)
-    : apiPosts;
+  const normalizedSearchQuery = normalizeSearchQuery(searchQuery);
+  const authorPostCounts = apiPosts.reduce((counts, post) => {
+    const author = `${post?.author ?? ''}`.trim();
+    if (!author) return counts;
+    counts[author] = (counts[author] ?? 0) + 1;
+    return counts;
+  }, {});
+  const filteredHomePosts = apiPosts.filter((post) => {
+    if (selectedDepartmentFilter && `${post?.department ?? ''}`.trim() !== selectedDepartmentFilter) return false;
+    if (normalizedSearchQuery && !postMatchesSearchQuery(post, normalizedSearchQuery)) return false;
+    return true;
+  });
+  const searchableAccountUsernames = [...new Set(
+    [
+      ...Object.keys(authorPostCounts),
+      ...Object.keys(authorPreviewByUsername),
+      userProfile?.username || '',
+      viewedProfileMeta?.username || '',
+    ].filter(Boolean)
+  )];
+  const matchedSearchAccounts = normalizedSearchQuery
+    ? searchableAccountUsernames
+      .map((username) => {
+        const previewData = authorPreviewByUsername[username]?.data ?? {};
+        const derivedPhotoUrl = username === userProfile?.username
+          ? (profilePhotoUrl || userProfile?.profilePhotoUrl || previewData.profilePhotoUrl || '')
+          : username === viewedProfileMeta?.username
+            ? (viewedProfileMeta?.profilePhotoUrl || previewData.profilePhotoUrl || '')
+            : (previewData.profilePhotoUrl || '');
+        return {
+          username,
+          displayName: `${previewData.displayName ?? ''}`.trim(),
+          role: `${previewData.role ?? ''}`.trim() || 'CitizenReporter',
+          profilePhotoUrl: derivedPhotoUrl,
+          followerCount: toCount(previewData.followerCount),
+          postsCount: authorPostCounts[username] ?? 0,
+        };
+      })
+      .filter((account) => accountMatchesSearchQuery(account, normalizedSearchQuery))
+      .sort((firstAccount, secondAccount) => {
+        const scoreDifference = getAccountSearchRank(secondAccount, normalizedSearchQuery) - getAccountSearchRank(firstAccount, normalizedSearchQuery);
+        if (scoreDifference !== 0) return scoreDifference;
+        return firstAccount.username.localeCompare(secondAccount.username);
+      })
+    : [];
+  const searchAccountResults = matchedSearchAccounts.slice(0, 5);
+  const matchedSearchPosts = normalizedSearchQuery
+    ? [...apiPosts]
+      .filter((post) => postMatchesSearchQuery(post, normalizedSearchQuery))
+      .sort((firstPost, secondPost) => {
+        const scoreDifference = getPostSearchRank(secondPost, normalizedSearchQuery) - getPostSearchRank(firstPost, normalizedSearchQuery);
+        if (scoreDifference !== 0) return scoreDifference;
+        return getTrendingScore(secondPost) - getTrendingScore(firstPost);
+      })
+    : [];
+  const searchPostResults = matchedSearchPosts.slice(0, 6);
+  const totalSearchResultCount = matchedSearchPosts.length + matchedSearchAccounts.length;
   const topCaseCategories = Object.entries(
     apiPosts.reduce((counts, post) => {
       const department = `${post?.department ?? ''}`.trim();
@@ -1955,8 +2046,8 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
+    <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
+      <header className="app-header sticky top-0 z-50 border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-[1580px] items-center px-4 lg:px-6">
           <div className="flex w-full items-center gap-3">
             <button
@@ -1966,7 +2057,7 @@ function App() {
                 setProfileViewUsername(null);
                 setActiveView('home');
               }}
-              className="flex items-center gap-2.5"
+              className="flex shrink-0 items-center gap-2.5"
             >
               <img src={Logo} alt="Public Policy Hub Logo" style={{ height: '90px' }} className="w-auto object-contain -my-4" />
               <div className="hidden sm:block">
@@ -1975,7 +2066,109 @@ function App() {
               </div>
             </button>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div ref={searchPanelRef} className="ml-auto hidden min-w-0 flex-1 md:block">
+              <form onSubmit={handleSearchSubmit} className="mx-auto max-w-2xl px-4">
+                <div className="relative">
+                  <SearchInput
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
+                      setIsSearchOpen(true);
+                    }}
+                    onFocus={() => {
+                      if (searchQuery.trim()) setIsSearchOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setIsSearchOpen(false);
+                    }}
+                    onClear={clearSearch}
+                    placeholder="Search.."
+                    showClear={!!searchQuery.trim()}
+                  />
+
+                  {isSearchOpen && normalizedSearchQuery && (
+                    <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)]">
+                      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {totalSearchResultCount > 0
+                            ? `${formatCount(totalSearchResultCount)} matches across posts and people for "${searchQuery.trim()}".`
+                            : `No matches found for "${searchQuery.trim()}".`}
+                        </p>
+                      </div>
+
+                      {searchAccountResults.length > 0 && (
+                        <div className="border-b border-slate-200 px-3 py-3">
+                          <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">People</p>
+                          <div className="space-y-1">
+                            {searchAccountResults.map((account) => (
+                              <button
+                                key={`search-account-${account.username}`}
+                                type="button"
+                                onClick={() => handleSearchProfileOpen(account.username)}
+                                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                              >
+                                {account.profilePhotoUrl ? (
+                                  <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
+                                ) : (
+                                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold uppercase text-white">
+                                    {getInitials(account.username)}
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-semibold text-slate-950">{account.displayName || account.username}</p>
+                                  <p className="truncate text-xs text-slate-500">@{account.username} • {account.role}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-bold text-slate-950">{formatCount(account.postsCount)}</p>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">posts</p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="px-3 py-3">
+                        <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Posts</p>
+                        {searchPostResults.length > 0 ? (
+                          <div className="space-y-1">
+                            {searchPostResults.map((post) => (
+                              <button
+                                key={`search-post-${post.id}`}
+                                type="button"
+                                onClick={() => handleSearchPostOpen(post.id)}
+                                className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
+                                  <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                    {post.tag && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{post.tag}</span>}
+                                    <span>{post.department}</span>
+                                    <span>{post.author}</span>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-sm font-bold text-slate-950">{formatCount(post.support)}</p>
+                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">supports</p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                            No posts matched this keyword, tag, or category yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
               {userProfile ? (
                  <>
                   <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 sm:inline-flex">
@@ -2018,7 +2211,7 @@ function App() {
                     </button>
 
                     {isProfileMenuOpen && (
-                      <div className="absolute right-0 top-14 z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]">
+                      <div className="motion-pop absolute right-0 top-14 z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.45)]">
                         <button
                           type="button"
                           onClick={() => profilePhotoInputRef.current?.click()}
@@ -2057,8 +2250,8 @@ function App() {
         </div>
       </header>
 
-      <main className="mobile-safe mx-auto grid w-full max-w-[1580px] gap-5 px-4 pb-24 pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6">
-        <aside className="hidden space-y-4 lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4">
+      <main className="app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-5 px-4 pb-24 pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6">
+        <aside className="motion-slide-in-left hidden space-y-4 lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4">
           <div className="soft-card p-4">
             <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
             <div className="mt-3 space-y-2">
@@ -2068,11 +2261,11 @@ function App() {
                   <button
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
-                    className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${
-                      activeView === item.id ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${
+                      activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className="nav-pill__icon h-5 w-5" />
                     {item.label}
                   </button>
                 );
@@ -2099,7 +2292,7 @@ function App() {
                   type="button"
                   key={`${department}-${count}`}
                   onClick={() => handleDepartmentFilterSelect(department)}
-                  className={`flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${
+                  className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${
                     selectedDepartmentFilter === department
                       ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
                       : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
@@ -2144,7 +2337,7 @@ function App() {
                       setActivePostId(post.id);
                       setActiveView('post');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+                    className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
                       #{index + 1} In this area
@@ -2205,34 +2398,55 @@ function App() {
           )}
         </aside>
 
-        <section className="mx-auto w-full max-w-[980px] space-y-6">
+        <section className="motion-fade-up mx-auto w-full max-w-[980px] space-y-6" style={{ '--motion-delay': '80ms' }}>
           {activeView === 'home' && (
             <>
-              <div className="soft-card p-7">
+              <div className="soft-card signal-hero p-7">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-slate-500">Post Section</p>
                     <h2 className="mt-1.5 font-display text-[30px] font-bold text-slate-950">Community reports and updates</h2>
                     <p className="mt-2 text-base text-slate-500">
-                      {selectedDepartmentFilter
-                        ? `Showing the latest reports from ${selectedDepartmentFilter}.`
-                        : 'Evidence-first reports from citizens and contributors.'}
+                      {normalizedSearchQuery
+                        ? `Showing search matches for "${searchQuery.trim()}" across tags, categories, authors, and post keywords.`
+                        : selectedDepartmentFilter
+                          ? `Showing the latest reports from ${selectedDepartmentFilter}.`
+                          : 'Evidence-first reports from citizens and contributors.'}
                     </p>
                   </div>
 
-                  {selectedDepartmentFilter && (
-                    <button
-                      type="button"
-                      onClick={clearDepartmentFilter}
-                      className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
-                    >
-                      <Building2 className="h-4 w-4" />
-                      {selectedDepartmentFilter}
-                      <span className="text-blue-400">/</span>
-                      Clear
-                    </button>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {normalizedSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={clearSearch}
+                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        <Search className="h-4 w-4" />
+                        {searchQuery.trim()}
+                        <span className="text-slate-400">/</span>
+                        Clear
+                      </button>
+                    )}
+                    {selectedDepartmentFilter && (
+                      <button
+                        type="button"
+                        onClick={clearDepartmentFilter}
+                        className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
+                      >
+                        <Building2 className="h-4 w-4" />
+                        {selectedDepartmentFilter}
+                        <span className="text-blue-400">/</span>
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {normalizedSearchQuery && (
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Search checks post titles, descriptions, tags, categories, and author accounts from the current feed.
+                  </div>
+                )}
                 {selectedDepartmentFilter && (
                   <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-blue-900">
                     Filtering the main feed by department while keeping the sidebar rankings based on all reported cases.
@@ -2241,7 +2455,7 @@ function App() {
               </div>
 
               <div className="space-y-5">
-                {filteredHomePosts.map((post) => {
+                {filteredHomePosts.map((post, index) => {
                   const isSupportedByUser = !!userProfile?.username && post.supporters?.includes(userProfile.username);
                   const isSavedByUser = savedPostIds.includes(post.id);
                   const hasReportedPost = reportedPostIds.includes(post.id);
@@ -2270,7 +2484,8 @@ function App() {
                         event.preventDefault();
                         handleSolutionClick(post.id);
                       }}
-                      className="soft-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
+                      className="soft-card signal-card group cursor-pointer overflow-hidden p-4 transition hover:shadow-[0_16px_42px_-28px_rgba(15,23,42,0.38)] focus:outline-none focus:ring-2 focus:ring-blue-200 sm:p-5"
+                      style={getMotionDelayStyle(index, 140, 70)}
                     >
                       <div className="space-y-4">
                         <div className="flex w-full items-start justify-between gap-3 rounded-xl px-1 text-left">
@@ -2313,7 +2528,7 @@ function App() {
 
                             {isAuthorHoverOpen && (
                               <div
-                                className="absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur"
+                                className="motion-pop absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur"
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <div className="flex items-start gap-3">
@@ -2411,7 +2626,7 @@ function App() {
 
                               {isPostMenuOpen && (
                                 <div
-                                  className="absolute right-0 top-12 z-40 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.5)]"
+                                  className="motion-pop absolute right-0 top-12 z-40 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.5)]"
                                   onClick={(event) => event.stopPropagation()}
                                 >
                                   <button
@@ -2547,9 +2762,11 @@ function App() {
 
                 {filteredHomePosts.length === 0 && (
                   <div className="soft-card p-6 text-sm text-slate-600">
-                    {selectedDepartmentFilter
-                      ? `No reports found for ${selectedDepartmentFilter} yet. Try another category or clear the filter.`
-                      : 'No posts available yet. Trending posts will appear here once issues are published.'}
+                    {normalizedSearchQuery
+                      ? `No reports matched "${searchQuery.trim()}". Try another keyword, tag, category, or account name.`
+                      : selectedDepartmentFilter
+                        ? `No reports found for ${selectedDepartmentFilter} yet. Try another category or clear the filter.`
+                        : 'No posts available yet. Trending posts will appear here once issues are published.'}
                   </div>
                 )}
               </div>
@@ -2558,7 +2775,7 @@ function App() {
 
           {activeView === 'bookmarks' && (
             <>
-              <div className="soft-card p-7">
+              <div className="soft-card signal-hero p-7">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="max-w-2xl">
                     <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
@@ -2589,10 +2806,11 @@ function App() {
               </div>
 
               <div className="space-y-5">
-                {bookmarkedPosts.map((post) => (
+                {bookmarkedPosts.map((post, index) => (
                   <BookmarkedPostCard
                     key={`${post.id}-bookmark`}
                     post={post}
+                    delayMs={120 + (index * 70)}
                     onOpenPost={() => {
                       setActivePostId(post.id);
                       setActiveView('post');
@@ -2661,7 +2879,7 @@ function App() {
 
                 return (
                   <>
-                    <article className="soft-card overflow-hidden rounded-b-none border-b-0 p-5">
+                    <article className="soft-card signal-card overflow-hidden rounded-b-none border-b-0 p-5">
                       <div className="space-y-4">
                         <button
                           type="button"
@@ -2874,7 +3092,7 @@ function App() {
                               setActivePostId(post.id);
                               setActiveView('post');
                             }}
-                            className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
+                            className="signal-tile w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
                           >
                             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
                             <p className="mt-1.5 text-base font-semibold leading-6 text-slate-950">{post.title}</p>
@@ -2897,14 +3115,14 @@ function App() {
           )}
 
           {activeView === 'create' && (
-            <div className="soft-card p-6">
+            <div className="soft-card signal-hero p-6">
               <p className="text-xs font-semibold text-slate-500">Create New Issue</p>
               <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">Simple, mobile-friendly reporting.</h2>
               <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
                 <div className="space-y-4">
-                  <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <div className="flex gap-2 mb-2">
+                  <label className="upload-zone flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition">
+                    <div className="upload-zone__inner flex flex-col items-center justify-center pt-5 pb-6">
+                      <div className="upload-zone__icons mb-2 flex gap-2">
                         <ImageIcon className="h-6 w-6 text-orange-500" />
                         <VideoIcon className="h-6 w-6 text-blue-600" />
                       </div>
@@ -2945,12 +3163,12 @@ function App() {
           )}
 
           {activeView === 'alerts' && (
-            <div className="soft-card p-6">
+            <div className="soft-card signal-hero p-6">
               <p className="text-xs font-semibold text-slate-500">Notifications</p>
               <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">Updates related to your reports</h2>
               <div className="mt-6 space-y-3">
                 {apiNotifications.map((item) => (
-                  <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{item}</div>
+                  <div key={item} className="alert-card rounded-xl border border-slate-200 bg-slate-50 p-4 pl-5 text-sm text-slate-700">{item}</div>
                 ))}
               </div>
             </div>
@@ -3039,7 +3257,7 @@ function App() {
           )}
         </section>
 
-        <aside className="hidden lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-l lg:border-slate-200 lg:pl-4">
+        <aside className="motion-slide-in-right hidden lg:sticky lg:top-[92px] lg:block lg:h-fit lg:border-l lg:border-slate-200 lg:pl-4" style={{ '--motion-delay': '140ms' }}>
           {activeView === 'post' && (
             <div className="soft-card overflow-hidden p-4">
               <div className="rounded-[26px] border border-blue-100 bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.45),_rgba(255,255,255,0.96)_58%)] p-4">
@@ -3080,7 +3298,7 @@ function App() {
                       setActivePostId(post.id);
                       setActiveView('post');
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
+                    className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
                   >
                     <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
                     <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
@@ -3119,11 +3337,13 @@ function App() {
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${
+                className={`mobile-nav-pill flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${
+                  isActive ? 'mobile-nav-pill--active ' : ''
+                }${
                   isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
                 }`}
               >
-                <Icon className={`h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
                 <span>{item.label}</span>
                 {isActive && <span className="mt-0.5 h-1 w-1 rounded-full bg-blue-600" />}
               </button>
@@ -3250,7 +3470,7 @@ function ProfileView({
 }) {
   return (
     <>
-      <div className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)]">
+      <div className="motion-fade-up profile-hero overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)]">
         <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-5 py-5 sm:px-7 sm:py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
@@ -3265,7 +3485,7 @@ function ProfileView({
               </span>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right">
+            <div className="signal-score rounded-2xl border border-slate-200 bg-white px-4 py-3 text-right">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
               <p className="mt-1 font-display text-3xl font-bold text-slate-950">{profileImpactScore}%</p>
             </div>
@@ -3401,7 +3621,7 @@ function ProfileView({
         </div>
       </div>
 
-      <div className="space-y-5">
+      <div className="motion-fade-up space-y-5" style={{ '--motion-delay': '120ms' }}>
           <div className="soft-card p-2">
             <div className="grid gap-2 sm:grid-cols-3">
               {[
@@ -3413,9 +3633,9 @@ function ProfileView({
                   key={tab.id}
                   type="button"
                   onClick={() => onSelectTab(tab.id)}
-                  className={`rounded-xl px-4 py-3 text-left transition ${
+                  className={`nav-pill rounded-xl px-4 py-3 text-left transition ${
                     profileTab === tab.id
-                      ? 'bg-slate-900 text-white'
+                      ? 'nav-pill--active bg-slate-900 text-white'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
@@ -3430,10 +3650,11 @@ function ProfileView({
 
           {profileTab === 'reports' && (
             <div className="space-y-4">
-              {profilePosts.map((post) => (
+              {profilePosts.map((post, index) => (
                 <ProfileReportCard
                   key={`${post.id}-profile-card`}
                   post={post}
+                  delayMs={110 + (index * 65)}
                   onOpenPost={() => onOpenPost(post.id)}
                 />
               ))}
@@ -3449,10 +3670,11 @@ function ProfileView({
 
           {profileTab === 'solutions' && (
             <div className="space-y-4">
-              {profileSolutions.map((solution) => (
+              {profileSolutions.map((solution, index) => (
                 <ProfileSolutionCard
                   key={`${solution.postId}-${solution.solutionIndex}-${solution.key}`}
                   solution={solution}
+                  delayMs={110 + (index * 65)}
                   onOpenPost={() => onOpenPost(solution.postId)}
                 />
               ))}
@@ -3468,10 +3690,11 @@ function ProfileView({
 
           {profileTab === 'activity' && (
             <div className="space-y-4">
-              {profileActivityFeed.map((activity) => (
+              {profileActivityFeed.map((activity, index) => (
                 <ProfileActivityCard
                   key={activity.id}
                   activity={activity}
+                  delayMs={110 + (index * 65)}
                   onOpenPost={() => onOpenPost(activity.postId)}
                 />
               ))}
@@ -3508,7 +3731,7 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
       <button
         type="button"
         onClick={onClick}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
+        className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
       >
         <div className="flex items-center justify-between gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
@@ -3524,7 +3747,7 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
@@ -3557,7 +3780,7 @@ function ProfileConnectionsModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
+        className="motion-pop max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
@@ -3608,7 +3831,7 @@ function ProfileConnectionsModal({
                 return (
                   <div
                     key={`${type}-${item.username}`}
-                    className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                    className="signal-tile flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
                   >
                     <button
                       type="button"
@@ -3662,11 +3885,11 @@ function ProfileConnectionsModal({
   );
 }
 
-function ProfileActivityCard({ activity, onOpenPost }) {
+function ProfileActivityCard({ activity, delayMs = 0, onOpenPost }) {
   const isReport = activity.kind === 'report';
 
   return (
-    <article className="soft-card overflow-hidden p-5">
+    <article className="soft-card signal-card overflow-hidden p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-2xl">
           <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isReport ? 'text-blue-700' : 'text-amber-700'}`}>
@@ -3706,11 +3929,11 @@ function ProfileActivityCard({ activity, onOpenPost }) {
   );
 }
 
-function BookmarkedPostCard({ post, onOpenPost, onOpenAuthor, onToggleSave }) {
+function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onToggleSave }) {
   const { previewText } = getDescriptionPreview(post.description, false, 160);
 
   return (
-    <article className="soft-card p-5 transition hover:shadow-[0_16px_38px_-28px_rgba(15,23,42,0.38)]">
+    <article className="soft-card signal-card p-5 transition hover:shadow-[0_16px_38px_-28px_rgba(15,23,42,0.38)]" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3 rounded-xl text-left">
           <button
@@ -3809,7 +4032,7 @@ function LocationTrendSection({ title, posts, emptyLabel, onOpenPost }) {
             key={`${post.id}-${title}`}
             type="button"
             onClick={() => onOpenPost(post.id)}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+            className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
           >
             <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
             <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
@@ -3827,11 +4050,11 @@ function LocationTrendSection({ title, posts, emptyLabel, onOpenPost }) {
   );
 }
 
-function ProfileReportCard({ post, onOpenPost }) {
+function ProfileReportCard({ delayMs = 0, post, onOpenPost }) {
   const { previewText } = getDescriptionPreview(post.description, false, 170);
 
   return (
-    <article className="soft-card overflow-hidden p-5">
+    <article className="soft-card signal-card overflow-hidden p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -3887,9 +4110,9 @@ function ProfileReportCard({ post, onOpenPost }) {
   );
 }
 
-function ProfileSolutionCard({ solution, onOpenPost }) {
+function ProfileSolutionCard({ delayMs = 0, solution, onOpenPost }) {
   return (
-    <article className="soft-card p-5">
+    <article className="soft-card signal-card p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Solution on {solution.postDepartment}</p>
@@ -3929,7 +4152,7 @@ function ProfileSolutionCard({ solution, onOpenPost }) {
 
 function EmptyProfilePanel({ icon, title, description }) {
   return (
-    <div className="soft-card p-8 text-center">
+    <div className="soft-card signal-card p-8 text-center">
       <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
         {icon}
       </span>
@@ -3946,6 +4169,12 @@ function MetricBox({ label, value, dark = true }) {
       <p className="mt-1.5 font-display text-3xl font-bold">{value}</p>
     </div>
   );
+}
+
+function getMotionDelayStyle(index, base = 0, step = 70) {
+  return {
+    '--motion-delay': `${base + (index * step)}ms`,
+  };
 }
 
 function toCount(value) {
@@ -4457,6 +4686,105 @@ function getPostSolutions(post) {
     .filter(Boolean);
 
   return fallbackFixes;
+}
+
+function normalizeSearchQuery(value) {
+  return `${value ?? ''}`.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function matchesSearchTerms(sourceText, normalizedQuery) {
+  const normalizedSourceText = normalizeSearchQuery(sourceText);
+  const normalizedTerms = normalizeSearchQuery(normalizedQuery).split(' ').filter(Boolean);
+  if (normalizedTerms.length === 0) return true;
+  return normalizedTerms.every((term) => normalizedSourceText.includes(term));
+}
+
+function getPostSearchDocument(post) {
+  return [
+    post?.title,
+    post?.description,
+    post?.department,
+    post?.tag,
+    post?.author,
+    post?.location,
+    ...(Array.isArray(post?.fixes) ? post.fixes : []),
+    ...getPostSolutions(post).map((solution) => solution.text),
+  ].filter(Boolean).join(' ');
+}
+
+function postMatchesSearchQuery(post, normalizedQuery) {
+  if (!normalizeSearchQuery(normalizedQuery)) return true;
+  return matchesSearchTerms(getPostSearchDocument(post), normalizedQuery);
+}
+
+function getPostSearchRank(post, normalizedQuery) {
+  const query = normalizeSearchQuery(normalizedQuery);
+  if (!query) return 0;
+
+  const title = normalizeSearchQuery(post?.title);
+  const description = normalizeSearchQuery(post?.description);
+  const department = normalizeSearchQuery(post?.department);
+  const tag = normalizeSearchQuery(post?.tag);
+  const author = normalizeSearchQuery(post?.author);
+  const location = normalizeSearchQuery(post?.location);
+  let score = 0;
+
+  if (title === query) score += 120;
+  else if (title.startsWith(query)) score += 84;
+  else if (title.includes(query)) score += 60;
+
+  if (tag === query) score += 92;
+  else if (tag.includes(query)) score += 62;
+
+  if (department === query) score += 88;
+  else if (department.includes(query)) score += 58;
+
+  if (author === query) score += 82;
+  else if (author.startsWith(query)) score += 56;
+  else if (author.includes(query)) score += 42;
+
+  if (location.includes(query)) score += 24;
+  if (description.includes(query)) score += 18;
+  score += Math.min(getTrendingScore(post), 5000) / 1000;
+
+  return score;
+}
+
+function getAccountSearchDocument(account) {
+  return [
+    account?.username,
+    account?.displayName,
+    account?.role,
+  ].filter(Boolean).join(' ');
+}
+
+function accountMatchesSearchQuery(account, normalizedQuery) {
+  if (!normalizeSearchQuery(normalizedQuery)) return true;
+  return matchesSearchTerms(getAccountSearchDocument(account), normalizedQuery);
+}
+
+function getAccountSearchRank(account, normalizedQuery) {
+  const query = normalizeSearchQuery(normalizedQuery);
+  if (!query) return 0;
+
+  const username = normalizeSearchQuery(account?.username);
+  const displayName = normalizeSearchQuery(account?.displayName);
+  const role = normalizeSearchQuery(account?.role);
+  let score = 0;
+
+  if (username === query) score += 120;
+  else if (username.startsWith(query)) score += 86;
+  else if (username.includes(query)) score += 60;
+
+  if (displayName === query) score += 96;
+  else if (displayName.startsWith(query)) score += 72;
+  else if (displayName.includes(query)) score += 48;
+
+  if (role.includes(query)) score += 20;
+  score += Math.min(toCount(account?.followerCount), 5000) / 1000;
+  score += Math.min(toCount(account?.postsCount), 500) / 100;
+
+  return score;
 }
 
 function formatTimestamp(value) {

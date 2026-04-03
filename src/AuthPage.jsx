@@ -238,7 +238,7 @@ function AuthPage({
     <div className="auth-page">
       <div className="auth-page__grid">
         <section className="auth-page__left">
-          <div className="auth-page__story">
+          <div className="auth-page__story motion-slide-in-left">
             <img src={logo} alt="Public Policy Hub" className="auth-page__story-logo" />
             <h2 className="auth-page__heading">India is our, we have the power.</h2>
             <h3 className="auth-page__lead">
@@ -248,7 +248,7 @@ function AuthPage({
         </section>
 
         <section className="auth-page__right">
-          <div className="auth-page__right-inner auth-page__auth-card">
+          <div className="auth-page__right-inner auth-page__auth-card motion-slide-in-right" style={{ '--motion-delay': '120ms' }}>
             <div className="auth-page__panel-head">
               <img src={logo} alt="Public Policy Hub" className="auth-page__panel-logo" />
               <div>
@@ -300,7 +300,7 @@ function AuthPage({
 
       {showModal && (
         <div className="auth-overlay" onClick={closeModal}>
-          <div className="auth-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="auth-modal motion-pop" onClick={(event) => event.stopPropagation()}>
             <div className="auth-modal__header">
               <button type="button" onClick={closeModal} className="auth-modal__close" aria-label="Close">
                 <X className="auth-modal__close-icon" />
