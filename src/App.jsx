@@ -39,6 +39,7 @@ import X from 'lucide-react/dist/esm/icons/x.js';
 import Zap from 'lucide-react/dist/esm/icons/zap.js';
 
 import AuthPage from './AuthPage.jsx';
+import PageLoader from './PageLoader.jsx';
 import {
   auth,
   getRedirectResult,
@@ -1576,7 +1577,7 @@ function App() {
     }
   };
 
-  if (isLoading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-semibold text-slate-500">Connecting to server...</div>;
+  if (isLoading) return <PageLoader label="Connecting to server..." />;
 
   if (activeView === 'auth') {
     return (
