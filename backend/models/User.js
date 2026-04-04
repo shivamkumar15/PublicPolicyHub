@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'User' },
   password_hash: { type: String },
   profilePhotoUrl: { type: String, default: '' },
+  personalDescription: { type: String, default: '', trim: true, maxlength: 180 },
   bookmarkedPostIds: [{ type: String }],
   reportedPostIds: [{ type: String }],
   following: [{ type: String }],

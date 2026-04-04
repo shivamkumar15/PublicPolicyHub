@@ -8,6 +8,7 @@ import User from './models/User.js';
 import Post from './models/Post.js';
 import City from './models/City.js';
 import Notification from './models/Notification.js';
+import Message from './models/Message.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -387,6 +388,13 @@ const renameUserReferences = async (currentUsername, nextUsername) => {
     ),
     Notification.updateMany({ recipientUsername: currentUsername }, { $set: { recipientUsername: nextUsername } }),
     Notification.updateMany({ actorUsername: currentUsername }, { $set: { actorUsername: nextUsername } }),
+    Message.updateMany({ senderUsername: currentUsername }, { $set: { senderUsername: nextUsername } }),
+    Message.updateMany({ recipientUsername: currentUsername }, { $set: { recipientUsername: nextUsername } }),
+    Message.updateMany(
+      { participants: currentUsername },
+      { $set: { 'participants.$[matchedUsername]': nextUsername } },
+      { arrayFilters: [{ matchedUsername: currentUsername }] },
+    ),
   ]);
 
   const posts = await Post.find({
@@ -469,6 +477,35 @@ const broadcastPostDelete = (postId) => {
   }
 };
 
+const serializeMessage = (message, viewerUsername = '') => {
+  const source = message?.toObject ? message.toObject() : message;
+  const createdAt = source?.createdAt instanceof Date
+    ? source.createdAt
+    : source?.createdAt
+      ? new Date(source.createdAt)
+      : null;
+
+  return {
+    id: source?._id?.toString?.() || '',
+    senderUsername: `${source?.senderUsername ?? ''}`.trim(),
+    recipientUsername: `${source?.recipientUsername ?? ''}`.trim(),
+    text: `${source?.text ?? ''}`.trim(),
+    read: !!source?.read,
+    createdAt: createdAt instanceof Date && !Number.isNaN(createdAt.getTime())
+      ? createdAt.toISOString()
+      : null,
+    direction: `${source?.senderUsername ?? ''}`.trim() === `${viewerUsername ?? ''}`.trim() ? 'outgoing' : 'incoming',
+  };
+};
+
+const buildParticipants = (...usernames) => (
+  [...new Set(
+    usernames
+      .map((value) => `${value ?? ''}`.trim())
+      .filter(Boolean)
+  )].sort((firstValue, secondValue) => firstValue.localeCompare(secondValue))
+);
+
 const addUploadFilePathFromUrl = (url, filePaths) => {
   if (typeof url !== 'string') return;
   const normalizedUrl = url.trim();
@@ -535,12 +572,29 @@ const normalizePhoneNumber = (phoneNumberValue) => `${phoneNumberValue ?? ''}`
 
 const normalizeDisplayName = (value) => `${value ?? ''}`.trim().replace(/\s+/g, ' ');
 
+const normalizePersonalDescription = (value) => `${value ?? ''}`
+  .trim()
+  .replace(/\s+/g, ' ')
+  .slice(0, 180);
+
 const normalizeUsernameCandidate = (value) => `${value ?? ''}`
   .trim()
   .toLowerCase()
   .replace(/\s+/g, '_')
   .replace(/[^a-z0-9_]/g, '')
   .slice(0, 24);
+
+const escapeRegex = (value) => `${value ?? ''}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const getUsernameKey = (value) => normalizeUsernameCandidate(value);
+
+const buildFlexibleUsernameMatcher = (value) => {
+  const normalizedUsername = getUsernameKey(value);
+  if (!normalizedUsername) return null;
+
+  const flexiblePattern = escapeRegex(normalizedUsername).replace(/_/g, '[\\s_]+');
+  return new RegExp(`^${flexiblePattern}$`, 'i');
+};
 
 const validateRequestedUsername = (value) => {
   const normalizedUsername = normalizeUsernameCandidate(value);
@@ -782,6 +836,7 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
   const payload = {
     username: user.username,
     displayName: user.displayName || '',
+    personalDescription: user.personalDescription || '',
     role: user.role,
     gender: user.gender || '',
     reputation: 540 + postsCount * 10,
@@ -1359,8 +1414,9 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
     const updates = req.body && typeof req.body === 'object' ? req.body : {};
     const hasDisplayNameUpdate = Object.prototype.hasOwnProperty.call(updates, 'displayName');
     const hasUsernameUpdate = Object.prototype.hasOwnProperty.call(updates, 'username');
+    const hasPersonalDescriptionUpdate = Object.prototype.hasOwnProperty.call(updates, 'personalDescription');
 
-    if (!hasDisplayNameUpdate && !hasUsernameUpdate) {
+    if (!hasDisplayNameUpdate && !hasUsernameUpdate && !hasPersonalDescriptionUpdate) {
       return res.status(400).json({ error: 'No profile changes were provided.' });
     }
 
@@ -1370,6 +1426,10 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'Display name is required.' });
       }
       user.displayName = nextDisplayName;
+    }
+
+    if (hasPersonalDescriptionUpdate) {
+      user.personalDescription = normalizePersonalDescription(updates.personalDescription);
     }
 
     let nextToken = '';
@@ -1446,33 +1506,36 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
 
     const [viewer, targetUser] = await Promise.all([
       User.findById(req.user.id),
-      User.findOne({ username: targetUsername }),
+      User.findOne({ username: new RegExp(`^${targetUsername}$`, 'i') }),
     ]);
 
     if (!viewer) return res.status(404).json({ error: 'Profile not found' });
     if (!targetUser) return res.status(404).json({ error: 'Target profile not found' });
 
+    const actualTargetUser = targetUser.username;
+    if (actualTargetUser === req.user.username) return res.status(400).json({ error: 'You cannot follow yourself' });
+
     const following = getUniqueStrings(viewer.following);
-    const isFollowing = following.includes(targetUsername);
+    const isFollowing = following.includes(actualTargetUser);
     viewer.following = isFollowing
-      ? following.filter((username) => username !== targetUsername)
-      : [...following, targetUsername];
+      ? following.filter((username) => username !== actualTargetUser)
+      : [...following, actualTargetUser];
 
     await viewer.save();
 
     if (!isFollowing) {
       await createNotification({
-        recipientUsername: targetUsername,
+        recipientUsername: actualTargetUser,
         actorUsername: viewer.username,
         type: 'follow',
         message: `${viewer.username} started following you.`,
       });
     }
 
-    const followerCount = await User.countDocuments({ following: targetUsername });
+    const followerCount = await User.countDocuments({ following: actualTargetUser });
     res.json({
       following: getUniqueStrings(viewer.following),
-      targetUsername,
+      targetUsername: actualTargetUser,
       isFollowing: !isFollowing,
       followerCount,
       followingCount: getUniqueStrings(targetUser.following).length,
@@ -1480,6 +1543,174 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error toggling follow:', error);
     res.status(500).json({ error: 'Failed to update follow state' });
+  }
+});
+
+app.get('/api/chats', authenticateToken, async (req, res) => {
+  try {
+    const viewerUsername = `${req.user?.username ?? ''}`.trim();
+    const viewerUsernameKey = getUsernameKey(viewerUsername);
+    const viewerUsernameMatcher = buildFlexibleUsernameMatcher(viewerUsername);
+    if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
+    if (!viewerUsernameKey || !viewerUsernameMatcher) return res.status(401).json({ error: 'Unauthorized' });
+
+    const messages = await Message.find({
+      $or: [
+        { senderUsername: viewerUsernameMatcher },
+        { recipientUsername: viewerUsernameMatcher },
+      ],
+    }).sort({ createdAt: -1 }).lean();
+    const unreadCounts = messages.reduce((counts, message) => {
+      const senderUsername = `${message?.senderUsername ?? ''}`.trim();
+      const recipientUsername = `${message?.recipientUsername ?? ''}`.trim();
+      const senderUsernameKey = getUsernameKey(senderUsername);
+      const recipientUsernameKey = getUsernameKey(recipientUsername);
+
+      if (recipientUsernameKey !== viewerUsernameKey || message?.read || !senderUsernameKey) return counts;
+      counts[senderUsernameKey] = (counts[senderUsernameKey] ?? 0) + 1;
+      return counts;
+    }, {});
+
+    const latestMessageByUsernameKey = new Map();
+    const counterpartLabelByUsernameKey = new Map();
+    messages.forEach((message) => {
+      const senderUsername = `${message?.senderUsername ?? ''}`.trim();
+      const recipientUsername = `${message?.recipientUsername ?? ''}`.trim();
+      const senderUsernameKey = getUsernameKey(senderUsername);
+      const recipientUsernameKey = getUsernameKey(recipientUsername);
+      const counterpartUsername = senderUsernameKey === viewerUsernameKey ? recipientUsername : senderUsername;
+      const counterpartUsernameKey = senderUsernameKey === viewerUsernameKey ? recipientUsernameKey : senderUsernameKey;
+
+      if (!counterpartUsername || !counterpartUsernameKey || latestMessageByUsernameKey.has(counterpartUsernameKey)) return;
+
+      latestMessageByUsernameKey.set(counterpartUsernameKey, message);
+      counterpartLabelByUsernameKey.set(counterpartUsernameKey, counterpartUsername);
+    });
+
+    const counterpartUsernameKeys = [...latestMessageByUsernameKey.keys()];
+    const counterpartMatchers = counterpartUsernameKeys
+      .map((usernameKey) => buildFlexibleUsernameMatcher(usernameKey))
+      .filter(Boolean);
+    const counterpartUsers = counterpartMatchers.length > 0
+      ? await User.find({ $or: counterpartMatchers.map((matcher) => ({ username: matcher })) })
+        .select('username displayName role profilePhotoUrl')
+        .lean()
+      : [];
+    const userByUsernameKey = new Map(counterpartUsers.map((user) => [getUsernameKey(user.username), user]));
+
+    const threads = counterpartUsernameKeys.map((usernameKey) => {
+      const user = userByUsernameKey.get(usernameKey) ?? {};
+      const fallbackUsername = `${counterpartLabelByUsernameKey.get(usernameKey) ?? ''}`.trim();
+      return {
+        username: `${user?.username ?? fallbackUsername}`.trim(),
+        displayName: `${user?.displayName ?? fallbackUsername}`.trim(),
+        role: `${user?.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
+        profilePhotoUrl: `${user?.profilePhotoUrl ?? ''}`.trim(),
+        unreadCount: unreadCounts[usernameKey] ?? 0,
+        lastMessage: serializeMessage(latestMessageByUsernameKey.get(usernameKey), viewerUsername),
+      };
+    }).filter((thread) => thread.username);
+
+    res.json({ threads });
+  } catch (error) {
+    console.error('Error fetching chats:', error);
+    res.status(500).json({ error: 'Failed to fetch chats' });
+  }
+});
+
+app.get('/api/chats/:username/messages', authenticateToken, async (req, res) => {
+  try {
+    const viewerUsername = `${req.user?.username ?? ''}`.trim();
+    const targetUsername = `${req.params.username ?? ''}`.trim();
+    const viewerUsernameKey = getUsernameKey(viewerUsername);
+    const targetUsernameKey = getUsernameKey(targetUsername);
+    const viewerUsernameMatcher = buildFlexibleUsernameMatcher(viewerUsername);
+    if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
+    if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!viewerUsernameKey || !targetUsernameKey || !viewerUsernameMatcher) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    if (targetUsernameKey === viewerUsernameKey) return res.status(400).json({ error: 'Cannot open a private chat with yourself' });
+
+    const targetUser = await User.findOne({ username: buildFlexibleUsernameMatcher(targetUsername) })
+      .select('username displayName role profilePhotoUrl')
+      .lean();
+    if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
+
+    const actualTargetUser = targetUser.username;
+    const targetUsernameMatcher = buildFlexibleUsernameMatcher(actualTargetUser);
+    if (!targetUsernameMatcher) return res.status(404).json({ error: 'Profile not found' });
+
+    const messages = await Message.find({
+      $or: [
+        { senderUsername: viewerUsernameMatcher, recipientUsername: targetUsernameMatcher },
+        { senderUsername: targetUsernameMatcher, recipientUsername: viewerUsernameMatcher },
+      ],
+    }).sort({ createdAt: 1 }).lean();
+
+    await Message.updateMany(
+      {
+        senderUsername: targetUsernameMatcher,
+        recipientUsername: viewerUsernameMatcher,
+        read: false,
+      },
+      { $set: { read: true } },
+    );
+
+    res.json({
+      thread: {
+        username: targetUser.username,
+        displayName: `${targetUser.displayName ?? ''}`.trim(),
+        role: `${targetUser.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
+        profilePhotoUrl: `${targetUser.profilePhotoUrl ?? ''}`.trim(),
+      },
+      messages: messages.map((message) => serializeMessage(message, viewerUsername)),
+    });
+  } catch (error) {
+    console.error('Error fetching chat messages:', error);
+    res.status(500).json({ error: 'Failed to fetch chat messages' });
+  }
+});
+
+app.post('/api/chats/:username/messages', authenticateToken, async (req, res) => {
+  try {
+    const viewerUsername = `${req.user?.username ?? ''}`.trim();
+    const targetUsername = `${req.params.username ?? ''}`.trim();
+    const text = `${req.body?.text ?? ''}`.trim();
+    const viewerUsernameKey = getUsernameKey(viewerUsername);
+    const targetUsernameKey = getUsernameKey(targetUsername);
+
+    if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
+    if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
+    if (!viewerUsernameKey || !targetUsernameKey) return res.status(400).json({ error: 'Username is required' });
+    if (targetUsernameKey === viewerUsernameKey) return res.status(400).json({ error: 'Cannot send a private message to yourself' });
+    if (!text) return res.status(400).json({ error: 'Message text is required' });
+    if (text.length > 2000) return res.status(400).json({ error: 'Message is too long' });
+
+    const targetUser = await User.findOne({ username: buildFlexibleUsernameMatcher(targetUsername) }).select('username').lean();
+    if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
+
+    const actualTargetUser = targetUser.username;
+
+    const message = await Message.create({
+      senderUsername: viewerUsername,
+      recipientUsername: actualTargetUser,
+      participants: buildParticipants(viewerUsername, actualTargetUser),
+      text,
+      read: false,
+    });
+
+    await createNotification({
+      recipientUsername: actualTargetUser,
+      actorUsername: viewerUsername,
+      type: 'chat_message',
+      message: `${viewerUsername} reached out privately.`,
+    });
+
+    res.status(201).json({ message: serializeMessage(message, viewerUsername) });
+  } catch (error) {
+    console.error('Error sending private chat message:', error);
+    res.status(500).json({ error: 'Failed to send private chat message' });
   }
 });
 
@@ -1904,14 +2135,32 @@ app.get('/api/cities', async (req, res) => {
 
 app.get('/api/notifications', attachOptionalUser, async (req, res) => {
   try {
-    const query = req.user?.username
-      ? { recipientUsername: req.user.username }
+    const usernameMatcher = buildFlexibleUsernameMatcher(req.user?.username ?? '');
+    const query = usernameMatcher
+      ? { recipientUsername: usernameMatcher }
       : { recipientUsername: '' };
     const notifications = await Notification.find(query).sort({ created_at: -1 }).limit(20).lean();
     res.json(notifications.map(serializeNotification));
   } catch (error) {
     console.error('Error fetching notifications:', error);
     res.status(500).json({ error: 'Database connection error' });
+  }
+});
+
+app.patch('/api/notifications/read', authenticateToken, async (req, res) => {
+  try {
+    const usernameMatcher = buildFlexibleUsernameMatcher(req.user?.username ?? '');
+    if (!usernameMatcher) return res.status(400).json({ error: 'Username is required' });
+
+    const result = await Notification.updateMany(
+      { recipientUsername: usernameMatcher, read: false },
+      { $set: { read: true } },
+    );
+
+    res.json({ ok: true, updatedCount: result.modifiedCount ?? 0 });
+  } catch (error) {
+    console.error('Error marking notifications as read:', error);
+    res.status(500).json({ error: 'Failed to mark notifications as read' });
   }
 });
 

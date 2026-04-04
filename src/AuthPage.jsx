@@ -48,12 +48,13 @@ function AuthPage({
     if (type === 'signup-email') switchFlow('signup', 'email');
     else if (type === 'signup-phone') switchFlow('signup', 'phone');
     else if (type === 'login') switchFlow('login', 'email');
+    else if (type === 'login-google') switchFlow('login', 'google');
     setShowModal(true);
   };
 
-  const handleDirectGoogleSignup = async () => {
+  const handleDirectGoogleContinue = async () => {
     setLocalError('');
-    setMode('signup');
+    setMode('login');
     setAuthMethod('google');
     setPhoneCodeSent(false);
     setPhoneStatus('');
@@ -64,7 +65,8 @@ function AuthPage({
 
     try {
       await onGoogleAuth({
-        mode: 'signup',
+        mode: 'login',
+        allowSignupFallback: true,
       });
     } catch (authError) {
       setLocalError(authError.message || 'Unable to continue with Google.');
@@ -266,9 +268,9 @@ function AuthPage({
             <div className="auth-page__actions">
               <ActionButton
                 variant="white"
-                onClick={handleDirectGoogleSignup}
+                onClick={handleDirectGoogleContinue}
                 icon={<GoogleIcon />}
-                text="Sign up with Google"
+                text="Continue with Google"
               />
               <ActionButton
                 variant="white"
@@ -326,6 +328,19 @@ function AuthPage({
 
               {authMethod === 'email' && (
                 <form className="auth-modal__form" onSubmit={handleEmailSubmit}>
+                  {!isSignup && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openModal('login-google')}
+                        disabled={isSubmitting}
+                        className="auth-modal__btn auth-modal__btn--ghost auth-modal__btn--full"
+                      >
+                        Continue with Google
+                      </button>
+                      <Divider />
+                    </>
+                  )}
                   <AuthFields
                     authMethod={authMethod}
                     formState={formState}
@@ -367,6 +382,20 @@ function AuthPage({
                       {isSubmitting ? 'Please wait...' : isSignup ? 'Continue with Google' : 'Login with Google'}
                     </button>
                   </div>
+                  {!isSignup && (
+                    <p className="auth-modal__switch">
+                      Prefer email and password?{' '}
+                      <button
+                        type="button"
+                        className="auth-modal__switch-link"
+                        onClick={() => {
+                          switchFlow('login', 'email');
+                        }}
+                      >
+                        Use email login
+                      </button>
+                    </p>
+                  )}
                 </div>
               )}
 

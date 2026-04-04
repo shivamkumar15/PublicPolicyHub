@@ -1,0 +1,120 @@
+﻿--- MESSAGES ---
+[
+  {
+    "_id": "69d0d37750f3d03cd8a1b251",
+    "senderUsername": "Shivam_Kumar",
+    "recipientUsername": "Super Secrate",
+    "participants": [
+      "Shivam_Kumar",
+      "Super Secrate"
+    ],
+    "text": "hello",
+    "read": false,
+    "createdAt": "2026-04-04T09:01:43.029Z",
+    "updatedAt": "2026-04-04T09:01:43.029Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0db3e50f3d03cd8a1b433",
+    "senderUsername": "super_secrate",
+    "recipientUsername": "Shivam Kumar",
+    "participants": [
+      "Shivam Kumar",
+      "super_secrate"
+    ],
+    "text": "hello",
+    "read": false,
+    "createdAt": "2026-04-04T09:34:55.002Z",
+    "updatedAt": "2026-04-04T09:34:55.002Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0dd3d0535b75b9ddc51bd",
+    "senderUsername": "super_secrate",
+    "recipientUsername": "Shivam Kumar",
+    "participants": [
+      "Shivam Kumar",
+      "super_secrate"
+    ],
+    "text": "hi wasssup",
+    "read": false,
+    "createdAt": "2026-04-04T09:43:25.986Z",
+    "updatedAt": "2026-04-04T09:43:25.986Z",
+    "__v": 0
+  }
+]
+--- NOTIFICATIONS ---
+[
+  {
+    "_id": "69c6deafc3b11e6726342b02",
+    "message": "New comment on your Bawana pollution report",
+    "created_at": "2026-03-27T19:46:55.677Z",
+    "__v": 0
+  },
+  {
+    "_id": "69c6deafc3b11e6726342b04",
+    "message": "Your solution for Hinjewadi Traffic reached target support",
+    "created_at": "2026-03-27T19:46:55.683Z",
+    "__v": 0
+  },
+  {
+    "_id": "69c6deafc3b11e6726342b06",
+    "message": "Issue verified by CMWSSB authorities (Chennai Water)",
+    "created_at": "2026-03-27T19:46:55.684Z",
+    "__v": 0
+  },
+  {
+    "_id": "69c6deafc3b11e6726342b08",
+    "message": "Trending alert: Massive crater on WEH (Mumbai)",
+    "created_at": "2026-03-27T19:46:55.685Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0d37750f3d03cd8a1b253",
+    "recipientUsername": "Super Secrate",
+    "actorUsername": "Shivam_Kumar",
+    "type": "chat_message",
+    "message": "Shivam_Kumar sent you a private message.",
+    "postId": "",
+    "postTitle": "",
+    "read": false,
+    "created_at": "2026-04-04T09:01:43.057Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0db3f50f3d03cd8a1b435",
+    "recipientUsername": "Shivam Kumar",
+    "actorUsername": "super_secrate",
+    "type": "chat_message",
+    "message": "super_secrate sent you a private message.",
+    "postId": "",
+    "postTitle": "",
+    "read": false,
+    "created_at": "2026-04-04T09:34:55.014Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0db5250f3d03cd8a1b4b7",
+    "recipientUsername": "Shivam Kumar",
+    "actorUsername": "super_secrate",
+    "type": "follow",
+    "message": "super_secrate started following you.",
+    "postId": "",
+    "postTitle": "",
+    "read": false,
+    "created_at": "2026-04-04T09:35:14.711Z",
+    "__v": 0
+  },
+  {
+    "_id": "69d0dd3d0535b75b9ddc51bf",
+    "recipientUsername": "Shivam Kumar",
+    "actorUsername": "super_secrate",
+    "type": "chat_message",
+    "message": "super_secrate sent you a private message.",
+    "postId": "",
+    "postTitle": "",
+    "read": false,
+    "created_at": "2026-04-04T09:43:25.993Z",
+    "__v": 0
+  }
+]

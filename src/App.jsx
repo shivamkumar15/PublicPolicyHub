@@ -57,6 +57,8 @@ const API_BASE_URL = '';
 
 const navItems = [
   { id: 'home', label: 'Home', Icon: (props) => <House {...props} /> },
+  { id: 'debate', label: 'Debate', Icon: (props) => <MessageCircle {...props} /> },
+  { id: 'chat', label: 'Chat', Icon: (props) => <MessageCircle {...props} />, requiresAuth: true },
   { id: 'create', label: 'Report', Icon: (props) => <SquarePen {...props} />, requiresAuth: true },
   { id: 'bookmarks', label: 'Bookmarks', Icon: (props) => <Bookmark {...props} />, requiresAuth: true },
   { id: 'alerts', label: 'Alerts', Icon: (props) => <Bell {...props} /> },
@@ -131,6 +133,7 @@ const GOOGLE_AUTH_MODE_STORAGE_KEY = 'pph-google-auth-mode';
 function buildAppHash({
   view = 'home',
   postId = '',
+  chatUsername = '',
   profileUsername = '',
   profileTab = 'reports',
   profileModal = '',
@@ -138,6 +141,7 @@ function buildAppHash({
   connectionType = 'followers',
 } = {}) {
   if (view === 'post' && postId) return `#/post/${encodeURIComponent(postId)}`;
+  if (view === 'chat') return chatUsername ? `#/chat/${encodeURIComponent(chatUsername)}` : '#/chat';
 
   if (view === 'profile' && profileUsername) {
     const params = new URLSearchParams();
@@ -158,6 +162,8 @@ function buildAppHash({
   }
 
   if (view === 'create') return '#/create';
+  if (view === 'debate') return '#/debate';
+  if (view === 'chat') return '#/chat';
   if (view === 'bookmarks') return '#/bookmarks';
   if (view === 'alerts') return '#/alerts';
   if (view === 'auth') return '#/auth';
@@ -168,6 +174,7 @@ function parseAppHash(hashValue) {
   const defaultRoute = {
     view: 'home',
     postId: '',
+    chatUsername: '',
     profileUsername: '',
     profileTab: 'reports',
     profileModal: '',
@@ -192,6 +199,16 @@ function parseAppHash(hashValue) {
     const [pathPart] = normalizedHash.split('?');
     const postId = decodeURIComponent(pathPart.slice(5));
     return postId ? { ...defaultRoute, view: 'post', postId } : defaultRoute;
+  }
+
+  if (normalizedHash === 'chat') {
+    return { ...defaultRoute, view: 'chat' };
+  }
+
+  if (normalizedHash.startsWith('chat/')) {
+    const [pathPart] = normalizedHash.split('?');
+    const chatUsername = decodeURIComponent(pathPart.slice(5));
+    return chatUsername ? { ...defaultRoute, view: 'chat', chatUsername } : { ...defaultRoute, view: 'chat' };
   }
 
   if (normalizedHash.startsWith('profile/')) {
@@ -242,6 +259,14 @@ function parseAppHash(hashValue) {
     return { ...defaultRoute, view: 'create' };
   }
 
+  if (normalizedHash === 'debate') {
+    return { ...defaultRoute, view: 'debate' };
+  }
+
+  if (normalizedHash === 'chat') {
+    return { ...defaultRoute, view: 'chat' };
+  }
+
   if (normalizedHash === 'bookmarks') {
     return { ...defaultRoute, view: 'bookmarks' };
   }
@@ -264,11 +289,78 @@ function getInitialTheme() {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function getInitialRouteState() {
+  if (typeof window === 'undefined') return parseAppHash('');
+  return parseAppHash(window.location.hash);
+}
+
+function normalizePrivateChatMessage(message, index = 0) {
+  const text = `${message?.text ?? ''}`.trim();
+  if (!text) return null;
+
+  return {
+    id: `${message?.id ?? `chat-message-${index}`}`,
+    direction: message?.direction === 'incoming' ? 'incoming' : 'outgoing',
+    senderUsername: `${message?.senderUsername ?? ''}`.trim(),
+    recipientUsername: `${message?.recipientUsername ?? ''}`.trim(),
+    text,
+    createdAt: message?.createdAt ?? new Date().toISOString(),
+    read: !!message?.read,
+  };
+}
+
+function getChatUsernameKey(value) {
+  return `${value ?? ''}`
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function getChatMapValueByUsername(collection, username, fallbackValue) {
+  if (!collection || typeof collection !== 'object') return fallbackValue;
+
+  const normalizedUsername = `${username ?? ''}`.trim();
+  if (!normalizedUsername) return fallbackValue;
+
+  if (Object.prototype.hasOwnProperty.call(collection, normalizedUsername)) {
+    return collection[normalizedUsername];
+  }
+
+  const usernameKey = getChatUsernameKey(normalizedUsername);
+  if (!usernameKey) return fallbackValue;
+
+  const matchingEntry = Object.entries(collection)
+    .find(([candidateUsername]) => getChatUsernameKey(candidateUsername) === usernameKey);
+
+  return matchingEntry ? matchingEntry[1] : fallbackValue;
+}
+
+function findListItemByUsername(collection, username) {
+  if (!Array.isArray(collection)) return null;
+
+  const usernameKey = getChatUsernameKey(username);
+  if (!usernameKey) return null;
+
+  return collection.find((item) => getChatUsernameKey(item?.username) === usernameKey) ?? null;
+}
+
+function listIncludesUsername(collection, username) {
+  return !!findListItemByUsername(
+    Array.isArray(collection) ? collection.map((item) => (typeof item === 'string' ? { username: item } : item)) : [],
+    username,
+  );
+}
+
 function App() {
-  const [activeView, setActiveView] = useState('home');
-  const [activePostId, setActivePostId] = useState(null);
+  const initialRouteState = getInitialRouteState();
+  const [activeView, setActiveView] = useState(initialRouteState.view);
+  const [activePostId, setActivePostId] = useState(initialRouteState.postId || null);
+  const [activeChatUsername, setActiveChatUsername] = useState(initialRouteState.chatUsername || '');
   const [apiPosts, setApiPosts] = useState(defaultPosts);
   const [apiNotifications, setApiNotifications] = useState(defaultNotifications);
+  const [privateChatThreads, setPrivateChatThreads] = useState({});
+  const [chatThreads, setChatThreads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -297,11 +389,11 @@ function App() {
   const [authorPreviewByUsername, setAuthorPreviewByUsername] = useState({});
   const [isFollowSubmittingByUsername, setIsFollowSubmittingByUsername] = useState({});
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
-  const [profileViewUsername, setProfileViewUsername] = useState(null);
+  const [profileViewUsername, setProfileViewUsername] = useState(initialRouteState.profileUsername || null);
   const [viewedProfileMeta, setViewedProfileMeta] = useState(null);
   const [aiSummaryByPost, setAiSummaryByPost] = useState({});
   const [aiSummaryStatusByPost, setAiSummaryStatusByPost] = useState({});
-  const [profileTab, setProfileTab] = useState('reports');
+  const [profileTab, setProfileTab] = useState(initialRouteState.profileTab || 'reports');
   const [profileConnectionsState, setProfileConnectionsState] = useState({
     open: false,
     type: 'followers',
@@ -313,13 +405,22 @@ function App() {
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [chatDraftByUsername, setChatDraftByUsername] = useState({});
+  const [isChatThreadsLoading, setIsChatThreadsLoading] = useState(false);
+  const [chatMessagesStatusByUsername, setChatMessagesStatusByUsername] = useState({});
+  const [chatErrorsByUsername, setChatErrorsByUsername] = useState({});
+  const [isChatSendingByUsername, setIsChatSendingByUsername] = useState({});
   const [profileShareFeedback, setProfileShareFeedback] = useState('');
-  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
-  const [profileSettingsSection, setProfileSettingsSection] = useState('personal');
+  const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(
+    initialRouteState.view === 'profile' && initialRouteState.profileModal === 'settings',
+  );
+  const [profileSettingsSection, setProfileSettingsSection] = useState(initialRouteState.profileSettingsSection || 'personal');
   const [profileSettingsStatus, setProfileSettingsStatus] = useState({ type: '', message: '' });
   const [isProfileSettingsSubmitting, setIsProfileSettingsSubmitting] = useState(false);
   const [profileNameDraft, setProfileNameDraft] = useState('');
   const [profileUsernameDraft, setProfileUsernameDraft] = useState('');
+  const [profilePersonalDescriptionDraft, setProfilePersonalDescriptionDraft] = useState('');
   const [profilePasswordDraft, setProfilePasswordDraft] = useState({
     currentPassword: '',
     newPassword: '',
@@ -340,7 +441,7 @@ function App() {
   const authStateRef = useRef({ hasUser: false, token: null });
   const resolvedProfileUsername = profileViewUsername || userProfile?.username || '';
 
-  const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+  const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: '', media: 'IMAGE' });
   const [mediaFiles, setMediaFiles] = useState([]);
 
   const handleFileSelect = (e) => {
@@ -437,11 +538,17 @@ function App() {
       };
     }
 
+    const normalizedType = `${notification?.type ?? 'generic'}`.trim() || 'generic';
+    const actorUsername = `${notification?.actorUsername ?? ''}`.trim();
+    const normalizedMessage = `${notification?.message ?? ''}`.trim();
+
     return {
       id: `${notification?.id ?? notification?._id ?? `notification-${index}`}`,
-      type: `${notification?.type ?? 'generic'}`.trim() || 'generic',
-      message: `${notification?.message ?? ''}`.trim(),
-      actorUsername: `${notification?.actorUsername ?? ''}`.trim(),
+      type: normalizedType,
+      message: normalizedType.toLowerCase() === 'chat_message' && actorUsername
+        ? `${actorUsername} reached out privately.`
+        : normalizedMessage,
+      actorUsername,
       recipientUsername: `${notification?.recipientUsername ?? ''}`.trim(),
       postId: `${notification?.postId ?? ''}`.trim(),
       postTitle: `${notification?.postTitle ?? ''}`.trim(),
@@ -549,8 +656,16 @@ function App() {
     const notificationHeaders = currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
 
     return Promise.all([
-      fetch(`${API_BASE_URL}/api/posts`).then(res => res.json()),
-      fetch(`${API_BASE_URL}/api/notifications`, { headers: notificationHeaders }).then(res => res.json())
+      fetch(`${API_BASE_URL}/api/posts`).then(async (res) => {
+        const data = await res.json().catch(() => ([]));
+        if (!res.ok) throw new Error(data?.error || 'Failed to fetch posts');
+        return data;
+      }),
+      fetch(`${API_BASE_URL}/api/notifications`, { headers: notificationHeaders }).then(async (res) => {
+        const data = await res.json().catch(() => ([]));
+        if (!res.ok) throw new Error(data?.error || 'Failed to fetch notifications');
+        return data;
+      }),
     ])
       .then(([postsData, notifsData]) => {
         if (Array.isArray(postsData)) {
@@ -561,6 +676,32 @@ function App() {
           setApiNotifications(notifsData.map(normalizeNotification).filter((item) => item.message));
         }
       });
+  };
+
+  const fetchNotifications = async (currentToken = token) => {
+    const headers = currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
+    const res = await fetch(`${API_BASE_URL}/api/notifications`, { headers });
+    const data = await res.json().catch(() => ([]));
+    if (!res.ok) throw new Error(data?.error || 'Failed to fetch notifications');
+    const normalizedNotifications = Array.isArray(data)
+      ? data.map(normalizeNotification).filter((item) => item.message)
+      : [];
+    setApiNotifications(normalizedNotifications);
+    return normalizedNotifications;
+  };
+
+  const markNotificationsRead = async (currentToken = token) => {
+    if (!currentToken) return 0;
+
+    const res = await fetch(`${API_BASE_URL}/api/notifications/read`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || 'Failed to mark notifications as read');
+
+    setApiNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+    return toCount(data?.updatedCount);
   };
 
   const fetchProfile = (currentToken) => {
@@ -581,6 +722,106 @@ function App() {
         setProfilePhotoUrl(data?.profilePhotoUrl || '');
       })
       .catch(() => handleLogout());
+  };
+
+  const fetchChatThreads = async (currentToken = token) => {
+    if (!currentToken) {
+      setChatThreads([]);
+      setPrivateChatThreads({});
+      return [];
+    }
+
+    setIsChatThreadsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chats`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to fetch chats');
+
+      const threads = (Array.isArray(data?.threads) ? data.threads : []).map((thread, index) => ({
+        username: `${thread?.username ?? ''}`.trim(),
+        displayName: `${thread?.displayName ?? ''}`.trim(),
+        role: `${thread?.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
+        profilePhotoUrl: `${thread?.profilePhotoUrl ?? ''}`.trim(),
+        unreadCount: toCount(thread?.unreadCount),
+        lastMessage: thread?.lastMessage ? normalizePrivateChatMessage(thread.lastMessage, index) : null,
+      })).filter((thread) => thread.username);
+
+      setChatThreads(threads);
+      setActiveChatUsername((currentUsername) => (
+        currentUsername || threads[0]?.username || ''
+      ));
+      return threads;
+    } finally {
+      setIsChatThreadsLoading(false);
+    }
+  };
+
+  const fetchChatMessages = async (username, currentToken = token) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername || !currentToken) return [];
+
+    setChatMessagesStatusByUsername((current) => ({ ...current, [normalizedUsername]: 'loading' }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chats/${encodeURIComponent(normalizedUsername)}/messages`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to fetch chat messages');
+
+      const normalizedMessages = (Array.isArray(data?.messages) ? data.messages : [])
+        .map((message, index) => normalizePrivateChatMessage(message, index))
+        .filter(Boolean);
+      const resolvedUsername = `${data?.thread?.username ?? normalizedUsername}`.trim() || normalizedUsername;
+
+      setPrivateChatThreads((current) => {
+        const next = { ...current, [resolvedUsername]: normalizedMessages };
+        if (normalizedUsername !== resolvedUsername && normalizedUsername in next) {
+          delete next[normalizedUsername];
+        }
+        return next;
+      });
+      setChatMessagesStatusByUsername((current) => {
+        const next = { ...current, [resolvedUsername]: 'success' };
+        if (normalizedUsername !== resolvedUsername && normalizedUsername in next) {
+          delete next[normalizedUsername];
+        }
+        return next;
+      });
+      setChatErrorsByUsername((current) => {
+        const next = { ...current };
+        delete next[normalizedUsername];
+        delete next[resolvedUsername];
+        return next;
+      });
+      setActiveChatUsername((currentUsername) => (
+        currentUsername === normalizedUsername ? resolvedUsername : currentUsername
+      ));
+
+      if (data?.thread?.username) {
+        setAuthorPreviewByUsername((current) => ({
+          ...current,
+          [data.thread.username]: {
+            status: 'success',
+            data: {
+              ...(current[data.thread.username]?.data ?? {}),
+              username: data.thread.username,
+              displayName: data.thread.displayName || '',
+              role: data.thread.role || 'CitizenReporter',
+              profilePhotoUrl: data.thread.profilePhotoUrl || '',
+            },
+          },
+        }));
+      }
+
+      return normalizedMessages;
+    } catch (error) {
+      setChatMessagesStatusByUsername((current) => ({ ...current, [normalizedUsername]: 'error' }));
+      setChatErrorsByUsername((current) => ({ ...current, [normalizedUsername]: error.message || 'Failed to fetch chat messages' }));
+      setPrivateChatThreads((current) => ({ ...current, [normalizedUsername]: [] }));
+      return [];
+    }
   };
 
   useEffect(() => {
@@ -616,6 +857,103 @@ function App() {
 
     fetchPublicData(token).catch(console.error);
   }, [activeView, token]);
+
+  useEffect(() => {
+    if (activeView !== 'alerts' || !token || !userProfile?.username) return;
+    if (!apiNotifications.some((notification) => !notification.read)) return;
+
+    markNotificationsRead(token).catch(console.error);
+  }, [activeView, apiNotifications, markNotificationsRead, token, userProfile?.username]);
+
+  useEffect(() => {
+    if (!token || !userProfile?.username || typeof window === 'undefined') return undefined;
+
+    const refreshNotifications = () => {
+      fetchNotifications(token).catch(console.error);
+    };
+
+    refreshNotifications();
+    const intervalId = window.setInterval(refreshNotifications, 4000);
+    const handleWindowFocus = () => refreshNotifications();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshNotifications();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [token, userProfile?.username]);
+
+  useEffect(() => {
+    if (!token || !userProfile?.username || activeView === 'chat' || typeof window === 'undefined') return undefined;
+
+    const refreshChatThreads = () => {
+      fetchChatThreads(token).catch(console.error);
+    };
+
+    refreshChatThreads();
+    const intervalId = window.setInterval(refreshChatThreads, 4000);
+    const handleWindowFocus = () => refreshChatThreads();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshChatThreads();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeView, token, userProfile?.username]);
+
+  useEffect(() => {
+    if (!token || !userProfile || activeView !== 'chat') return;
+    fetchChatThreads(token).catch(console.error);
+  }, [activeView, token, userProfile]);
+
+  useEffect(() => {
+    if (!token || !userProfile || activeView !== 'chat' || !activeChatUsername) return;
+    fetchChatMessages(activeChatUsername, token)
+      .then(() => fetchChatThreads(token))
+      .catch(console.error);
+  }, [activeChatUsername, activeView, token, userProfile]);
+
+  useEffect(() => {
+    if (!token || !userProfile?.username || activeView !== 'chat' || typeof window === 'undefined') return undefined;
+
+    const refreshChat = () => {
+      fetchChatThreads(token)
+        .then((threads) => {
+          const fallbackUsername = activeChatUsername || threads[0]?.username || '';
+          if (!fallbackUsername) return null;
+          return fetchChatMessages(fallbackUsername, token);
+        })
+        .catch(console.error);
+    };
+
+    refreshChat();
+    const intervalId = window.setInterval(refreshChat, 3000);
+    const handleWindowFocus = () => refreshChat();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshChat();
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [activeChatUsername, activeView, token, userProfile?.username]);
 
   useEffect(() => {
     authStateRef.current = {
@@ -669,12 +1007,25 @@ function App() {
         const redirectMode = getStoredGoogleAuthMode();
         clearStoredGoogleAuthMode();
 
-        await finalizeFirebaseAuth({
-          firebaseUser: result.user,
-          mode: redirectMode,
-          preferredDisplayName: result.user.displayName,
-          signupProfile: null,
-        });
+        try {
+          await finalizeFirebaseAuth({
+            firebaseUser: result.user,
+            mode: redirectMode === 'signup' ? 'signup' : 'login',
+            preferredDisplayName: result.user.displayName,
+            signupProfile: null,
+          });
+        } catch (error) {
+          const shouldRetryAsSignup = redirectMode === 'continue'
+            && `${error?.message ?? ''}`.trim() === 'Account not found. Please sign up first.';
+          if (!shouldRetryAsSignup) throw error;
+
+          await finalizeFirebaseAuth({
+            firebaseUser: result.user,
+            mode: 'signup',
+            preferredDisplayName: result.user.displayName,
+            signupProfile: null,
+          });
+        }
       } catch (error) {
         if (isCancelled) return;
         clearStoredGoogleAuthMode();
@@ -746,6 +1097,7 @@ function App() {
       setProfileSettingsStatus({ type: '', message: '' });
       setProfileNameDraft('');
       setProfileUsernameDraft('');
+      setProfilePersonalDescriptionDraft('');
       setProfilePasswordDraft({
         currentPassword: '',
         newPassword: '',
@@ -756,6 +1108,7 @@ function App() {
 
     setProfileNameDraft(userProfile.displayName || '');
     setProfileUsernameDraft(userProfile.username || '');
+    setProfilePersonalDescriptionDraft(userProfile.personalDescription || '');
   }, [userProfile]);
 
   useEffect(() => {
@@ -771,14 +1124,34 @@ function App() {
       if (route.view === 'post' && route.postId) {
         closeProfileConnections();
         setProfileViewUsername(null);
+        setActiveChatUsername('');
         setActivePostId(route.postId);
         setActiveView('post');
+        return;
+      }
+
+      if (route.view === 'chat') {
+        if (!authState.hasUser && !authState.token) {
+          closeProfileConnections();
+          setProfileViewUsername(null);
+          setActivePostId(null);
+          setActiveChatUsername('');
+          setActiveView('auth');
+          return;
+        }
+
+        closeProfileConnections();
+        setProfileViewUsername(null);
+        setActivePostId(null);
+        setActiveChatUsername(route.chatUsername || '');
+        setActiveView('chat');
         return;
       }
 
       if (route.view === 'profile' && route.profileUsername) {
         setProfileViewUsername(route.profileUsername);
         setProfileTab(route.profileTab);
+        setActiveChatUsername('');
         setActivePostId(null);
         setActiveView('profile');
 
@@ -800,9 +1173,10 @@ function App() {
         return;
       }
 
-      if ((route.view === 'create' || route.view === 'bookmarks') && !authState.hasUser && !authState.token) {
+      if ((route.view === 'create' || route.view === 'bookmarks' || route.view === 'chat') && !authState.hasUser && !authState.token) {
         closeProfileConnections();
         setProfileViewUsername(null);
+        setActiveChatUsername('');
         setActivePostId(null);
         setActiveView('auth');
         return;
@@ -810,6 +1184,7 @@ function App() {
 
       closeProfileConnections();
       setProfileViewUsername(null);
+      setActiveChatUsername('');
       setActivePostId(null);
       setActiveView(route.view);
     };
@@ -847,6 +1222,7 @@ function App() {
     const nextHash = buildAppHash({
       view: activeView,
       postId: activePostId,
+      chatUsername: activeView === 'chat' ? activeChatUsername : '',
       profileUsername: nextProfileUsername,
       profileTab,
       profileModal: activeView === 'profile'
@@ -871,6 +1247,7 @@ function App() {
     window.history.pushState({ route: nextHash }, '', nextUrl);
   }, [
     activePostId,
+    activeChatUsername,
     activeView,
     isProfileSettingsOpen,
     profileConnectionsState.open,
@@ -1021,12 +1398,13 @@ function App() {
   }, [activePostId, activeView, aiSummaryByPost, aiSummaryStatusByPost]);
 
   const handleNavClick = (id) => {
-    if ((id === 'create' || id === 'bookmarks') && !userProfile && !token) {
+    if ((id === 'create' || id === 'bookmarks' || id === 'chat') && !userProfile && !token) {
       openAuthPage();
     } else {
       if (id === 'create') resetPostUploadState();
       setProfileViewUsername(null);
       setActivePostId(null);
+      if (id !== 'chat') setActiveChatUsername('');
       setActiveView(id);
     }
   };
@@ -1125,23 +1503,55 @@ function App() {
     await completeAuthenticatedSession(data.token);
   };
 
-  const handleGoogleAuth = async ({ mode }) => {
+  const completeGoogleFirebaseAuth = async ({
+    firebaseUser,
+    mode,
+    preferredDisplayName = '',
+  }) => {
+    const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase();
+    const shouldAllowSignupFallback = normalizedMode === 'continue';
+    const requestedMode = normalizedMode === 'signup' ? 'signup' : 'login';
+
+    try {
+      await finalizeFirebaseAuth({
+        firebaseUser,
+        mode: requestedMode,
+        preferredDisplayName,
+        signupProfile: null,
+      });
+    } catch (error) {
+      const shouldRetryAsSignup = shouldAllowSignupFallback
+        && `${error?.message ?? ''}`.trim() === 'Account not found. Please sign up first.';
+      if (!shouldRetryAsSignup) throw error;
+
+      await finalizeFirebaseAuth({
+        firebaseUser,
+        mode: 'signup',
+        preferredDisplayName,
+        signupProfile: null,
+      });
+    }
+  };
+
+  const handleGoogleAuth = async ({ mode, allowSignupFallback = false }) => {
     setAuthError('');
     setIsAuthSubmitting(true);
+    const googleFlowMode = allowSignupFallback && `${mode ?? ''}`.trim().toLowerCase() === 'login'
+      ? 'continue'
+      : mode;
 
     try {
       if (shouldUseGoogleRedirect()) {
-        storeGoogleAuthMode(mode);
+        storeGoogleAuthMode(googleFlowMode);
         await signInWithRedirect(auth, provider);
         return;
       }
 
       const result = await signInWithPopup(auth, provider);
-      await finalizeFirebaseAuth({
+      await completeGoogleFirebaseAuth({
         firebaseUser: result.user,
-        mode,
+        mode: googleFlowMode,
         preferredDisplayName: result.user.displayName,
-        signupProfile: null,
       });
     } catch (err) {
       clearStoredGoogleAuthMode();
@@ -1247,6 +1657,13 @@ function App() {
     setUserProfile(null);
     setViewedProfileMeta(null);
     setProfileViewUsername(null);
+    setActiveChatUsername('');
+    setChatThreads([]);
+    setPrivateChatThreads({});
+    setChatDraftByUsername({});
+    setChatMessagesStatusByUsername({});
+    setChatErrorsByUsername({});
+    setIsChatSendingByUsername({});
     setIsProfileSettingsOpen(false);
     setProfileSettingsStatus({ type: '', message: '' });
     setAuthError('');
@@ -1258,7 +1675,7 @@ function App() {
     setGenderPromptValue('');
     setGenderPromptError('');
     setIsGenderPromptSubmitting(false);
-    if (activeView === 'profile' || activeView === 'create' || activeView === 'bookmarks') setActiveView('home');
+    if (activeView === 'profile' || activeView === 'create' || activeView === 'bookmarks' || activeView === 'chat') setActiveView('home');
   };
 
   const handleGenderPromptClose = () => {
@@ -1394,7 +1811,7 @@ function App() {
       formData.append('title', postForm.title);
       formData.append('description', postForm.description);
       formData.append('location', postForm.location);
-      formData.append('department', postForm.department);
+      formData.append('department', `${postForm.department ?? ''}`.trim());
       formData.append('media', postForm.media);
       mediaFiles.forEach(file => formData.append('files', file));
 
@@ -1405,7 +1822,7 @@ function App() {
       setPostUploadStatus('success');
       setPostUploadFeedback('Post uploaded successfully.');
       setActiveView('home');
-      setPostForm({ title: '', description: '', location: '', department: 'General', media: 'IMAGE' });
+      setPostForm({ title: '', description: '', location: '', department: '', media: 'IMAGE' });
       setMediaFiles([]);
     } catch (err) {
       setPostUploadStatus('error');
@@ -1600,11 +2017,33 @@ function App() {
 
   const handleSolutionClick = (postId) => {
     setActivePostId(postId);
+    setActiveChatUsername('');
     setActiveView('post');
     setTimeout(() => {
       const inputElement = solutionInputRefs.current[postId];
       if (inputElement) inputElement.focus();
     }, 0);
+  };
+
+  const openPrivateChat = (username = '') => {
+    if (!ensureAuthenticated()) return;
+
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (normalizedUsername && normalizedUsername === userProfile?.username) {
+      setProfileViewUsername(null);
+      setActivePostId(null);
+      setActiveView('chat');
+      return;
+    }
+
+    closeProfileConnections();
+    setIsProfileSettingsOpen(false);
+    setProfileViewUsername(null);
+    setActivePostId(null);
+    setChatSearchQuery('');
+    setActiveChatUsername(normalizedUsername);
+    setActiveView('chat');
+    if (normalizedUsername) preloadAuthorPreview(normalizedUsername);
   };
 
   const openAuthorProfile = (username) => {
@@ -1613,6 +2052,7 @@ function App() {
     setIsProfileSettingsOpen(false);
     setProfileViewUsername(username);
     setProfileTab('reports');
+    setActiveChatUsername('');
     setActivePostId(null);
     setActiveView('profile');
   };
@@ -1623,6 +2063,7 @@ function App() {
     setIsProfileSettingsOpen(false);
     setProfileViewUsername(userProfile.username);
     setProfileTab('reports');
+    setActiveChatUsername('');
     setActivePostId(null);
     setActiveView('profile');
   };
@@ -1892,50 +2333,17 @@ function App() {
     setProfileSettingsStatus({ type: '', message: '' });
   };
 
-  const handleProfileNameSave = async (event) => {
+  const handleProfilePersonalDetailsSave = async (event) => {
     event.preventDefault();
     const nextDisplayName = `${profileNameDraft ?? ''}`.trim();
+    const nextUsername = `${profileUsernameDraft ?? ''}`.trim().toLowerCase();
+    const nextPersonalDescription = `${profilePersonalDescriptionDraft ?? ''}`.trim().slice(0, 180);
+
     if (!nextDisplayName) {
       setProfileSettingsStatus({ type: 'error', message: 'Enter a display name.' });
       return;
     }
 
-    try {
-      setIsProfileSettingsSubmitting(true);
-      setProfileSettingsStatus({ type: '', message: '' });
-      const res = await fetch(`${API_BASE_URL}/api/users/profile`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ displayName: nextDisplayName }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to update display name');
-
-      const nextToken = data?.token || token;
-      if (nextToken) {
-        localStorage.setItem('token', nextToken);
-        setToken(nextToken);
-      }
-      await fetchProfile(nextToken);
-      setViewedProfileMeta((currentProfile) => (
-        currentProfile?.username === userProfile?.username
-          ? { ...currentProfile, ...(data?.profile ?? {}), username: userProfile?.username || currentProfile.username }
-          : currentProfile
-      ));
-      setProfileSettingsStatus({ type: 'success', message: 'Display name updated.' });
-    } catch (error) {
-      setProfileSettingsStatus({ type: 'error', message: error.message });
-    } finally {
-      setIsProfileSettingsSubmitting(false);
-    }
-  };
-
-  const handleProfileUsernameSave = async (event) => {
-    event.preventDefault();
-    const nextUsername = `${profileUsernameDraft ?? ''}`.trim().toLowerCase();
     if (!nextUsername) {
       setProfileSettingsStatus({ type: 'error', message: 'Enter a username.' });
       return;
@@ -1950,10 +2358,14 @@ function App() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username: nextUsername }),
+        body: JSON.stringify({
+          displayName: nextDisplayName,
+          username: nextUsername,
+          personalDescription: nextPersonalDescription,
+        }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'Failed to update username');
+      if (!res.ok) throw new Error(data?.error || 'Failed to update personal details');
 
       const nextToken = data?.token || token;
       if (nextToken) {
@@ -1964,10 +2376,12 @@ function App() {
       const updatedUsername = data?.profile?.username || nextUsername;
       setProfileViewUsername(updatedUsername);
       setProfileUsernameDraft(updatedUsername);
+      setProfileNameDraft(data?.profile?.displayName || nextDisplayName);
+      setProfilePersonalDescriptionDraft(data?.profile?.personalDescription || nextPersonalDescription);
       await fetchPublicData(nextToken);
       await fetchProfile(nextToken);
       setViewedProfileMeta(data?.profile || null);
-      setProfileSettingsStatus({ type: 'success', message: 'Username updated across your profile.' });
+      setProfileSettingsStatus({ type: 'success', message: 'Personal details updated.' });
     } catch (error) {
       setProfileSettingsStatus({ type: 'error', message: error.message });
     } finally {
@@ -2058,6 +2472,61 @@ function App() {
     setIsSearchOpen(false);
   };
 
+  const handlePrivateChatDraftChange = (username, value) => {
+    if (!username) return;
+    setChatDraftByUsername((current) => ({ ...current, [username]: value }));
+  };
+
+  const handlePrivateChatSend = async (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    const messageText = `${getChatMapValueByUsername(chatDraftByUsername, normalizedUsername, '') ?? ''}`.trim();
+    if (!normalizedUsername || !messageText || !userProfile?.username || !token) return;
+
+    try {
+      setIsChatSendingByUsername((current) => ({ ...current, [normalizedUsername]: true }));
+      const res = await fetch(`${API_BASE_URL}/api/chats/${encodeURIComponent(normalizedUsername)}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: messageText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to send private message');
+
+      const normalizedMessage = normalizePrivateChatMessage(data?.message, Date.now());
+      const resolvedUsername = `${normalizedMessage?.recipientUsername ?? normalizedUsername}`.trim() || normalizedUsername;
+      setPrivateChatThreads((current) => ({
+        ...current,
+        [resolvedUsername]: [
+          ...(getChatMapValueByUsername(current, resolvedUsername, []) ?? []),
+          normalizedMessage,
+        ].filter(Boolean),
+      }));
+      setChatDraftByUsername((current) => {
+        const next = { ...current, [resolvedUsername]: '' };
+        if (normalizedUsername !== resolvedUsername && normalizedUsername in next) {
+          delete next[normalizedUsername];
+        }
+        return next;
+      });
+      setActiveChatUsername(resolvedUsername);
+      setActiveView('chat');
+      await fetchChatThreads(token);
+      await fetchChatMessages(resolvedUsername, token);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setIsChatSendingByUsername((current) => {
+        if (!(normalizedUsername in current)) return current;
+        const next = { ...current };
+        delete next[normalizedUsername];
+        return next;
+      });
+    }
+  };
+
   const preloadAuthorPreview = async (username) => {
     const normalizedUsername = `${username ?? ''}`.trim();
     if (!normalizedUsername) return;
@@ -2121,10 +2590,17 @@ function App() {
   const getAuthorAvatarUrl = (username) => {
     const normalizedUsername = `${username ?? ''}`.trim();
     if (!normalizedUsername) return '';
+    const normalizedUsernameKey = getChatUsernameKey(normalizedUsername);
 
-    if (normalizedUsername === userProfile?.username) return profilePhotoUrl || userProfile?.profilePhotoUrl || '';
-    if (normalizedUsername === viewedProfileMeta?.username) return viewedProfileMeta?.profilePhotoUrl || '';
-    return authorPreviewByUsername[normalizedUsername]?.data?.profilePhotoUrl || '';
+    if (normalizedUsernameKey === getChatUsernameKey(userProfile?.username)) {
+      return profilePhotoUrl || userProfile?.profilePhotoUrl || '';
+    }
+    if (normalizedUsernameKey === getChatUsernameKey(viewedProfileMeta?.username)) {
+      return viewedProfileMeta?.profilePhotoUrl || '';
+    }
+
+    const previewState = getChatMapValueByUsername(authorPreviewByUsername, normalizedUsername, null);
+    return previewState?.data?.profilePhotoUrl || '';
   };
 
   const handleReportPost = async (postId) => {
@@ -2245,6 +2721,16 @@ function App() {
   const trendingPosts = [...apiPosts]
     .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
     .slice(0, 8);
+  const debatePosts = [...apiPosts]
+    .sort((firstPost, secondPost) => {
+      const firstDebateScore = (toCount(firstPost.comments) * 3) + (getPostSolutions(firstPost).length * 4) + toCount(firstPost.support);
+      const secondDebateScore = (toCount(secondPost.comments) * 3) + (getPostSolutions(secondPost).length * 4) + toCount(secondPost.support);
+      if (secondDebateScore !== firstDebateScore) return secondDebateScore - firstDebateScore;
+      return getTrendingScore(secondPost) - getTrendingScore(firstPost);
+    })
+    .slice(0, 6);
+  const debateCommentsCount = debatePosts.reduce((total, post) => total + toCount(post.comments), 0);
+  const debateSolutionsCount = debatePosts.reduce((total, post) => total + getPostSolutions(post).length, 0);
   const activePost = activePostId ? apiPosts.find((post) => post.id === activePostId) ?? null : null;
   const activePostSolutions = getPostSolutions(activePost);
   const activePostConsensus = activePostId ? aiSummaryByPost[activePostId] ?? null : null;
@@ -2267,6 +2753,90 @@ function App() {
   const reportedPostIds = Array.isArray(userProfile?.reportedPostIds)
     ? [...new Set(userProfile.reportedPostIds.filter(Boolean))]
     : [];
+  const chatContactUsernames = (() => {
+    const seenUsernameKeys = new Set();
+    const ownUsernameKey = getChatUsernameKey(accountUsername);
+
+    return [
+      ...chatThreads.map((thread) => thread.username),
+      activeChatUsername,
+      ...Object.keys(privateChatThreads),
+      ...searchableAccountUsernames,
+      ...followingUsernames,
+      ...(Array.isArray(profileConnectionsState.items) ? profileConnectionsState.items.map((item) => item.username) : []),
+    ].filter((username) => {
+      const usernameKey = getChatUsernameKey(username);
+      if (!usernameKey || usernameKey === ownUsernameKey || seenUsernameKeys.has(usernameKey)) return false;
+      seenUsernameKeys.add(usernameKey);
+      return true;
+    });
+  })();
+  const chatContacts = chatContactUsernames
+    .map((username) => {
+      const usernameKey = getChatUsernameKey(username);
+      const previewData = getChatMapValueByUsername(authorPreviewByUsername, username, null)?.data ?? {};
+      const connectionData = findListItemByUsername(profileConnectionsState.items, username);
+      const existingThread = chatThreads.find((thread) => getChatUsernameKey(thread.username) === usernameKey) ?? null;
+      const privateThreadMessages = getChatMapValueByUsername(privateChatThreads, username, []);
+      const lastMessage = Array.isArray(privateThreadMessages) && privateThreadMessages.length > 0
+        ? privateThreadMessages[privateThreadMessages.length - 1]
+        : existingThread?.lastMessage ?? null;
+      const derivedPhotoUrl = usernameKey === getChatUsernameKey(viewedProfileMeta?.username)
+        ? (viewedProfileMeta?.profilePhotoUrl || existingThread?.profilePhotoUrl || previewData.profilePhotoUrl || connectionData?.profilePhotoUrl || '')
+        : (existingThread?.profilePhotoUrl || previewData.profilePhotoUrl || connectionData?.profilePhotoUrl || '');
+
+      return {
+        username,
+        displayName: `${previewData.displayName ?? existingThread?.displayName ?? connectionData?.displayName ?? ''}`.trim(),
+        role: `${previewData.role ?? existingThread?.role ?? connectionData?.role ?? ''}`.trim() || 'CitizenReporter',
+        profilePhotoUrl: derivedPhotoUrl,
+        followerCount: Math.max(toCount(previewData.followerCount), toCount(connectionData?.followerCount)),
+        postsCount: getChatMapValueByUsername(authorPostCounts, username, 0) ?? 0,
+        isFollowing: listIncludesUsername(followingUsernames, username),
+        unreadCount: toCount(existingThread?.unreadCount),
+        lastMessage,
+      };
+    })
+    .sort((firstContact, secondContact) => {
+      const firstTimestamp = firstContact.lastMessage?.createdAt ? new Date(firstContact.lastMessage.createdAt).getTime() : 0;
+      const secondTimestamp = secondContact.lastMessage?.createdAt ? new Date(secondContact.lastMessage.createdAt).getTime() : 0;
+      if (secondTimestamp !== firstTimestamp) return secondTimestamp - firstTimestamp;
+      if (firstContact.isFollowing !== secondContact.isFollowing) return firstContact.isFollowing ? -1 : 1;
+      if (secondContact.postsCount !== firstContact.postsCount) return secondContact.postsCount - firstContact.postsCount;
+      return firstContact.username.localeCompare(secondContact.username);
+    });
+  const normalizedChatSearchQuery = normalizeSearchQuery(chatSearchQuery);
+  const filteredChatContacts = normalizedChatSearchQuery
+    ? chatContacts.filter((contact) => accountMatchesSearchQuery(contact, normalizedChatSearchQuery))
+    : chatContacts;
+  const unreadChatCount = chatContacts.reduce((total, contact) => total + toCount(contact.unreadCount), 0);
+  const unreadAlertsCount = apiNotifications.reduce((total, notification) => total + (!notification.read ? 1 : 0), 0);
+  const effectiveActiveChatUsername = activeChatUsername || filteredChatContacts[0]?.username || '';
+  const effectiveActiveChatKey = getChatUsernameKey(effectiveActiveChatUsername);
+  const activeChatContact = effectiveActiveChatUsername
+    ? chatContacts.find((contact) => getChatUsernameKey(contact.username) === effectiveActiveChatKey) ?? {
+      username: effectiveActiveChatUsername,
+      displayName: '',
+      role: 'CitizenReporter',
+      profilePhotoUrl: (
+        effectiveActiveChatKey === getChatUsernameKey(userProfile?.username)
+          ? (profilePhotoUrl || userProfile?.profilePhotoUrl || '')
+          : effectiveActiveChatKey === getChatUsernameKey(viewedProfileMeta?.username)
+            ? (viewedProfileMeta?.profilePhotoUrl || '')
+            : (getChatMapValueByUsername(authorPreviewByUsername, effectiveActiveChatUsername, null)?.data?.profilePhotoUrl || '')
+      ),
+      followerCount: 0,
+      postsCount: 0,
+      isFollowing: listIncludesUsername(followingUsernames, effectiveActiveChatUsername),
+      lastMessage: null,
+    }
+    : null;
+  const activeChatMessages = effectiveActiveChatUsername
+    ? (getChatMapValueByUsername(privateChatThreads, effectiveActiveChatUsername, []) ?? [])
+    : [];
+  const activeChatDraft = effectiveActiveChatUsername
+    ? (getChatMapValueByUsername(chatDraftByUsername, effectiveActiveChatUsername, '') ?? '')
+    : '';
   const bookmarkedPosts = apiPosts.filter((post) => savedPostIds.includes(post.id));
   const bookmarkedDepartmentsCount = new Set(bookmarkedPosts.map((post) => post.department).filter(Boolean)).size;
   const bookmarkedTopDepartment = getMostFrequentValue(bookmarkedPosts.map((post) => post.department)) || 'No lead category yet';
@@ -2298,25 +2868,27 @@ function App() {
     && followingUsernames.some((username) => `${username ?? ''}`.trim().toLowerCase() === normalizedResolvedProfileUsername);
   const profileDisplay = isOwnProfile
     ? {
+      displayName: getDisplayNameLabel(userProfile.displayName, userProfile.username),
       username: userProfile.username,
       role: userProfile.role,
-      postsCount: Math.max(toCount(userProfile.postsCount), profilePosts.length),
-      solutionsProposed: Math.max(toCount(userProfile.solutionsProposed), profileSolutions.length),
+      postsCount: profilePosts.length,
+      solutionsProposed: profileSolutions.length,
       reputation: Math.max(toCount(userProfile.reputation), 540 + Math.round(profileSupportReceived / 2)),
     }
     : {
+      displayName: getDisplayNameLabel(viewedProfileMeta?.displayName, viewedProfileMeta?.username || resolvedProfileUsername),
       username: viewedProfileMeta?.username || resolvedProfileUsername,
       role: viewedProfileMeta?.role || 'CitizenReporter',
-      postsCount: Math.max(toCount(viewedProfileMeta?.postsCount), profilePosts.length),
-      solutionsProposed: Math.max(toCount(viewedProfileMeta?.solutionsProposed), profileSolutions.length, profilePosts.length > 0 ? 1 : 0),
+      postsCount: profilePosts.length,
+      solutionsProposed: profileSolutions.length,
       reputation: Math.max(
         toCount(viewedProfileMeta?.reputation),
         500 + (profilePosts.length * 10) + (profileSolutions.length * 12) + Math.round(profileSupportReceived / 3),
       ),
     };
   const profileBio = isOwnProfile
-    ? `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`
-    : `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`;
+    ? (`${userProfile?.personalDescription ?? ''}`.trim() || `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`)
+    : (`${viewedProfileMeta?.personalDescription ?? ''}`.trim() || `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`);
   const profileJoinLabel = getProfileJoinLabel(
     isOwnProfile ? userProfile?.memberSince : viewedProfileMeta?.memberSince,
     resolvedProfileUsername,
@@ -2701,6 +3273,7 @@ function App() {
     if (postUploadStatus === 'error') return 'Retry upload';
     return `Post issue as ${userProfile?.username || 'you'}`;
   })();
+  const isChatView = activeView === 'chat';
 
   return (
     <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
@@ -2897,152 +3470,205 @@ function App() {
       </div>
       </div>
 
-      <main className="app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-4 px-3 pb-24 pt-4 sm:gap-5 sm:px-4 sm:pt-5 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7 lg:px-6 lg:pt-0">
-        <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:h-fit lg:self-start lg:border-r lg:border-slate-200 lg:pr-4">
-          <div className="soft-card p-4">
-            <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
-            <div className="mt-3 space-y-2">
+      <main className={`app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-4 px-3 pb-24 pt-4 sm:gap-5 sm:px-4 sm:pt-5 lg:px-6 lg:pt-0 ${isChatView ? 'lg:grid-cols-[84px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[84px_minmax(0,1fr)]' : 'lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7'}`}>
+        <aside className={`hidden lg:sticky lg:block lg:self-start ${isChatView ? 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-3' : 'lg:top-24 lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4'}`}>
+          {isChatView ? (
+            <div className="soft-card chat-nav-rail flex flex-col items-center gap-2 p-2.5">
               {navItems.map((item) => {
                 const Icon = item.Icon;
+                const isActive = activeView === item.id;
+                const badgeCount = item.id === 'chat'
+                  ? unreadChatCount
+                  : item.id === 'alerts'
+                    ? unreadAlertsCount
+                    : 0;
                 return (
                   <button
                     key={item.id}
+                    type="button"
+                    title={item.label}
+                    aria-label={item.label}
                     onClick={() => handleNavClick(item.id)}
-                    className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    className={`nav-pill chat-nav-pill relative flex h-12 w-12 items-center justify-center rounded-2xl border text-base font-semibold transition ${isActive
+                      ? 'nav-pill--active border-blue-200 bg-blue-600 text-white shadow-[0_18px_30px_-20px_rgba(37,99,235,0.8)]'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <Icon className="nav-pill__icon h-5 w-5" />
-                    {item.label}
+                    {badgeCount > 0 && (
+                      <span className={`absolute right-0.5 top-0.5 z-10 inline-flex min-w-[1.3rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none shadow-sm ${isActive
+                        ? 'bg-white text-blue-700'
+                        : 'bg-blue-600 text-white'
+                        }`}>
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                    <span className="sr-only">{item.label}</span>
                   </button>
                 );
               })}
             </div>
-          </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="soft-card p-4">
+                <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
+                <div className="mt-3 space-y-2">
+                  {navItems.map((item) => {
+                    const Icon = item.Icon;
+                    const badgeCount = item.id === 'chat'
+                      ? unreadChatCount
+                      : item.id === 'alerts'
+                        ? unreadAlertsCount
+                        : 0;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavClick(item.id)}
+                        className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                          }`}
+                      >
+                        <Icon className="nav-pill__icon h-5 w-5" />
+                        <span className="flex-1">{item.label}</span>
+                        {badgeCount > 0 && (
+                          <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${activeView === item.id
+                            ? 'bg-white text-blue-700'
+                            : 'bg-blue-600 text-white'
+                            }`}>
+                            {badgeCount > 99 ? '99+' : badgeCount}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-          <div className="soft-card p-4">
-            <div className="flex items-center justify-between gap-3 px-2">
-              <p className="text-sm font-semibold text-slate-500">Most Cases</p>
-              {selectedDepartmentFilter && (
-                <button
-                  type="button"
-                  onClick={clearDepartmentFilter}
-                  className="text-xs font-semibold text-blue-700 transition hover:text-blue-800"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <div className="mt-3 space-y-2">
-              {topCaseCategories.map(([department, count], index) => (
-                <button
-                  type="button"
-                  key={`${department}-${count}`}
-                  onClick={() => handleDepartmentFilterSelect(department)}
-                  className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
-                    ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
-                    : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
-                    }`}
-                >
-                  <div className="min-w-0">
-                    <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
-                      }`}
+              <div className="soft-card p-4">
+                <div className="flex items-center justify-between gap-3 px-2">
+                  <p className="text-sm font-semibold text-slate-500">Most Cases</p>
+                  {selectedDepartmentFilter && (
+                    <button
+                      type="button"
+                      onClick={clearDepartmentFilter}
+                      className="text-xs font-semibold text-blue-700 transition hover:text-blue-800"
                     >
-                      {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
-                    </p>
-                    <p className="mt-1 truncate text-sm font-semibold text-slate-900">{department}</p>
-                  </div>
-                  <div className="ml-3 text-right">
-                    <p className="text-lg font-bold text-slate-950">{formatCount(count)}</p>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">cases</p>
-                  </div>
-                </button>
-              ))}
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <div className="mt-3 space-y-2">
+                  {topCaseCategories.map(([department, count], index) => (
+                    <button
+                      type="button"
+                      key={`${department}-${count}`}
+                      onClick={() => handleDepartmentFilterSelect(department)}
+                      className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
+                        ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                        }`}
+                    >
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
+                          }`}
+                        >
+                          {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
+                        </p>
+                        <p className="mt-1 truncate text-sm font-semibold text-slate-900">{department}</p>
+                      </div>
+                      <div className="ml-3 text-right">
+                        <p className="text-lg font-bold text-slate-950">{formatCount(count)}</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">cases</p>
+                      </div>
+                    </button>
+                  ))}
 
-              {topCaseCategories.length === 0 && (
-                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                  No category data yet.
-                </p>
+                  {topCaseCategories.length === 0 && (
+                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                      No category data yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {activeView === 'post' && activePost && (
+                <div className="soft-card p-4">
+                  <div className="px-2">
+                    <p className="text-sm font-semibold text-slate-500">Trending In {activePost.location}</p>
+                    <p className="mt-1 text-xs text-slate-400">Other issues gaining attention in the same location.</p>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {locationTrendingPosts.map((post, index) => (
+                      <button
+                        key={`${post.id}-location-trend`}
+                        type="button"
+                        onClick={() => {
+                          setActivePostId(post.id);
+                          setActiveView('post');
+                        }}
+                        className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+                      >
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                          #{index + 1} In this area
+                        </p>
+                        <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
+                        <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
+                      </button>
+                    ))}
+
+                    {locationTrendingPosts.length === 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                        No other trending issues found for this location yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
 
-          {activeView === 'post' && activePost && (
-            <div className="soft-card p-4">
-              <div className="px-2">
-                <p className="text-sm font-semibold text-slate-500">Trending In {activePost.location}</p>
-                <p className="mt-1 text-xs text-slate-400">Other issues gaining attention in the same location.</p>
-              </div>
-              <div className="mt-3 space-y-2">
-                {locationTrendingPosts.map((post, index) => (
-                  <button
-                    key={`${post.id}-location-trend`}
-                    type="button"
-                    onClick={() => {
-                      setActivePostId(post.id);
-                      setActiveView('post');
-                    }}
-                    className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-                      #{index + 1} In this area
+              {activeView === 'home' && (
+                <div className="soft-card p-4">
+                  <div className="px-2">
+                    <p className="text-sm font-semibold text-slate-500">Trending Around You</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Based on {userLocationContext.locationLabel || 'community location signals'}.
                     </p>
-                    <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
-                    <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
-                  </button>
-                ))}
-
-                {locationTrendingPosts.length === 0 && (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                    No other trending issues found for this location yet.
                   </div>
-                )}
-              </div>
-            </div>
-          )}
 
-          {activeView === 'home' && (
-            <div className="soft-card p-4">
-              <div className="px-2">
-                <p className="text-sm font-semibold text-slate-500">Trending Around You</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Based on {userLocationContext.locationLabel || 'community location signals'}.
-                </p>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <LocationTrendSection
-                  title={userLocationContext.locationLabel ? `In ${userLocationContext.locationLabel}` : 'In your area'}
-                  posts={exactLocationTrending}
-                  emptyLabel="No exact-location trends yet."
-                  onOpenPost={(postId) => {
-                    setActivePostId(postId);
-                    setActiveView('post');
-                  }}
-                />
-                <LocationTrendSection
-                  title={userLocationContext.city ? `In ${userLocationContext.city}` : 'In your city'}
-                  posts={cityTrending}
-                  emptyLabel="No broader city trends yet."
-                  onOpenPost={(postId) => {
-                    setActivePostId(postId);
-                    setActiveView('post');
-                  }}
-                />
-                <LocationTrendSection
-                  title={userLocationContext.state ? `In ${userLocationContext.state}` : 'In your state'}
-                  posts={stateTrending}
-                  emptyLabel="No broader state trends yet."
-                  onOpenPost={(postId) => {
-                    setActivePostId(postId);
-                    setActiveView('post');
-                  }}
-                />
-              </div>
+                  <div className="mt-4 space-y-4">
+                    <LocationTrendSection
+                      title={userLocationContext.locationLabel ? `In ${userLocationContext.locationLabel}` : 'In your area'}
+                      posts={exactLocationTrending}
+                      emptyLabel="No exact-location trends yet."
+                      onOpenPost={(postId) => {
+                        setActivePostId(postId);
+                        setActiveView('post');
+                      }}
+                    />
+                    <LocationTrendSection
+                      title={userLocationContext.city ? `In ${userLocationContext.city}` : 'In your city'}
+                      posts={cityTrending}
+                      emptyLabel="No broader city trends yet."
+                      onOpenPost={(postId) => {
+                        setActivePostId(postId);
+                        setActiveView('post');
+                      }}
+                    />
+                    <LocationTrendSection
+                      title={userLocationContext.state ? `In ${userLocationContext.state}` : 'In your state'}
+                      posts={stateTrending}
+                      emptyLabel="No broader state trends yet."
+                      onOpenPost={(postId) => {
+                        setActivePostId(postId);
+                        setActiveView('post');
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </aside>
 
-        <section className="motion-fade-up mx-auto w-full max-w-[980px] space-y-6" style={{ '--motion-delay': '80ms' }}>
+        <section className={`motion-fade-up mx-auto w-full space-y-6 ${isChatView ? 'max-w-full' : 'max-w-[980px]'}`} style={{ '--motion-delay': '80ms' }}>
           {activeView === 'home' && (
             <>
               <div className="soft-card signal-hero p-5 sm:p-7">
@@ -3484,6 +4110,159 @@ function App() {
             </>
           )}
 
+          {activeView === 'debate' && (
+            <>
+              <div className="soft-card signal-hero p-5 sm:p-7">
+                <div className="flex flex-wrap items-start justify-between gap-6">
+                  <div className="max-w-2xl">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Debate Hub
+                    </span>
+                    <h2 className="mt-4 font-display text-[24px] font-bold text-slate-950 sm:text-[30px]">Where the strongest public arguments are taking shape</h2>
+                    <p className="mt-2 text-base text-slate-500">
+                      Follow the reports drawing the most community pushback, solution threads, and public scrutiny right now.
+                    </p>
+                  </div>
+
+                  <div className="grid w-full gap-3 sm:max-w-[460px] sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Live debates</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debatePosts.length)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Comments</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debateCommentsCount)}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Solutions</p>
+                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debateSolutionsCount)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="space-y-4">
+                  {debatePosts.map((post, index) => {
+                    const solutionCount = getPostSolutions(post).length;
+                    return (
+                      <button
+                        key={`${post.id}-debate`}
+                        type="button"
+                        onClick={() => {
+                          setActivePostId(post.id);
+                          setActiveView('post');
+                        }}
+                        className="soft-card signal-tile w-full rounded-[28px] border border-slate-200 p-5 text-left transition hover:-translate-y-0.5 hover:bg-white"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+                              Debate #{index + 1}
+                            </p>
+                            <h3 className="mt-2 font-display text-xl font-bold leading-tight text-slate-950">{post.title}</h3>
+                            <p className="mt-2 text-sm leading-6 text-slate-500">
+                              {getDescriptionPreview(post.description, false, 170).previewText}
+                            </p>
+                          </div>
+                          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                            <Building2 className="h-3.5 w-3.5" />
+                            {post.department}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+                            <MapPin className="h-3.5 w-3.5" />
+                            {post.location}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600">
+                            <Users className="h-3.5 w-3.5" />
+                            {post.author}
+                          </span>
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Support</p>
+                            <p className="mt-2 text-lg font-bold text-slate-950">{formatCount(post.support)}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Comments</p>
+                            <p className="mt-2 text-lg font-bold text-slate-950">{formatCount(post.comments)}</p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Solutions</p>
+                            <p className="mt-2 text-lg font-bold text-slate-950">{formatCount(solutionCount)}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {debatePosts.length === 0 && (
+                    <div className="soft-card p-7">
+                      <EmptyProfilePanel
+                        icon={<MessageCircle className="h-5 w-5" />}
+                        title="No debates yet"
+                        description="As reports gain comments and solution threads, the most active debates will show up here."
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="soft-card p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">What drives this feed</p>
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-sm font-semibold text-slate-900">High discussion volume</p>
+                        <p className="mt-1 text-sm text-slate-500">Reports with the most comment activity rise faster here.</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-sm font-semibold text-slate-900">Solution-heavy threads</p>
+                        <p className="mt-1 text-sm text-slate-500">Community fixes and replies help identify the strongest debates.</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <p className="text-sm font-semibold text-slate-900">Public pressure signals</p>
+                        <p className="mt-1 text-sm text-slate-500">Support totals still matter, but discussion carries more weight here.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="soft-card p-5">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Jump Back In</p>
+                    <div className="mt-4 space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => handleNavClick('home')}
+                        className="signal-tile flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Browse all reports</p>
+                          <p className="mt-1 text-sm text-slate-500">Return to the full public feed.</p>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 text-slate-500" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleNavClick('create')}
+                        className="signal-tile flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">Start a new report</p>
+                          <p className="mt-1 text-sm text-slate-500">Add a case that deserves public debate.</p>
+                        </div>
+                        <ArrowUpRight className="h-4 w-4 text-slate-500" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
           {activeView === 'post' && (
             <div className="space-y-0">
               {!activePost && (
@@ -3792,10 +4571,41 @@ function App() {
                 <input type="text" placeholder="Title" required className="form-input" value={postForm.title} onChange={e => setPostForm({ ...postForm, title: e.target.value })} />
                 <div className="grid gap-4 sm:grid-cols-2">
                   <input type="text" placeholder="Location" required className="form-input" value={postForm.location} onChange={e => setPostForm({ ...postForm, location: e.target.value })} />
-                  <select className="form-input" value={postForm.department} onChange={e => setPostForm({ ...postForm, department: e.target.value })}>
-                    <option>General</option><option>Police</option><option>Municipality</option><option>Education</option><option>Transport</option>
-                  </select>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      list="community-category-suggestions"
+                      placeholder="Choose or create a category"
+                      required
+                      className="form-input"
+                      value={postForm.department}
+                      onChange={e => setPostForm({ ...postForm, department: e.target.value })}
+                    />
+                    <datalist id="community-category-suggestions">
+                      {topCaseCategories.map(([department]) => (
+                        <option key={`category-option-${department}`} value={department} />
+                      ))}
+                    </datalist>
+                    <p className="px-1 text-xs text-slate-500">People can create new categories. Popular ones appear as suggestions.</p>
+                  </div>
                 </div>
+                {topCaseCategories.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {topCaseCategories.map(([department]) => (
+                      <button
+                        key={`quick-category-${department}`}
+                        type="button"
+                        onClick={() => setPostForm({ ...postForm, department })}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${postForm.department === department
+                          ? 'border-blue-200 bg-blue-50 text-blue-700'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                      >
+                        {department}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <textarea rows="5" placeholder="Description" required className="w-full min-h-[140px] resize-none rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100" value={postForm.description} onChange={e => setPostForm({ ...postForm, description: e.target.value })} />
                 <div className="space-y-2">
                   <button
@@ -3812,7 +4622,7 @@ function App() {
                         ? 'Upload complete. Finalizing your post...'
                         : postUploadStatus === 'uploading'
                           ? 'Uploading in real time.'
-                          : postUploadFeedback || 'Your button progress bar matches the live upload progress.'}
+                          : ''}
                     </span>
                     <span className="font-semibold text-slate-700">
                       {isPostSubmitting || postUploadProgress > 0 ? `${postUploadProgress}%` : ''}
@@ -3825,8 +4635,28 @@ function App() {
 
           {activeView === 'alerts' && (
             <div className="soft-card signal-hero p-5 sm:p-6">
-              <p className="text-xs font-semibold text-slate-500">Notifications</p>
-              <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Updates related to your reports</h2>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500">Notifications</p>
+                  <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Updates related to your reports</h2>
+                  {userProfile && (
+                    <p className="mt-2 text-sm text-slate-500">
+                      {unreadAlertsCount > 0
+                        ? `${formatCount(unreadAlertsCount)} unread alert${unreadAlertsCount === 1 ? '' : 's'} waiting for you.`
+                        : 'You are all caught up.'}
+                    </p>
+                  )}
+                </div>
+                {userProfile && unreadAlertsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markNotificationsRead(token).catch((error) => alert(error.message))}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Mark all read
+                  </button>
+                )}
+              </div>
               <div className="mt-6 space-y-3">
                 {!userProfile && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
@@ -3834,29 +4664,58 @@ function App() {
                   </div>
                 )}
 
-                {userProfile && apiNotifications.map((item) => (
-                  <div key={item.id} className="alert-card rounded-xl border border-slate-200 bg-slate-50 p-4 pl-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
-                          {getNotificationTypeLabel(item.type)}
-                        </p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">{item.message}</p>
-                        <p className="mt-2 text-xs text-slate-500">{formatTimestamp(item.createdAt)}</p>
+                {userProfile && apiNotifications.map((item) => {
+                  const notificationType = `${item.type ?? ''}`.trim().toLowerCase();
+                  const action = item.postId
+                    ? {
+                      label: 'Open post',
+                      onClick: () => handleSolutionClick(item.postId),
+                    }
+                    : notificationType === 'chat_message' && item.actorUsername
+                      ? {
+                        label: 'Open chat',
+                        onClick: () => openPrivateChat(item.actorUsername),
+                      }
+                      : item.actorUsername
+                        ? {
+                          label: 'View profile',
+                          onClick: () => openAuthorProfile(item.actorUsername),
+                        }
+                        : null;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`alert-card rounded-xl border p-4 pl-5 transition ${item.read
+                        ? 'border-slate-200 bg-slate-50'
+                        : 'border-blue-200 bg-blue-50/70 shadow-[0_20px_45px_-34px_rgba(37,99,235,0.45)]'
+                        }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            {!item.read && <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                              {getNotificationTypeLabel(item.type)}
+                            </p>
+                          </div>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{item.message}</p>
+                          <p className="mt-2 text-xs text-slate-500">{formatTimestamp(item.createdAt)}</p>
+                        </div>
+                        {action && (
+                          <button
+                            type="button"
+                            onClick={action.onClick}
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            {action.label}
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
-                      {item.postId && (
-                        <button
-                          type="button"
-                          onClick={() => handleSolutionClick(item.postId)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                        >
-                          Open post
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {userProfile && apiNotifications.length === 0 && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
@@ -3867,6 +4726,28 @@ function App() {
             </div>
           )}
 
+          {activeView === 'chat' && userProfile && (
+            <div className="chat-workspace">
+              <PrivateChatView
+                currentUsername={userProfile.username}
+                contacts={filteredChatContacts}
+                activeContact={activeChatContact}
+                activeMessages={activeChatMessages}
+                activeDraft={activeChatDraft}
+                isThreadsLoading={isChatThreadsLoading}
+                activeMessagesStatus={getChatMapValueByUsername(chatMessagesStatusByUsername, effectiveActiveChatUsername, 'idle') ?? 'idle'}
+                activeError={getChatMapValueByUsername(chatErrorsByUsername, effectiveActiveChatUsername, '') ?? ''}
+                isSending={!!getChatMapValueByUsername(isChatSendingByUsername, effectiveActiveChatUsername, false)}
+                searchQuery={chatSearchQuery}
+                onSearchQueryChange={setChatSearchQuery}
+                onSelectContact={openPrivateChat}
+                onDraftChange={handlePrivateChatDraftChange}
+                onSendMessage={handlePrivateChatSend}
+                onOpenProfile={openAuthorProfile}
+              />
+            </div>
+          )}
+
           {activeView === 'profile' && (userProfile || profileViewUsername) && (
             <div className="space-y-5">
               <ProfileView
@@ -3874,6 +4755,7 @@ function App() {
                 profileDisplay={profileDisplay}
                 profileInitials={profileInitials}
                 profileBio={profileBio}
+                hasPersonalDescription={!!`${isOwnProfile ? userProfile?.personalDescription : (viewedProfileMeta?.personalDescription ?? '')}`.trim()}
                 profileBeat={profileBeat}
                 profileLocation={profileLocation}
                 profileJoinLabel={profileJoinLabel}
@@ -3894,6 +4776,7 @@ function App() {
                 onOpenConnections={handleOpenProfileConnections}
                 onCreateReport={() => handleNavClick('create')}
                 onOpenSettings={openProfileSettings}
+                onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleProfileFollow}
                 onShareProfile={handleProfileShare}
                 onOpenLatestPost={() => {
@@ -3917,6 +4800,7 @@ function App() {
                 isFollowSubmittingByUsername={isFollowSubmittingByUsername}
                 onClose={closeProfileConnections}
                 onOpenProfile={handleOpenConnectionProfile}
+                onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleFollow}
               />
               <ProfileSettingsModal
@@ -3929,15 +4813,16 @@ function App() {
                 profileJoinLabel={profileJoinLabel}
                 nameDraft={profileNameDraft}
                 usernameDraft={profileUsernameDraft}
+                personalDescriptionDraft={profilePersonalDescriptionDraft}
                 passwordDraft={profilePasswordDraft}
                 onClose={closeProfileSettings}
                 onSectionChange={handleProfileSettingsSectionChange}
                 onEditPhoto={() => profilePhotoInputRef.current?.click()}
                 onNameDraftChange={setProfileNameDraft}
                 onUsernameDraftChange={setProfileUsernameDraft}
+                onPersonalDescriptionDraftChange={setProfilePersonalDescriptionDraft}
                 onPasswordDraftChange={setProfilePasswordDraft}
-                onSaveName={handleProfileNameSave}
-                onSaveUsername={handleProfileUsernameSave}
+                onSavePersonalDetails={handleProfilePersonalDetailsSave}
                 onSavePassword={handleProfilePasswordSave}
                 onLogout={handleLogout}
                 onSwitchAccount={handleSwitchAccount}
@@ -3951,7 +4836,7 @@ function App() {
                   )}
                   <div className="flex-1">
                     <p className="text-xs font-semibold text-slate-500">{profileDisplay.role}</p>
-                    <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">{profileDisplay.username}</h2>
+                    <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">{profileDisplay.displayName || profileDisplay.username}</h2>
                     <p className="mt-2 text-sm text-slate-500">Posts: {profileDisplay.postsCount} • Solutions Proposed: {profileDisplay.solutionsProposed}</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <MetricBox label="Reputation" value={profileDisplay.reputation} dark={false} />
@@ -3971,6 +4856,7 @@ function App() {
           )}
         </section>
 
+        {!isChatView && (
         <aside className="hidden lg:sticky lg:top-32 lg:block lg:h-fit lg:self-start lg:border-l lg:border-slate-200 lg:pl-4">
           {activeView === 'post' && (
             <div className="soft-card overflow-hidden p-4">
@@ -4029,6 +4915,7 @@ function App() {
             </div>
           )}
         </aside>
+        )}
 
       </main>
 
@@ -4048,15 +4935,25 @@ function App() {
           {navItems.map((item) => {
             const Icon = item.Icon;
             const isActive = activeView === item.id;
+            const badgeCount = item.id === 'chat'
+              ? unreadChatCount
+              : item.id === 'alerts'
+                ? unreadAlertsCount
+                : 0;
             return (
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`mobile-nav-pill flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${isActive ? 'mobile-nav-pill--active ' : ''
+                className={`mobile-nav-pill relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${isActive ? 'mobile-nav-pill--active ' : ''
                   }${isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
                   }`}
               >
                 <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                {badgeCount > 0 && (
+                  <span className="absolute right-3 top-2 inline-flex min-w-[1.3rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
                 <span>{item.label}</span>
                 {isActive && <span className="mt-0.5 h-1 w-1 rounded-full bg-blue-600" />}
               </button>
@@ -4149,11 +5046,281 @@ function GenderPromptModal({
   );
 }
 
+function PrivateChatView({
+  currentUsername,
+  contacts,
+  activeContact,
+  activeMessages,
+  activeDraft,
+  isThreadsLoading = false,
+  activeMessagesStatus = 'idle',
+  activeError = '',
+  isSending = false,
+  searchQuery,
+  onSearchQueryChange,
+  onSelectContact,
+  onDraftChange,
+  onSendMessage,
+  onOpenProfile,
+}) {
+  return (
+    <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
+      {/* Sidebar: Contacts List */}
+      <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="flex flex-col border-b border-slate-200/60 bg-white/40 px-4 pt-5 pb-4 backdrop-blur-xl sm:px-5 sm:pt-6 sm:pb-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">Messages</p>
+              <h2 className="mt-1 font-display text-2xl font-extrabold text-slate-950 sm:text-[26px]">Inbox</h2>
+            </div>
+            <span className="flex h-7 items-center justify-center rounded-full bg-slate-900 px-3.5 text-xs font-bold text-white shadow-sm">
+              {formatCount(contacts.length)} <span className="ml-1 hidden font-normal text-white/70 sm:inline">chats</span>
+            </span>
+          </div>
+          <div className="mt-5">
+            <SearchInput
+              value={searchQuery}
+              onChange={(event) => onSearchQueryChange(event.target.value)}
+              onClear={() => onSearchQueryChange('')}
+              placeholder="Search conversations..."
+              showClear={!!searchQuery.trim()}
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-2.5 py-3 hide-scrollbar sm:px-3 sm:py-4">
+          <div className="space-y-1.5">
+            {isThreadsLoading && contacts.length === 0 && (
+              <div className="motion-pulse rounded-2xl bg-white/40 p-5 text-center text-sm font-medium text-slate-500">
+                Syncing securely...
+              </div>
+            )}
+            
+            {contacts.map((contact, idx) => {
+              const isActive = getChatUsernameKey(activeContact?.username) === getChatUsernameKey(contact.username);
+              return (
+                <button
+                  key={`chat-contact-${contact.username}`}
+                  type="button"
+                  onClick={() => onSelectContact(contact.username)}
+                  style={{ animationDelay: `${idx * 40}ms` }}
+                  className={`group relative flex w-full items-center gap-3 rounded-[1.25rem] p-2.5 text-left transition-all duration-300 motion-fade-up sm:gap-4 sm:rounded-2xl sm:p-3 ${
+                    isActive
+                      ? 'bg-gradient-to-br from-blue-600 to-teal-500 text-white shadow-md'
+                      : 'hover:bg-white/70 hover:shadow-sm'
+                  }`}
+                >
+                  <div className="relative shrink-0">
+                    {contact.profilePhotoUrl ? (
+                      <img src={contact.profilePhotoUrl} alt={contact.username} className={`h-11 w-11 rounded-full object-cover shadow-sm transition-transform duration-300 group-hover:scale-105 sm:h-12 sm:w-12 ${isActive ? 'ring-2 ring-white/50' : 'ring-1 ring-slate-200'}`} />
+                    ) : (
+                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group-hover:scale-105 sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white/20 text-white ring-2 ring-white/50' : 'bg-gradient-to-br from-slate-800 to-slate-950 text-white'}`}>
+                        {getInitials(contact.username)}
+                      </div>
+                    )}
+                    {isActive && (
+                      <div className="absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-2 border-slate-50 bg-green-500 shadow-sm" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`truncate text-sm font-bold sm:text-[15px] ${isActive ? 'text-white' : 'text-slate-900 group-hover:text-blue-600 transition-colors'}`}>
+                        {contact.displayName || contact.username}
+                      </p>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {contact.unreadCount > 0 && !isActive && (
+                          <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                            {contact.unreadCount > 99 ? '99+' : contact.unreadCount}
+                          </span>
+                        )}
+                        {contact.lastMessage?.createdAt && (
+                          <span className={`hidden text-[10px] font-bold tracking-widest uppercase sm:inline ${isActive ? 'text-white/80' : 'text-slate-400'}`}>
+                            {formatTimestamp(contact.lastMessage.createdAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className={`mt-0.5 truncate text-xs sm:text-[13px] ${isActive ? 'text-white/90 font-medium' : contact.unreadCount > 0 ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>
+                      {contact.lastMessage?.text || 'Start a private conversation'}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+
+            {contacts.length === 0 && !isThreadsLoading && (
+              <div className="px-2 py-8 motion-fade-up">
+                <EmptyProfilePanel
+                  icon={<MessageCircle className="h-6 w-6 text-teal-500" />}
+                  title="No chats yet"
+                  description="Follow people, open profiles, and start a secure discussion."
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div className="glass-panel relative flex h-full min-h-0 flex-col overflow-hidden bg-slate-50/40">
+        {activeContact ? (
+          <>
+            {/* Chat Header */}
+            <div className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white/70 px-4 py-3.5 backdrop-blur-xl sm:gap-4 sm:px-5 sm:py-4">
+              <button
+                type="button"
+                onClick={() => onOpenProfile(activeContact.username)}
+                className="group flex min-w-0 items-center gap-3 text-left transition-transform duration-300 hover:translate-x-1"
+              >
+                {activeContact.profilePhotoUrl ? (
+                  <img src={activeContact.profilePhotoUrl} alt={activeContact.username} className="h-9 w-9 rounded-full object-cover shadow-sm ring-1 ring-slate-200 sm:h-10 sm:w-10" />
+                ) : (
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold uppercase text-white shadow-sm sm:h-10 sm:w-10 sm:text-[11px]">
+                    {getInitials(activeContact.username)}
+                  </div>
+                )}
+
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-950 transition-colors group-hover:text-blue-600 sm:text-[15px]">
+                    {activeContact.displayName || activeContact.username}
+                  </p>
+                  <p className="truncate text-xs font-medium text-slate-500">
+                    @{activeContact.username} <span className="opacity-60">•</span> {activeContact.role}
+                  </p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpenProfile(activeContact.username)}
+                className="hidden sm:inline-flex items-center justify-center rounded-full bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200/80 transition-all hover:bg-slate-50 hover:shadow-md hover:ring-slate-300"
+              >
+                View Profile
+              </button>
+            </div>
+
+            {/* Messages Feed */}
+            <div className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 hide-scrollbar sm:space-y-5 sm:px-5 sm:py-6">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.03)_0%,_transparent_100%)] pointer-events-none" />
+              
+              {activeMessagesStatus === 'loading' && activeMessages.length === 0 && (
+                <div className="mx-auto max-w-sm rounded-[20px] bg-white/70 p-4 text-center text-sm font-medium text-slate-500 shadow-sm backdrop-blur-md ring-1 ring-slate-200/50 motion-fade-up">
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse" />
+                    Syncing conversation...
+                  </span>
+                </div>
+              )}
+              
+              {activeMessagesStatus === 'error' && (
+                <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50/90 p-4 text-center text-sm font-medium text-red-700 shadow-sm backdrop-blur-md motion-pop">
+                  {activeError || 'Unable to load this conversation right now.'}
+                </div>
+              )}
+
+              {activeMessages.map((message, idx) => {
+                const isOutgoing = message.direction === 'outgoing';
+                return (
+                  <div
+                    key={message.id}
+                    style={{ animationDelay: `${Math.min(idx * 50, 500)}ms` }}
+                    className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} motion-fade-up`}
+                  >
+                    <div className="flex max-w-[92%] flex-col gap-1.5 sm:max-w-[85%] md:max-w-[75%]">
+                      <div 
+                        className={`relative rounded-[1.5rem] px-4 py-3 shadow-sm transition-all hover:shadow-md sm:rounded-3xl sm:px-5 sm:py-3.5 ${
+                          isOutgoing
+                            ? 'bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-br-md'
+                            : 'bg-white text-slate-900 border border-slate-200/60 rounded-bl-md'
+                        }`}
+                      >
+                        <p className="text-sm leading-[1.55] tracking-tight sm:text-[15px] sm:leading-[1.6]">{message.text}</p>
+                      </div>
+                      <p className={`text-[10px] font-bold uppercase tracking-widest px-2 ${isOutgoing ? 'text-right text-slate-400' : 'text-left text-slate-400'}`}>
+                        {message.senderUsername === currentUsername ? 'You' : message.senderUsername || activeContact.username} <span className="opacity-50">•</span> {formatTimestamp(message.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {activeMessages.length === 0 && activeMessagesStatus !== 'loading' && (
+                <div className="flex h-full flex-col items-center justify-center motion-fade-up px-4 text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-500 ring-8 ring-blue-50/50">
+                    <MessageCircle className="h-7 w-7" />
+                  </div>
+                  <h3 className="font-display text-xl font-bold text-slate-900">Start the conversation</h3>
+                  <p className="mt-2 max-w-[280px] text-sm text-slate-500 leading-relaxed">
+                    Say hello to @{activeContact.username}. This conversation is secured.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Input Form */}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSendMessage(activeContact.username);
+              }}
+              className="z-10 shrink-0 border-t border-slate-200/60 bg-white/80 p-3 sm:p-5 backdrop-blur-xl"
+            >
+              <div className="relative flex items-center gap-2.5 rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 transition-shadow focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/30 focus-within:shadow-md sm:gap-3 sm:rounded-3xl">
+                <textarea
+                  rows={1}
+                  value={activeDraft}
+                  onChange={(event) => onDraftChange(activeContact.username, event.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                       e.preventDefault();
+                       if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
+                    }
+                  }}
+                  placeholder={`Reply to ${activeContact.displayName || activeContact.username}...`}
+                  className="w-full resize-none bg-transparent px-3 py-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400/80 max-h-[120px] sm:px-4 sm:py-3.5 sm:text-[15px]"
+                  style={{ minHeight: '48px' }}
+                />
+                <button
+                  type="submit"
+                  disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-md transition-all hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
+                >
+                  {isSending ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <svg className="h-5 w-5 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m22 2-7 20-4-9-9-4Z"/>
+                      <path d="M22 2 11 13"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
+
+            </form>
+          </>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center p-6 pt-10 motion-fade-up text-center">
+            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100/80 text-slate-400 shadow-sm ring-1 ring-slate-200/50">
+              <MessageCircle className="h-9 w-9" />
+            </div>
+            <h3 className="font-display text-2xl font-bold text-slate-900">Your Messages</h3>
+            <p className="mt-2 max-w-[280px] text-sm text-slate-500 leading-relaxed">
+              Select a conversation from the sidebar or start a new tight-knit dialogue from a user's profile.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProfileView({
   isOwnProfile,
   profileDisplay,
   profileInitials,
   profileBio,
+  hasPersonalDescription,
   profileBeat,
   profileLocation,
   profileJoinLabel,
@@ -4174,11 +5341,37 @@ function ProfileView({
   onOpenConnections,
   onCreateReport,
   onOpenSettings,
+  onOpenChat,
   onToggleFollow,
   onShareProfile,
   onOpenLatestPost,
   onOpenPost,
 }) {
+  const profileTabs = [
+    {
+      id: 'reports',
+      label: 'Reports',
+      count: profilePosts.length,
+      heading: 'Published reports',
+      description: 'Track the issues this profile has documented and pushed into the public eye.',
+    },
+    {
+      id: 'solutions',
+      label: 'Solutions',
+      count: profileSolutions.length,
+      heading: 'Community solutions',
+      description: 'Browse the fixes, recommendations, and follow-up ideas they have contributed.',
+    },
+    {
+      id: 'activity',
+      label: 'Activity',
+      count: profileActivityFeed.length,
+      heading: 'Recent activity',
+      description: 'See the latest reporting, solution work, and momentum from this profile.',
+    },
+  ];
+  const activeProfileTab = profileTabs.find((tab) => tab.id === profileTab) ?? profileTabs[0];
+
   return (
     <>
       <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
@@ -4218,7 +5411,7 @@ function ProfileView({
 
               <div className="max-w-2xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-[28px] font-bold leading-tight text-slate-950 sm:text-[34px]">{profileDisplay.username}</h2>
+                  <h2 className="font-display text-[28px] font-bold leading-tight text-slate-950 sm:text-[34px]">{profileDisplay.displayName || profileDisplay.username}</h2>
                   {profileDisplay.reputation >= 600 && (
                     <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                       <BadgeCheck className="h-3.5 w-3.5" />
@@ -4226,7 +5419,7 @@ function ProfileView({
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-sm font-semibold text-slate-500">@{profileDisplay.username.toLowerCase()}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">@{profileDisplay.username}</p>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{profileBio}</p>
                 <div className="mt-4 flex flex-wrap gap-2.5 text-sm text-slate-500">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
@@ -4248,14 +5441,24 @@ function ProfileView({
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
               {isOwnProfile ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => onOpenSettings('personal')}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
-                  >
-                    <Settings className="h-4 w-4" />
-                    Settings
-                  </button>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => onOpenSettings('personal')}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                    >
+                      <SquarePen className="h-4 w-4" />
+                      Personal description
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenSettings('personal')}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Settings
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={onCreateReport}
@@ -4286,6 +5489,14 @@ function ProfileView({
                     <Share2 className="h-4 w-4" />
                     {profileShareFeedback || 'Share profile'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenChat(profileDisplay.username)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Message
+                  </button>
                   {latestProfilePost && (
                     <button
                       type="button"
@@ -4302,7 +5513,7 @@ function ProfileView({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 px-4 py-3 sm:px-7 sm:py-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mx-auto grid w-full max-w-[54rem] grid-cols-2 gap-3 px-4 py-4 sm:px-7 sm:py-5 lg:grid-cols-3">
           <ProfileStatPill
             icon={<Users className="h-4 w-4" />}
             label="Followers"
@@ -4315,35 +5526,37 @@ function ProfileView({
             value={formatCount(profileFollowingCount)}
             onClick={() => onOpenConnections('following')}
           />
-          <ProfileStatPill icon={<Bookmark className="h-4 w-4" />} label="Reports" value={formatCount(profileDisplay.postsCount)} hint="Published threads" />
-          <ProfileStatPill icon={<Lightbulb className="h-4 w-4" />} label="Solutions" value={formatCount(profileDisplay.solutionsProposed)} hint="Idea drops" />
-          <ProfileStatPill icon={<Zap className="h-4 w-4" />} label="Reputation" value={formatCount(profileDisplay.reputation)} hint="Community-earned signal" />
+          <ProfileStatPill icon={<Zap className="h-4 w-4" />} label="Reputation" value={formatCount(profileDisplay.reputation)} />
         </div>
       </div>
 
       <div className="motion-fade-up space-y-5" style={{ '--motion-delay': '120ms' }}>
-        <div className="soft-card p-2">
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'reports', label: 'Reports', count: profilePosts.length },
-              { id: 'solutions', label: 'Solutions', count: profileSolutions.length },
-              { id: 'activity', label: 'Activity', count: profileActivityFeed.length },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onSelectTab(tab.id)}
-                className={`nav-pill rounded-xl px-4 py-3 text-left transition ${profileTab === tab.id
-                  ? 'nav-pill--active bg-slate-900 text-white'
-                  : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-              >
-                <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${profileTab === tab.id ? 'text-white/65' : 'text-slate-400'}`}>
-                  {tab.label}
-                </p>
-                <p className="mt-1 font-display text-2xl font-bold">{formatCount(tab.count)}</p>
-              </button>
-            ))}
+        <div className="soft-card overflow-hidden p-2.5 sm:p-3">
+          <div className="flex justify-center">
+            <div className="grid w-full max-w-[52rem] grid-cols-3 gap-1 rounded-[20px] border border-slate-200 bg-slate-50/90 p-0.5">
+              {profileTabs.map((tab) => {
+                const isActive = profileTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => onSelectTab(tab.id)}
+                    className={`inline-flex min-h-[1.95rem] w-full items-center justify-center gap-1 rounded-[14px] px-3 py-0.5 text-[12px] font-semibold transition sm:min-h-[2.1rem] sm:px-5 sm:text-[13px] ${isActive
+                      ? 'bg-slate-900 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.7)]'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                      }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className={`inline-flex min-w-[1.7rem] items-center justify-center rounded-full px-1.5 py-px text-[9px] font-bold sm:text-[10px] ${isActive
+                      ? 'bg-white/15 text-white'
+                      : 'bg-white text-slate-600'
+                      }`}>
+                      {formatCount(tab.count)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -4413,37 +5626,31 @@ function ProfileView({
 }
 
 function ProfileStatPill({ icon, label, value, hint, onClick }) {
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
-            {icon}
-          </span>
-        </div>
-        <p className="mt-2 font-display text-xl font-bold text-slate-950 sm:text-2xl">{value}</p>
-        {hint ? <p className="mt-1 text-xs text-slate-500 sm:text-sm">{hint}</p> : null}
-        {hint ? <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">View list</p> : null}
-      </button>
-    );
-  }
+  const Container = onClick ? 'button' : 'div';
 
   return (
-    <div className="signal-metric rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-[0_10px_24px_-18px_rgba(37,99,235,0.9)]">
+    <Container
+      {...(onClick ? { type: 'button', onClick } : {})}
+      className={`signal-metric group rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.94))] px-4 py-4 text-left shadow-[0_14px_34px_-28px_rgba(15,23,42,0.25)] transition sm:px-5 ${onClick
+        ? 'hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white'
+        : ''
+        }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+          <p className="mt-3 font-display text-[28px] font-bold leading-none text-slate-950">{value}</p>
+        </div>
+        <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white text-blue-600 shadow-[0_14px_30px_-22px_rgba(37,99,235,0.9)]">
           {icon}
         </span>
       </div>
-      <p className="mt-2 font-display text-xl font-bold text-slate-950 sm:text-2xl">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500 sm:text-sm">{hint}</p> : null}
-    </div>
+
+      <div className="mt-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <span>{hint || (onClick ? 'Open list' : 'Live stat')}</span>
+        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition group-hover:translate-x-0.5" /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
+      </div>
+    </Container>
   );
 }
 
@@ -4458,6 +5665,7 @@ function ProfileConnectionsModal({
   isFollowSubmittingByUsername,
   onClose,
   onOpenProfile,
+  onOpenChat,
   onToggleFollow,
 }) {
   if (!isOpen) return null;
@@ -4548,17 +5756,26 @@ function ProfileConnectionsModal({
                         You
                       </span>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => onToggleFollow(item.username)}
-                        disabled={isSubmitting}
-                        className={`inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition sm:min-w-[108px] sm:w-auto ${item.isFollowing
-                          ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
-                          : 'bg-slate-900 text-white hover:bg-slate-800'
-                          } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
-                      >
-                        {isSubmitting ? 'Updating...' : item.isFollowing ? 'Following' : 'Follow'}
-                      </button>
+                      <div className="flex w-full gap-2 sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => onOpenChat(item.username)}
+                          className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:min-w-[96px] sm:flex-none"
+                        >
+                          Message
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onToggleFollow(item.username)}
+                          disabled={isSubmitting}
+                          className={`inline-flex flex-1 items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition sm:min-w-[108px] sm:flex-none ${item.isFollowing
+                            ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                            : 'bg-slate-900 text-white hover:bg-slate-800'
+                            } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
+                        >
+                          {isSubmitting ? 'Updating...' : item.isFollowing ? 'Following' : 'Follow'}
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
@@ -4615,37 +5832,20 @@ function ProfileSettingsModal({
   profileJoinLabel,
   nameDraft,
   usernameDraft,
+  personalDescriptionDraft,
   passwordDraft,
   onClose,
   onSectionChange,
   onEditPhoto,
   onNameDraftChange,
   onUsernameDraftChange,
+  onPersonalDescriptionDraftChange,
   onPasswordDraftChange,
-  onSaveName,
-  onSaveUsername,
+  onSavePersonalDetails,
   onSavePassword,
   onLogout,
   onSwitchAccount,
 }) {
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [isEditingUsername, setIsEditingUsername] = useState(false);
-  const nameInputRef = useRef(null);
-  const usernameInputRef = useRef(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setIsEditingName(false);
-      setIsEditingUsername(false);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (status?.type !== 'success') return;
-    setIsEditingName(false);
-    setIsEditingUsername(false);
-  }, [status?.type, status?.message]);
-
   if (!isOpen || !profile) return null;
 
   const sections = [
@@ -4662,12 +5862,17 @@ function ProfileSettingsModal({
     ['Role', profile.role || 'User'],
     ['Joined', profileJoinLabel || 'Recently'],
   ];
+  const isPersonalDetailsDirty = (
+    `${nameDraft ?? ''}`.trim() !== `${profile.displayName ?? ''}`.trim()
+    || `${usernameDraft ?? ''}`.trim() !== `${profile.username ?? ''}`.trim()
+    || `${personalDescriptionDraft ?? ''}`.trim() !== `${profile.personalDescription ?? ''}`.trim()
+  );
 
   let sectionContent = null;
 
   if (activeSection === 'personal') {
     sectionContent = (
-      <div className="space-y-4">
+      <form className="space-y-4" onSubmit={onSavePersonalDetails}>
         <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             {profilePhotoUrl ? (
@@ -4678,7 +5883,7 @@ function ProfileSettingsModal({
               </div>
             )}
             <div>
-              <p className="text-sm font-bold text-slate-950">{profile.displayName || profile.username}</p>
+              <p className="text-sm font-bold text-slate-950">{getDisplayNameLabel(profile.displayName, profile.username)}</p>
               <p className="mt-1 text-sm text-slate-500">@{profile.username}</p>
             </div>
           </div>
@@ -4693,69 +5898,33 @@ function ProfileSettingsModal({
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <form onSubmit={onSaveName} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Display name</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {isEditingName ? 'Edit mode is on for this field.' : 'Click the pen icon to edit this field.'}
-                </p>
-              </div>
-              <button
-                type={isEditingName ? 'submit' : 'button'}
-                onClick={isEditingName ? undefined : () => {
-                  setIsEditingName(true);
-                  setTimeout(() => nameInputRef.current?.focus(), 0);
-                }}
-                disabled={isSubmitting}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={isEditingName ? 'Save display name' : 'Edit display name'}
-              >
-                <SquarePen className="h-4 w-4" />
-              </button>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Display name</p>
+              <p className="mt-1 text-xs text-slate-500">This defaults to your Google or Gmail name and can be edited here.</p>
             </div>
             <input
-              ref={nameInputRef}
               value={nameDraft}
               onChange={(event) => onNameDraftChange(event.target.value)}
-              className={`form-input mt-3 ${!isEditingName ? 'cursor-default border-slate-200 bg-slate-100 text-slate-500 focus:translate-y-0 focus:ring-0' : ''}`}
+              className="form-input mt-3"
               placeholder="Your public name"
-              disabled={isSubmitting || !isEditingName}
-              readOnly={!isEditingName}
+              disabled={isSubmitting}
             />
-          </form>
+          </div>
 
-          <form onSubmit={onSaveUsername} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Username</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {isEditingUsername ? 'Edit mode is on for this field.' : 'Click the pen icon to edit this field.'}
-                </p>
-              </div>
-              <button
-                type={isEditingUsername ? 'submit' : 'button'}
-                onClick={isEditingUsername ? undefined : () => {
-                  setIsEditingUsername(true);
-                  setTimeout(() => usernameInputRef.current?.focus(), 0);
-                }}
-                disabled={isSubmitting}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label={isEditingUsername ? 'Save username' : 'Edit username'}
-              >
-                <SquarePen className="h-4 w-4" />
-              </button>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Username</p>
+              <p className="mt-1 text-xs text-slate-500">Your `@username` stays separate from the display name.</p>
             </div>
             <input
-              ref={usernameInputRef}
               value={usernameDraft}
               onChange={(event) => onUsernameDraftChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              className={`form-input mt-3 ${!isEditingUsername ? 'cursor-default border-slate-200 bg-slate-100 text-slate-500 focus:translate-y-0 focus:ring-0' : ''}`}
+              className="form-input mt-3"
               placeholder="choose_username"
-              disabled={isSubmitting || !isEditingUsername}
-              readOnly={!isEditingUsername}
+              disabled={isSubmitting}
             />
-          </form>
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -4766,7 +5935,39 @@ function ProfileSettingsModal({
             </div>
           ))}
         </div>
-      </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Personal description</p>
+            <p className="mt-1 text-xs text-slate-500">Write the profile text you want people to see under your username.</p>
+          </div>
+          <textarea
+            rows={4}
+            maxLength={180}
+            value={personalDescriptionDraft}
+            onChange={(event) => onPersonalDescriptionDraftChange(event.target.value.slice(0, 180))}
+            className="mt-3 min-h-[88px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 sm:min-h-[96px]"
+            placeholder="Tell people what you care about, what you report on, or how you contribute."
+            disabled={isSubmitting}
+          />
+          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+            <span>This appears in your public profile header.</span>
+            <span>{`${personalDescriptionDraft.length}/180`}</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={isSubmitting || !isPersonalDetailsDirty}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <SquarePen className="h-4 w-4" />
+            {isSubmitting ? 'Saving...' : 'Save changes'}
+          </button>
+        </div>
+
+      </form>
     );
   }
 
@@ -4846,9 +6047,9 @@ function ProfileSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-start justify-center bg-slate-950/55 px-4 py-1 backdrop-blur-sm sm:py-3" onClick={onClose}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-2 backdrop-blur-sm sm:py-4" onClick={onClose}>
       <div
-        className="motion-pop max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
+        className="motion-pop flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:max-h-[calc(100dvh-2rem)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
@@ -4866,8 +6067,8 @@ function ProfileSettingsModal({
           </button>
         </div>
 
-        <div className="grid max-h-[calc(88vh-82px)] gap-0 overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="max-h-full overflow-y-auto border-b border-slate-200 bg-slate-50/80 p-3 lg:border-b-0 lg:border-r">
+        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="profile-settings-scroll min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/80 p-3 lg:border-b-0 lg:border-r">
             <div className="grid gap-2">
               {sections.map((section) => (
                 <button
@@ -4886,7 +6087,7 @@ function ProfileSettingsModal({
             </div>
           </aside>
 
-          <div className="max-h-full overflow-y-auto px-5 py-5 sm:px-6">
+          <div className="profile-settings-scroll min-h-0 overflow-y-auto px-5 py-5 sm:px-6">
             {status?.message && (
               <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${status.type === 'error'
                 ? 'border-red-200 bg-red-50 text-red-700'
@@ -5663,6 +6864,15 @@ function getInitials(value, maxLength = 2) {
   return text.slice(0, maxLength).toUpperCase();
 }
 
+function getDisplayNameLabel(displayName, username) {
+  const normalizedDisplayName = `${displayName ?? ''}`.trim();
+  if (normalizedDisplayName) return normalizedDisplayName;
+
+  const normalizedUsername = `${username ?? ''}`.trim();
+  if (!normalizedUsername) return 'Public Policy Hub';
+  return normalizedUsername;
+}
+
 function getSolutionVoteForUser(solution, username) {
   if (!username || !solution) return null;
   if (Array.isArray(solution.upvoters) && solution.upvoters.includes(username)) return 'up';
@@ -5859,6 +7069,7 @@ function getNotificationTypeLabel(type) {
   if (normalizedType === 'solution_reply') return 'Reply';
   if (normalizedType === 'solution_upvote') return 'Upvote';
   if (normalizedType === 'solution_downvote') return 'Downvote';
+  if (normalizedType === 'chat_message') return 'Private message';
   if (normalizedType === 'share') return 'Share';
   return 'Update';
 }
@@ -6088,7 +7299,12 @@ function shouldUseGoogleRedirect() {
 }
 function storeGoogleAuthMode(mode) {
   if (typeof window === 'undefined') return;
-  const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
+  const rawMode = `${mode ?? 'login'}`.trim().toLowerCase();
+  const normalizedMode = rawMode === 'signup'
+    ? 'signup'
+    : rawMode === 'continue'
+      ? 'continue'
+      : 'login';
   window.sessionStorage.setItem(GOOGLE_AUTH_MODE_STORAGE_KEY, normalizedMode);
   window.localStorage.setItem(GOOGLE_AUTH_MODE_STORAGE_KEY, normalizedMode);
 }
@@ -6097,7 +7313,9 @@ function getStoredGoogleAuthMode() {
   if (typeof window === 'undefined') return 'login';
   const storedMode = window.sessionStorage.getItem(GOOGLE_AUTH_MODE_STORAGE_KEY)
     || window.localStorage.getItem(GOOGLE_AUTH_MODE_STORAGE_KEY);
-  return storedMode === 'signup' ? 'signup' : 'login';
+  if (storedMode === 'signup') return 'signup';
+  if (storedMode === 'continue') return 'continue';
+  return 'login';
 }
 
 function clearStoredGoogleAuthMode() {
