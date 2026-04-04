@@ -371,6 +371,9 @@ function App() {
     confirmPassword: '',
   });
   const [theme, setTheme] = useState(getInitialTheme);
+  const [isDesktopChatViewport, setIsDesktopChatViewport] = useState(() => (
+    typeof window === 'undefined' ? true : window.matchMedia('(min-width: 1280px)').matches
+  ));
   const searchPanelRef = useRef(null);
   const mobileSearchPanelRef = useRef(null);
   const mobileSearchToggleRef = useRef(null);
@@ -1134,6 +1137,23 @@ function App() {
 
     return () => window.cancelAnimationFrame(frameId);
   }, [isSearchOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const mediaQuery = window.matchMedia('(min-width: 1280px)');
+    const syncChatViewport = () => setIsDesktopChatViewport(mediaQuery.matches);
+
+    syncChatViewport();
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', syncChatViewport);
+      return () => mediaQuery.removeEventListener('change', syncChatViewport);
+    }
+
+    mediaQuery.addListener(syncChatViewport);
+    return () => mediaQuery.removeListener(syncChatViewport);
+  }, []);
 
   useEffect(() => {
     if (!userProfile) {
@@ -2899,7 +2919,9 @@ function App() {
     : chatContacts;
   const unreadChatCount = chatContacts.reduce((total, contact) => total + toCount(contact.unreadCount), 0);
   const unreadAlertsCount = apiNotifications.reduce((total, notification) => total + (!notification.read ? 1 : 0), 0);
-  const effectiveActiveChatUsername = activeChatUsername || filteredChatContacts[0]?.username || '';
+  const effectiveActiveChatUsername = activeChatUsername || (
+    isDesktopChatViewport ? filteredChatContacts[0]?.username || '' : ''
+  );
   const effectiveActiveChatKey = getChatUsernameKey(effectiveActiveChatUsername);
   const activeChatContact = effectiveActiveChatUsername
     ? chatContacts.find((contact) => getChatUsernameKey(contact.username) === effectiveActiveChatKey) ?? {
@@ -5419,9 +5441,9 @@ function MobileFirstPrivateChatView({
   const mobileSafeBottomStyle = { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.85rem)' };
 
   return (
-    <div className="motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
-      <div className={`min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border-y border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.96))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] sm:border xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
-        <div className="border-b border-slate-200 px-4 pb-4 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
+    <div className="chat-mobile-layout motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
+      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border-y border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.96))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] sm:border xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
+        <div className="chat-mobile-inbox__header border-b border-slate-200 px-4 pb-4 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
@@ -5444,7 +5466,7 @@ function MobileFirstPrivateChatView({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95">
+        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95">
           <div className="space-y-2">
             {isThreadsLoading && contacts.length === 0 && (
               <div className="motion-pulse rounded-[24px] border border-slate-200 bg-white/90 p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
@@ -5507,7 +5529,7 @@ function MobileFirstPrivateChatView({
                             {contact.unreadCount > 99 ? '99+' : contact.unreadCount}
                           </span>
                         )}
-                      </div>
+                       </div>
                     </div>
                   </div>
                 </button>
@@ -5527,15 +5549,15 @@ function MobileFirstPrivateChatView({
         </div>
       </div>
 
-      <div className={`${
+      <div className={`chat-mobile-thread ${
         hasActiveContact
           ? 'fixed inset-0 z-[80] flex bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))]'
           : 'hidden'
-      } min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:rounded-[28px] xl:bg-white/95 xl:glass-panel`}>
+      } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:rounded-[28px] xl:bg-white/95 xl:glass-panel`}>
         {activeContact ? (
           <>
             <div
-              className="z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/92 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
+              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/92 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
               style={mobileSafeTopStyle}
             >
               <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
@@ -5581,7 +5603,7 @@ function MobileFirstPrivateChatView({
               </button>
             </div>
 
-            <div className="relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
+            <div className="chat-mobile-thread__feed relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.1),transparent_70%)]" />
 
               <div className="relative space-y-4">
@@ -5646,7 +5668,7 @@ function MobileFirstPrivateChatView({
                 event.preventDefault();
                 onSendMessage(activeContact.username);
               }}
-              className="z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 backdrop-blur-xl sm:p-5"
+              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 backdrop-blur-xl sm:p-5"
               style={mobileSafeBottomStyle}
             >
               <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
