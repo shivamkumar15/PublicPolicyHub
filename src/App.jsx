@@ -357,6 +357,8 @@ function App() {
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(
     initialRouteState.view === 'profile' && initialRouteState.profileModal === 'settings',
   );
+  const [isMobileProfilePhotoActionsOpen, setIsMobileProfilePhotoActionsOpen] = useState(false);
+  const [isProfilePhotoPreviewOpen, setIsProfilePhotoPreviewOpen] = useState(false);
   const [profileSettingsSection, setProfileSettingsSection] = useState(initialRouteState.profileSettingsSection || 'personal');
   const [profileSettingsStatus, setProfileSettingsStatus] = useState({ type: '', message: '' });
   const [isProfileSettingsSubmitting, setIsProfileSettingsSubmitting] = useState(false);
@@ -2352,8 +2354,38 @@ function App() {
     setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'));
   };
 
+  const isMobileViewport = () => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
+  );
+
+  const openMobileProfilePhotoActions = () => {
+    if (!isOwnProfile || !isMobileViewport()) return;
+    setIsProfilePhotoPreviewOpen(false);
+    setIsMobileProfilePhotoActionsOpen(true);
+  };
+
+  const closeMobileProfilePhotoActions = () => {
+    setIsMobileProfilePhotoActionsOpen(false);
+  };
+
+  const openProfilePhotoPreview = () => {
+    setIsMobileProfilePhotoActionsOpen(false);
+    setIsProfilePhotoPreviewOpen(true);
+  };
+
+  const closeProfilePhotoPreview = () => {
+    setIsProfilePhotoPreviewOpen(false);
+  };
+
+  const handleMobileProfilePhotoChange = () => {
+    setIsMobileProfilePhotoActionsOpen(false);
+    profilePhotoInputRef.current?.click();
+  };
+
   const openProfileSettings = (section = 'personal') => {
     closeProfileConnections();
+    closeMobileProfilePhotoActions();
+    closeProfilePhotoPreview();
     setProfileSettingsSection(section);
     setProfileSettingsStatus({ type: '', message: '' });
     setIsProfileSettingsOpen(true);
@@ -2361,6 +2393,8 @@ function App() {
 
   const closeProfileSettings = () => {
     if (isProfileSettingsSubmitting) return;
+    closeMobileProfilePhotoActions();
+    closeProfilePhotoPreview();
     setIsProfileSettingsOpen(false);
     setProfileSettingsStatus({ type: '', message: '' });
     setProfilePasswordDraft({
@@ -2675,6 +2709,16 @@ function App() {
       alert(error.message);
     }
   };
+
+  useEffect(() => {
+    const normalizedResolvedProfileUsername = `${resolvedProfileUsername ?? ''}`.trim().toLowerCase();
+    const normalizedOwnUsername = `${userProfile?.username ?? ''}`.trim().toLowerCase();
+    const isViewingOwnProfile = !!normalizedOwnUsername && normalizedResolvedProfileUsername === normalizedOwnUsername;
+
+    if (activeView === 'profile' && isViewingOwnProfile) return;
+    setIsMobileProfilePhotoActionsOpen(false);
+    setIsProfilePhotoPreviewOpen(false);
+  }, [activeView, resolvedProfileUsername, userProfile?.username]);
 
   if (isLoading) return <PageLoader label="Connecting to server..." />;
 
@@ -4788,6 +4832,7 @@ function App() {
                 onSelectTab={setProfileTab}
                 onOpenConnections={handleOpenProfileConnections}
                 onCreateReport={() => handleNavClick('create')}
+                onOpenPhotoActions={openMobileProfilePhotoActions}
                 onOpenSettings={openProfileSettings}
                 onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleProfileFollow}
@@ -4815,6 +4860,24 @@ function App() {
                 onOpenProfile={handleOpenConnectionProfile}
                 onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleFollow}
+              />
+              <MobileProfilePhotoActionsSheet
+                isOpen={isOwnProfile && isMobileProfilePhotoActionsOpen}
+                profilePhotoUrl={viewedProfilePhotoUrl}
+                profileInitials={profileInitials}
+                profileDisplayName={profileDisplay.displayName}
+                profileUsername={profileDisplay.username}
+                onClose={closeMobileProfilePhotoActions}
+                onViewPhoto={openProfilePhotoPreview}
+                onChangePhoto={handleMobileProfilePhotoChange}
+              />
+              <ProfilePhotoPreviewModal
+                isOpen={isOwnProfile && isProfilePhotoPreviewOpen}
+                profilePhotoUrl={viewedProfilePhotoUrl}
+                profileInitials={profileInitials}
+                profileDisplayName={profileDisplay.displayName}
+                profileUsername={profileDisplay.username}
+                onClose={closeProfilePhotoPreview}
               />
               <ProfileSettingsModal
                 isOpen={isOwnProfile && isProfileSettingsOpen}
@@ -5352,37 +5415,39 @@ function MobileFirstPrivateChatView({
   onBackToInbox,
 }) {
   const hasActiveContact = !!activeContact;
+  const mobileSafeTopStyle = { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
+  const mobileSafeBottomStyle = { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.85rem)' };
 
   return (
-    <div className="motion-fade-up xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
-      <div className={`min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col rounded-[28px] bg-white xl:glass-panel`}>
-        <div className="border-b border-slate-200 px-4 pb-3 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
+    <div className="motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
+      <div className={`min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border-y border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.96))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] sm:border xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
+        <div className="border-b border-slate-200 px-4 pb-4 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-500">Messages</p>
-              <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950 xl:text-[28px]">Chats</h2>
-              <p className="mt-2 text-sm text-slate-500">Select a user to open the conversation.</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
+              <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950 xl:text-[28px]">Inbox</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Open a conversation or jump back into the people you message most.</p>
             </div>
             <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-xs font-bold text-white shadow-sm">
               {formatCount(contacts.length)}
             </span>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 rounded-[26px] border border-slate-200 bg-white/85 p-2 shadow-[0_16px_40px_-36px_rgba(15,23,42,0.35)]">
             <SearchInput
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
               onClear={() => onSearchQueryChange('')}
-              placeholder="Search users"
+              placeholder="Search conversations"
               showClear={!!searchQuery.trim()}
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-white px-2 py-3 hide-scrollbar xl:bg-white/95 xl:px-3 xl:py-4">
-          <div className="space-y-1.5">
+        <div className="flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95">
+          <div className="space-y-2">
             {isThreadsLoading && contacts.length === 0 && (
-              <div className="motion-pulse rounded-[22px] border border-slate-200 bg-white p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
+              <div className="motion-pulse rounded-[24px] border border-slate-200 bg-white/90 p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
                 Syncing conversations...
               </div>
             )}
@@ -5395,10 +5460,10 @@ function MobileFirstPrivateChatView({
                   type="button"
                   onClick={() => onSelectContact(contact.username)}
                   style={{ animationDelay: `${idx * 35}ms` }}
-                  className={`group flex w-full items-center gap-3 rounded-[22px] px-3 py-3 text-left transition motion-fade-up sm:gap-4 sm:px-4 ${
+                  className={`group relative flex w-full items-center gap-3 rounded-[24px] border px-3.5 py-3.5 text-left shadow-[0_16px_36px_-34px_rgba(15,23,42,0.36)] transition motion-fade-up sm:gap-4 sm:px-4 ${
                     isActive
-                      ? 'bg-slate-100 text-slate-950'
-                      : 'border border-slate-200 bg-white hover:bg-slate-50'
+                      ? 'border-blue-200 bg-[linear-gradient(135deg,rgba(219,234,254,0.95),rgba(236,254,255,0.96))] text-slate-950'
+                      : 'border-slate-200 bg-white/92 hover:border-slate-300 hover:bg-white'
                   }`}
                 >
                   <div className="relative shrink-0">
@@ -5420,20 +5485,20 @@ function MobileFirstPrivateChatView({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm font-bold ${isActive ? 'text-slate-950' : 'text-slate-950'}`}>
+                        <p className="truncate text-sm font-bold text-slate-950">
                           {contact.displayName || contact.username}
                         </p>
-                        <p className={`mt-0.5 truncate text-[11px] font-semibold ${isActive ? 'text-slate-500' : 'text-slate-500'}`}>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
                           @{contact.username}
                         </p>
-                        <p className={`mt-1 truncate text-xs ${isActive ? 'text-slate-600' : contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                        <p className={`mt-1.5 truncate text-xs ${isActive ? 'text-slate-700' : contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
                           {contact.lastMessage?.text || 'Tap to open chat'}
                         </p>
                       </div>
 
                       <div className="flex shrink-0 flex-col items-end gap-2">
                         {contact.lastMessage?.createdAt && (
-                          <span className="text-[10px] font-medium text-slate-400">
+                          <span className={`text-[10px] font-semibold ${isActive ? 'text-blue-700' : 'text-slate-400'}`}>
                             {formatTimestamp(contact.lastMessage.createdAt)}
                           </span>
                         )}
@@ -5464,12 +5529,15 @@ function MobileFirstPrivateChatView({
 
       <div className={`${
         hasActiveContact
-          ? 'fixed inset-0 z-[80] flex bg-white'
+          ? 'fixed inset-0 z-[80] flex bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))]'
           : 'hidden'
-      } min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:bg-white/95 xl:glass-panel`}>
+      } min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:rounded-[28px] xl:bg-white/95 xl:glass-panel`}>
         {activeContact ? (
           <>
-            <div className="z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/88 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4">
+            <div
+              className="z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/92 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
+              style={mobileSafeTopStyle}
+            >
               <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
                 <button
                   type="button"
@@ -5514,10 +5582,10 @@ function MobileFirstPrivateChatView({
             </div>
 
             <div className="relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.08),transparent_70%)]" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.1),transparent_70%)]" />
 
               <div className="relative space-y-4">
-                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white/88 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
                   {activeContact.displayName || activeContact.username}
                 </div>
 
@@ -5541,11 +5609,11 @@ function MobileFirstPrivateChatView({
                       style={{ animationDelay: `${Math.min(idx * 45, 400)}ms` }}
                       className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} motion-fade-up`}
                     >
-                      <div className={`max-w-[82%] sm:max-w-[72%] ${isOutgoing ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
+                      <div className={`flex max-w-[86%] flex-col gap-1.5 sm:max-w-[72%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
                         <div
                           className={`rounded-[24px] px-4 py-3 text-sm shadow-sm sm:px-5 sm:text-[15px] ${
                             isOutgoing
-                              ? 'rounded-br-md bg-[linear-gradient(135deg,#2563eb,#0ea5e9)] text-white'
+                              ? 'rounded-br-md bg-[linear-gradient(135deg,#2563eb,#0ea5e9)] text-white shadow-[0_18px_38px_-28px_rgba(37,99,235,0.85)]'
                               : 'rounded-bl-md border border-slate-200 bg-white text-slate-900'
                           }`}
                         >
@@ -5578,7 +5646,8 @@ function MobileFirstPrivateChatView({
                 event.preventDefault();
                 onSendMessage(activeContact.username);
               }}
-              className="z-10 shrink-0 border-t border-slate-200/70 bg-white/92 p-3 backdrop-blur-xl sm:p-5"
+              className="z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 backdrop-blur-xl sm:p-5"
+              style={mobileSafeBottomStyle}
             >
               <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
                 <textarea
@@ -5591,14 +5660,14 @@ function MobileFirstPrivateChatView({
                       if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
                     }
                   }}
-                  placeholder="Message..."
-                  className="max-h-[120px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
-                  style={{ minHeight: '44px' }}
+                  placeholder={`Message ${activeContact.displayName || activeContact.username}...`}
+                  className="max-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
+                  style={{ minHeight: '46px' }}
                 />
                 <button
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -5653,6 +5722,7 @@ function ProfileView({
   onSelectTab,
   onOpenConnections,
   onCreateReport,
+  onOpenPhotoActions,
   onOpenSettings,
   onOpenChat,
   onToggleFollow,
@@ -5710,17 +5780,29 @@ function ProfileView({
 
           <div className="mt-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              {viewedProfilePhotoUrl ? (
-                <img
-                  src={viewedProfilePhotoUrl}
-                  alt={`${profileDisplay.username} profile`}
-                  className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24"
-                />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-3xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24 sm:text-4xl">
-                  {profileInitials}
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={onOpenPhotoActions}
+                className={`group relative w-fit rounded-full ${isOwnProfile ? 'cursor-pointer sm:cursor-default' : 'cursor-default'}`}
+                aria-label={isOwnProfile ? 'Open profile photo options' : `${profileDisplay.username} profile photo`}
+              >
+                {viewedProfilePhotoUrl ? (
+                  <img
+                    src={viewedProfilePhotoUrl}
+                    alt={`${profileDisplay.username} profile`}
+                    className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24"
+                  />
+                ) : (
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-3xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24 sm:text-4xl">
+                    {profileInitials}
+                  </div>
+                )}
+                {isOwnProfile && (
+                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-950/78 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
+                    Edit photo
+                  </span>
+                )}
+              </button>
 
               <div className="max-w-2xl">
                 <div className="flex flex-wrap items-center gap-3">
@@ -6093,6 +6175,118 @@ function ProfileConnectionsModal({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileProfilePhotoActionsSheet({
+  isOpen,
+  profilePhotoUrl,
+  profileInitials,
+  profileDisplayName,
+  profileUsername,
+  onClose,
+  onViewPhoto,
+  onChangePhoto,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[96] flex items-end bg-slate-950/55 px-4 py-4 backdrop-blur-sm sm:hidden" onClick={onClose}>
+      <div
+        className="motion-pop w-full rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-slate-200" />
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+          {profilePhotoUrl ? (
+            <img src={profilePhotoUrl} alt={`${profileUsername} profile`} className="h-14 w-14 rounded-full object-cover" />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-lg font-bold uppercase text-white">
+              {profileInitials}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-slate-950">{profileDisplayName || profileUsername}</p>
+            <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">@{profileUsername}</p>
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <button
+            type="button"
+            onClick={onViewPhoto}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+          >
+            <Maximize2 className="h-4 w-4" />
+            View profile picture
+          </button>
+          <button
+            type="button"
+            onClick={onChangePhoto}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            <ImageIcon className="h-4 w-4" />
+            Change profile picture
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfilePhotoPreviewModal({
+  isOpen,
+  profilePhotoUrl,
+  profileInitials,
+  profileDisplayName,
+  profileUsername,
+  onClose,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="motion-pop relative w-full max-w-sm rounded-[30px] border border-slate-700/60 bg-slate-950/90 p-4 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.88)] sm:max-w-md"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+          aria-label="Close profile picture preview"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="pt-10 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/65">Profile picture</p>
+          <p className="mt-2 text-lg font-bold text-white">{profileDisplayName || profileUsername}</p>
+          <p className="mt-1 text-sm font-medium text-white/60">@{profileUsername}</p>
+        </div>
+
+        <div className="mt-6 flex justify-center">
+          {profilePhotoUrl ? (
+            <img
+              src={profilePhotoUrl}
+              alt={`${profileUsername} profile`}
+              className="h-[18rem] w-[18rem] max-w-full rounded-[28px] object-cover shadow-[0_24px_60px_-32px_rgba(148,163,184,0.7)] sm:h-[22rem] sm:w-[22rem]"
+            />
+          ) : (
+            <div className="flex h-[18rem] w-[18rem] max-w-full items-center justify-center rounded-[28px] bg-slate-800 text-7xl font-bold uppercase text-white shadow-[0_24px_60px_-32px_rgba(148,163,184,0.7)] sm:h-[22rem] sm:w-[22rem]">
+              {profileInitials}
             </div>
           )}
         </div>
