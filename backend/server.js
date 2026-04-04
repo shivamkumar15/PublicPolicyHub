@@ -865,6 +865,7 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
 
 const buildConnectionListEntry = (user, viewerFollowing = [], viewerUsername = '') => ({
   username: user.username,
+  displayName: user.displayName || '',
   role: user.role || 'CitizenReporter',
   profilePhotoUrl: user.profilePhotoUrl || '',
   isOwnProfile: !!viewerUsername && user.username === viewerUsername,
@@ -2043,6 +2044,7 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
     post.markModified('solutionsList');
     await post.save();
     if (createdUpvote || createdDownvote) {
+      const targetLabel = targetPath.length > 0 ? 'reply' : 'solution';
       await createNotification({
         recipientUsername: targetEntry.author,
         actorUsername: req.user.username,
@@ -2050,8 +2052,8 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
         postId: post.id,
         postTitle: post.title,
         message: createdUpvote
-          ? `${req.user.username} upvoted your solution on "${post.title}".`
-          : `${req.user.username} downvoted your solution on "${post.title}".`,
+          ? `${req.user.username} agreed with your ${targetLabel} on "${post.title}".`
+          : `${req.user.username} disagreed with your ${targetLabel} on "${post.title}".`,
       });
     }
     broadcastPostUpdate(post);
@@ -2083,13 +2085,14 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
 
     post.markModified('solutionsList');
     await post.save();
+    const targetLabel = parentPath.length > 0 ? 'reply' : 'solution';
     await createNotification({
       recipientUsername: parentEntry.author,
       actorUsername: req.user.username,
       type: 'solution_reply',
       postId: post.id,
       postTitle: post.title,
-      message: `${req.user.username} replied to your solution on "${post.title}".`,
+      message: `${req.user.username} replied to your ${targetLabel} on "${post.title}".`,
     });
     broadcastPostUpdate(post);
     res.json(normalizePost(post));

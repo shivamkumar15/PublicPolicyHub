@@ -1,5 +1,6 @@
 function SearchInput({
   ariaLabel = 'Search posts and people',
+  inputRef,
   onChange,
   onClear,
   onFocus,
@@ -15,6 +16,7 @@ function SearchInput({
           id="policy-search-input"
           type="search"
           name="search"
+          ref={inputRef}
           value={value}
           onChange={onChange}
           onFocus={onFocus}
