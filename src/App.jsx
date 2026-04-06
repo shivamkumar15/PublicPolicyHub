@@ -3623,7 +3623,7 @@ function App() {
       </div>
 
       <main className={`app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-4 px-3 pb-24 pt-4 sm:gap-5 sm:px-4 sm:pt-5 lg:px-6 lg:pt-0 ${isChatView ? 'lg:grid-cols-[84px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[84px_minmax(0,1fr)]' : 'lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7'}`}>
-        <aside className={`hidden lg:sticky lg:block lg:self-start ${isChatView ? 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-3' : 'lg:top-24 lg:h-fit lg:border-r lg:border-slate-200 lg:pr-4'}`}>
+        <aside className={`hidden lg:sticky lg:block lg:self-start ${isChatView ? 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-3' : 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-4'}`}>
           {isChatView ? (
             <div className="soft-card chat-nav-rail flex flex-col items-center gap-2 p-2.5">
               {navItems.map((item) => {
@@ -3661,39 +3661,40 @@ function App() {
               })}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="soft-card p-4">
-                <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
-                <div className="mt-3 space-y-2">
-                  {navItems.map((item) => {
-                    const Icon = item.Icon;
-                    const badgeCount = item.id === 'chat'
-                      ? unreadChatCount
-                      : item.id === 'alerts'
-                        ? unreadAlertsCount
-                        : 0;
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => handleNavClick(item.id)}
-                        className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-                          }`}
-                      >
-                        <Icon className="nav-pill__icon h-5 w-5" />
-                        <span className="flex-1">{item.label}</span>
-                        {badgeCount > 0 && (
-                          <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${activeView === item.id
-                            ? 'bg-white text-blue-700'
-                            : 'bg-blue-600 text-white'
-                            }`}>
-                            {badgeCount > 99 ? '99+' : badgeCount}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+            <div className="sidebar-left-scroll h-full overflow-y-auto">
+              <div className="sidebar-left-scroll__content space-y-4 pl-3">
+                <div className="soft-card p-4">
+                  <p className="px-2 text-sm font-semibold text-slate-500">Navigation</p>
+                  <div className="mt-3 space-y-2">
+                    {navItems.map((item) => {
+                      const Icon = item.Icon;
+                      const badgeCount = item.id === 'chat'
+                        ? unreadChatCount
+                        : item.id === 'alerts'
+                          ? unreadAlertsCount
+                          : 0;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => handleNavClick(item.id)}
+                          className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                        >
+                          <Icon className="nav-pill__icon h-5 w-5" />
+                          <span className="flex-1">{item.label}</span>
+                          {badgeCount > 0 && (
+                            <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${activeView === item.id
+                              ? 'bg-white text-blue-700'
+                              : 'bg-blue-600 text-white'
+                              }`}>
+                              {badgeCount > 99 ? '99+' : badgeCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
               <div className="soft-card p-4">
                 <div className="flex items-center justify-between gap-3 px-2">
@@ -3816,6 +3817,7 @@ function App() {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           )}
         </aside>
@@ -5386,7 +5388,7 @@ function PrivateChatView({
                   />
                 </div>
                 <div className="xl:hidden px-4 py-8 text-center motion-fade-up">
-                  <p className="text-[14px] text-[#a3a3a3]">No chats found.</p>
+                  <p className="text-[14px] text-slate-500">No chats found.</p>
                 </div>
               </>
             )}
@@ -5571,13 +5573,29 @@ function MobileFirstPrivateChatView({
 
   return (
     <div className="chat-mobile-layout motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
-      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col bg-[#0a0a0a] xl:border-y xl:border-slate-200 xl:bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.96))] xl:shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] sm:border xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
-        <div className="chat-mobile-inbox__header flex items-center px-4 py-3 xl:hidden">
-          <div className="flex items-center gap-1 cursor-pointer">
-            <h2 className="text-[20px] font-bold text-white tracking-wide">{currentUsername || "messages"}</h2>
-            <svg className="ml-0.5 h-6 w-6 text-white mt-0.5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
+      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
+        <div className="chat-mobile-inbox__header border-b border-slate-200/70 px-4 pb-4 pt-4 xl:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
+              <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950">Inbox</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                {currentUsername ? `Signed in as @${currentUsername}` : 'Private conversations'}
+              </p>
+            </div>
+            <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-xs font-bold text-white shadow-sm">
+              {formatCount(contacts.length)}
+            </span>
+          </div>
+
+          <div className="mt-4 rounded-[24px] border border-slate-200 bg-white/92 p-2 shadow-[0_16px_40px_-36px_rgba(15,23,42,0.35)]">
+            <SearchInput
+              value={searchQuery}
+              onChange={(event) => onSearchQueryChange(event.target.value)}
+              onClear={() => onSearchQueryChange('')}
+              placeholder="Search conversations"
+              showClear={!!searchQuery.trim()}
+            />
           </div>
         </div>
         <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 px-4 pb-4 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
@@ -5603,7 +5621,7 @@ function MobileFirstPrivateChatView({
           </div>
         </div>
 
-        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-0 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95 xl:px-2 pb-24">
+        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95 xl:px-2 pb-24">
           <div className="space-y-2">
             {isThreadsLoading && contacts.length === 0 && (
               <div className="motion-pulse rounded-[24px] border border-slate-200 bg-white/90 p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
@@ -5619,10 +5637,10 @@ function MobileFirstPrivateChatView({
                   type="button"
                   onClick={() => onSelectContact(contact.username)}
                   style={{ animationDelay: `${idx * 35}ms` }}
-                  className={`group relative flex w-full items-center gap-3.5 px-4 py-[9px] text-left transition motion-fade-up sm:gap-4 sm:px-4 xl:rounded-[24px] xl:border xl:px-3.5 xl:py-3.5 xl:shadow-[0_16px_36px_-34px_rgba(15,23,42,0.36)] ${
+                  className={`group relative flex w-full items-center gap-3 rounded-[22px] border px-3.5 py-3.5 text-left shadow-[0_16px_36px_-34px_rgba(15,23,42,0.24)] transition motion-fade-up sm:gap-4 sm:px-4 xl:rounded-[24px] xl:px-3.5 xl:py-3.5 xl:shadow-[0_16px_36px_-34px_rgba(15,23,42,0.36)] ${
                     isActive
-                      ? 'bg-[#1a1a1a] xl:border-blue-200 xl:bg-[linear-gradient(135deg,rgba(219,234,254,0.95),rgba(236,254,255,0.96))] xl:text-slate-950'
-                      : 'bg-transparent hover:bg-[#121212] xl:border-slate-200 xl:bg-white/92 xl:hover:border-slate-300 xl:hover:bg-white'
+                      ? 'border-blue-200 bg-[linear-gradient(135deg,rgba(219,234,254,0.96),rgba(239,246,255,0.98))] text-slate-950'
+                      : 'border-slate-200 bg-white/96 hover:border-slate-300 hover:bg-white'
                   }`}
                 >
                   <div className="relative shrink-0">
@@ -5630,11 +5648,11 @@ function MobileFirstPrivateChatView({
                       <img
                         src={contact.profilePhotoUrl}
                         alt={contact.username}
-                        className={`h-[56px] w-[56px] sm:h-[60px] sm:w-[60px] rounded-full object-cover xl:h-12 xl:w-12 ${isActive ? 'ring-2 ring-[#262626] xl:ring-slate-300' : 'ring-1 ring-transparent xl:ring-slate-200'}`}
+                        className={`h-12 w-12 rounded-full object-cover sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${isActive ? 'ring-2 ring-blue-200' : 'ring-1 ring-slate-200'}`}
                       />
                     ) : (
-                      <div className={`flex h-[56px] w-[56px] sm:h-[60px] sm:w-[60px] items-center justify-center rounded-full text-[19px] font-medium uppercase xl:h-12 xl:w-12 xl:text-xs xl:font-bold ${
-                        isActive ? 'bg-[#262626] text-white xl:bg-slate-800 xl:ring-2 xl:ring-slate-300' : 'bg-[#1a1a1a] text-[#f5f5f5] xl:bg-slate-900 xl:text-white'
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xs font-bold uppercase sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${
+                        isActive ? 'bg-blue-600 text-white ring-2 ring-blue-200' : 'bg-slate-900 text-white'
                       }`}>
                         {getInitials(contact.username)}
                       </div>
@@ -5644,14 +5662,21 @@ function MobileFirstPrivateChatView({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate text-[15px] font-normal xl:text-sm xl:font-bold ${isActive ? 'text-white xl:text-slate-950' : 'text-[#f5f5f5] xl:text-slate-950'}`}>
-                          {contact.displayName || contact.username}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 xl:block hidden">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-bold text-slate-950 xl:text-sm">
+                            {contact.displayName || contact.username}
+                          </p>
+                          {contact.unreadCount > 0 && (
+                            <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                              {contact.unreadCount > 99 ? '99+' : contact.unreadCount}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
                           @{contact.username}
                         </p>
-                        <p className={`mt-[2px] xl:mt-1.5 truncate text-[13px] xl:text-xs ${isActive ? 'text-[#a3a3a3] xl:text-slate-700' : contact.unreadCount > 0 ? 'font-medium text-[#f5f5f5] xl:text-slate-700' : 'text-[#a3a3a3] xl:text-slate-500'}`}>
-                          {contact.lastMessage?.text || 'Sent yesterday'} {contact.lastMessage?.createdAt && <span className="opacity-70 xl:hidden"> • {formatTimestamp(contact.lastMessage.createdAt)}</span>}
+                        <p className={`mt-1 truncate text-[13px] xl:text-xs ${contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                          {contact.lastMessage?.text || 'Tap to open chat'} {contact.lastMessage?.createdAt && <span className="opacity-70 xl:hidden"> • {formatTimestamp(contact.lastMessage.createdAt)}</span>}
                         </p>
                       </div>
 
@@ -5690,7 +5715,7 @@ function MobileFirstPrivateChatView({
                   />
                 </div>
                 <div className="xl:hidden px-4 py-8 text-center motion-fade-up">
-                  <p className="text-[14px] text-[#a3a3a3]">No chats found.</p>
+                  <p className="text-[14px] text-slate-500">No chats found.</p>
                 </div>
               </>
             )}
@@ -5706,14 +5731,14 @@ function MobileFirstPrivateChatView({
         {activeContact ? (
           <>
             <div
-              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/92 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
+              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/95 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
               style={mobileSafeTopStyle}
             >
               <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
                 <button
                   type="button"
                   onClick={onBackToInbox}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 xl:hidden"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-white xl:hidden"
                   aria-label="Back to inbox"
                 >
                   <ArrowLeft className="h-4.5 w-4.5" />
@@ -5753,7 +5778,7 @@ function MobileFirstPrivateChatView({
             </div>
 
             <div className="chat-mobile-thread__feed relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.1),transparent_70%)]" />
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(191,219,254,0.2),transparent_26%),linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))]" />
 
               <div className="relative space-y-4">
                 <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
@@ -5782,9 +5807,9 @@ function MobileFirstPrivateChatView({
                     >
                       <div className={`flex max-w-[86%] flex-col gap-1.5 sm:max-w-[72%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
                         <div
-                          className={`rounded-[24px] px-4 py-3 text-sm shadow-sm sm:px-5 sm:text-[15px] ${
+                          className={`rounded-[22px] px-4 py-3 text-sm shadow-sm sm:px-5 sm:text-[15px] ${
                             isOutgoing
-                              ? 'rounded-br-md bg-[linear-gradient(135deg,#2563eb,#0ea5e9)] text-white shadow-[0_18px_38px_-28px_rgba(37,99,235,0.85)]'
+                              ? 'rounded-br-md bg-blue-600 text-white shadow-[0_18px_38px_-28px_rgba(37,99,235,0.85)]'
                               : 'rounded-bl-md border border-slate-200 bg-white text-slate-900'
                           }`}
                         >
@@ -5820,7 +5845,7 @@ function MobileFirstPrivateChatView({
               className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 backdrop-blur-xl sm:p-5"
               style={mobileSafeBottomStyle}
             >
-              <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+              <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.18)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
                 <textarea
                   rows={1}
                   value={activeDraft}
@@ -5838,7 +5863,7 @@ function MobileFirstPrivateChatView({
                 <button
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
