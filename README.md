@@ -1,55 +1,73 @@
 # Public Policy Hub
 
-Public Policy Hub is a social-style civic reporting platform where users can publish public issue reports, support posts, share solutions, bookmark important threads, and follow contributor profiles.
-
-## Features
-
-- React frontend with a feed, post detail views, bookmarks, and profile pages
-- Firebase-based sign-in flow connected to a Node/Express backend
-- MongoDB persistence for posts, user profiles, follows, bookmarks, and profile photos
-- Media uploads with image/video support and backend-served uploads
-- Real-time post updates over Server-Sent Events
-- Clean left-rail category ranking with feed filtering
+Public Policy Hub is a civic reporting platform where users can publish public issues, support posts, discuss solutions, bookmark reports, and follow profiles.
 
 ## Tech Stack
 
-- React 19
-- Parcel
+- React 19 + Parcel
 - Tailwind CSS
-- Firebase Authentication
-- Node.js + Express
+- Firebase Authentication (frontend)
+- Node.js + Express (backend)
 - MongoDB + Mongoose
 
 ## Project Structure
 
-- `src/` - frontend app
-- `backend/` - API server, database models, and seed scripts
-- `backend/uploads/` - runtime upload storage (ignored in git)
+- `src/` - frontend application
+- `backend/` - API server, DB models, and seed script
+- `backend/uploads/` - runtime upload files (gitignored)
 
-## Getting Started
+## Prerequisites
 
-### 1. Install dependencies
+Install these before setup:
+
+- Node.js 20+ and npm 10+
+- MongoDB (local service) or Docker
+- Git
+- Optional: `ffmpeg` (for generating extra video quality variants)
+
+## Setup (Important)
+
+### 1. Clone and install dependencies
 
 ```bash
+git clone <your-repo-url>
+cd PublicPolicyHub
 npm install
-cd backend && npm install
+cd backend
+npm install
+cd ..
 ```
 
-### 2. Configure environment
+### 2. Create backend environment file
 
-Create `backend/.env` with:
+Create `backend/.env`:
 
 ```env
-MONGODB_URI=mongodb://localhost:27017/publicpolicyhub
+MONGODB_URI=mongodb://127.0.0.1:27017/publicpolicyhub
 PORT=5000
-JWT_SECRET=better_india_secret_key_123
+JWT_SECRET=change_this_to_a_long_random_string
+
+# Optional (AI summary fallback works even if not set):
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
-If you use Firebase, also make sure the frontend Firebase config in `src/firebase.js` matches your project credentials.
+Note: `127.0.0.1` is used to avoid localhost/IPv6 issues some Linux setups can hit.
 
-### 3. Run the app
+### 3. Start MongoDB
 
-From the project root:
+Use one method:
+
+- Local service (Linux): start your MongoDB service (`mongod` or `mongodb`, depending on install).
+- Docker:
+
+```bash
+docker run -d --name publicpolicyhub-mongo -p 27017:27017 mongo:7
+```
+
+### 4. Start frontend + backend together
+
+From project root:
 
 ```bash
 npm run dev
@@ -57,33 +75,60 @@ npm run dev
 
 This starts:
 
-- Frontend on Parcel dev server
-- Backend on `http://localhost:5000`
+- Frontend: `http://localhost:1234`
+- Backend: `http://localhost:5000`
+
+Important: `npm start` runs only frontend. For full app, use `npm run dev`.
+
+## Verify Backend Connection
+
+After starting, confirm these work:
+
+```bash
+curl http://localhost:5000/api/health
+curl http://localhost:5000/api/posts
+```
+
+Expected for health: `{"status":"ok"}`
+
+## Why Frontend Sometimes Cannot Connect to Backend
+
+The frontend calls relative paths like `/api/...` and relies on Parcel proxy config in `.proxyrc`:
+
+- `/api` -> `http://localhost:5000`
+- `/uploads` -> `http://localhost:5000`
+
+If backend is down, wrong port is used, or MongoDB is not running, API calls fail.
+
+## Troubleshooting (CachyOS/Linux)
+
+1. Check backend is running and not crashing:
+```bash
+cd backend
+npm run dev
+```
+If MongoDB is unreachable, backend exits with a DB connection error.
+
+2. Make sure MongoDB is actually listening on `27017`.
+
+3. Use `npm run dev` from project root (not `npm start`).
+
+4. If you changed backend `PORT`, update `.proxyrc` target to the same port, then restart frontend.
+
+5. If port `5000` is busy, choose a free port in `backend/.env` and match `.proxyrc`.
 
 ## Available Scripts
 
+From project root:
+
 - `npm run dev` - run frontend and backend together
-- `npm run dev:frontend` - run only the frontend
-- `npm run dev:backend` - run only the backend
+- `npm run dev:frontend` - run frontend only
+- `npm run dev:backend` - run backend only
 - `npm run build` - production frontend build
 - `npm run lint` - lint frontend code
 
-## Backend Notes
+From `backend/`:
 
-- Posts are available at `/api/posts`
-- Real-time updates stream from `/api/events`
-- User profile data is available at `/api/users/profile` and `/api/users/:username`
-- Bookmarks, follows, and profile photo uploads are persisted in MongoDB
-
-## Repository Notes
-
-- `node_modules`, build artifacts, uploads, and local env files are ignored
-- Test media and local scratch upload scripts are not committed
-
-## Status
-
-Current verified checks:
-
-- `npm run build`
-- `npm run lint` with 2 existing React hook warnings in `src/App.jsx`
-- `node --check backend/server.js`
+- `npm run dev` - backend with nodemon
+- `npm start` - backend with node
+- `node seed.js` - seed DB with sample data
