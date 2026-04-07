@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
+import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
 import ArrowUpRight from 'lucide-react/dist/esm/icons/arrow-up-right.js';
 import BadgeCheck from 'lucide-react/dist/esm/icons/badge-check.js';
 import Bell from 'lucide-react/dist/esm/icons/bell.js';
@@ -22,6 +23,7 @@ import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js';
 import Pause from 'lucide-react/dist/esm/icons/pause.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
+import FileText from 'lucide-react/dist/esm/icons/file-text.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Share2 from 'lucide-react/dist/esm/icons/share-2.js';
@@ -71,6 +73,38 @@ const defaultNotifications = [];
 const THEME_STORAGE_KEY = 'pph-theme';
 const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 const GOOGLE_AUTH_MODE_STORAGE_KEY = 'pph-google-auth-mode';
+const MAX_POST_FILES = 10;
+const POSTING_GUIDELINES = [
+  {
+    title: 'Evidence is required',
+    detail: 'You must upload clear proof (image, video, or document). Posts without evidence may be removed or given low visibility.',
+  },
+  {
+    title: 'No personal accusations',
+    detail: 'Do not name or target individuals. Describe the issue, not the person.',
+    example: 'Unusual behavior observed at traffic checkpoint.',
+  },
+  {
+    title: 'No fake or misleading content',
+    detail: 'Posting false, edited, or old content as new is strictly prohibited. Verified false reports may lead to account suspension.',
+  },
+  {
+    title: 'No NSFW or inappropriate content',
+    detail: 'No nudity, sexual content, or disturbing visuals. Such content can be removed immediately and may lead to a ban.',
+  },
+  {
+    title: 'Provide accurate details',
+    detail: 'Include correct location, date, and description. Vague or misleading posts may be rejected.',
+  },
+  {
+    title: 'Legal responsibility',
+    detail: 'You are fully responsible for the content you post. This platform may share data with authorities if required by law.',
+  },
+  {
+    title: 'Community respect',
+    detail: 'No hate speech, abuse, or targeting any group or community.',
+  },
+];
 
 function buildAppHash({
   view = 'home',
@@ -397,15 +431,35 @@ function App() {
 
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '', department: '', media: 'IMAGE' });
   const [mediaFiles, setMediaFiles] = useState([]);
+  const [hasAcceptedPostingRules, setHasAcceptedPostingRules] = useState(false);
 
   const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setMediaFiles(prev => [...prev, ...Array.from(e.target.files)]);
-    }
+    if (!e.target.files || e.target.files.length === 0) return;
+    const selectedFiles = Array.from(e.target.files);
+    setMediaFiles((prev) => {
+      const remainingSlots = Math.max(MAX_POST_FILES - prev.length, 0);
+      const acceptedFiles = selectedFiles.slice(0, remainingSlots);
+      const nextFiles = [...prev, ...acceptedFiles];
+
+      if (acceptedFiles.length !== selectedFiles.length) {
+        setPostUploadStatus('error');
+        setPostUploadFeedback(`You can upload up to ${MAX_POST_FILES} files per report.`);
+      } else {
+        setPostUploadStatus('idle');
+        setPostUploadFeedback('');
+      }
+
+      return nextFiles;
+    });
+    e.target.value = '';
   };
 
   const removeFile = (indexToRemove) => {
     setMediaFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    if (postUploadStatus === 'error') {
+      setPostUploadStatus('idle');
+      setPostUploadFeedback('');
+    }
   };
 
   const rememberChatUsername = (username) => {
@@ -618,7 +672,7 @@ function App() {
   };
 
   const ensureAuthenticated = () => {
-    if (token && userProfile) return true;
+    if (token) return true;
     openAuthPage();
     return false;
   };
@@ -1184,6 +1238,16 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined' || activeView !== 'chat') return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeView, activeChatUsername]);
+
+  useEffect(() => {
     if (!userProfile) {
       setIsProfileSettingsOpen(false);
       setProfileSettingsStatus({ type: '', message: '' });
@@ -1494,6 +1558,8 @@ function App() {
       openAuthPage();
     } else {
       if (id === 'create') resetPostUploadState();
+      closeProfileConnections();
+      setIsProfileSettingsOpen(false);
       setProfileViewUsername(null);
       setActivePostId(null);
       if (id !== 'chat') setActiveChatUsername('');
@@ -1893,6 +1959,16 @@ function App() {
   const handlePostSubmit = async (e) => {
     e.preventDefault();
     if (isPostSubmitting) return;
+    if (mediaFiles.length === 0) {
+      setPostUploadStatus('error');
+      setPostUploadFeedback('Evidence is required. Upload at least one image, video, or document.');
+      return;
+    }
+    if (!hasAcceptedPostingRules) {
+      setPostUploadStatus('error');
+      setPostUploadFeedback('Please agree to the reporting rules before submitting.');
+      return;
+    }
 
     try {
       setIsPostSubmitting(true);
@@ -1916,6 +1992,7 @@ function App() {
       setActiveView('home');
       setPostForm({ title: '', description: '', location: '', department: '', media: 'IMAGE' });
       setMediaFiles([]);
+      setHasAcceptedPostingRules(false);
     } catch (err) {
       setPostUploadStatus('error');
       setPostUploadFeedback(err.message || 'Failed to post issue');
@@ -3440,7 +3517,7 @@ function App() {
     if (postUploadStatus === 'uploading') return `Uploading ${postUploadProgress}%`;
     if (postUploadStatus === 'success') return 'Uploaded';
     if (postUploadStatus === 'error') return 'Retry upload';
-    return `Post issue as ${userProfile?.username || 'you'}`;
+    return 'I Agree & Submit Post';
   })();
   const isChatView = activeView === 'chat';
 
@@ -3659,7 +3736,7 @@ function App() {
       )}
       </div>
 
-      <main className={`app-main mobile-safe mx-auto grid w-full max-w-[1580px] gap-4 px-3 pb-24 pt-4 sm:gap-5 sm:px-4 sm:pt-5 lg:px-6 lg:pt-0 ${isChatView ? 'lg:grid-cols-[84px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[84px_minmax(0,1fr)]' : 'lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7'}`}>
+      <main className={`app-main mx-auto grid w-full max-w-[1580px] gap-4 px-3 sm:gap-5 sm:px-4 lg:px-6 ${isChatView ? 'app-main--chat pt-2 sm:pt-2 lg:pt-0 lg:grid-cols-[84px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[84px_minmax(0,1fr)]' : 'mobile-safe pb-24 pt-4 sm:pt-5 lg:pt-0 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7'}`}>
         <aside className={`hidden lg:sticky lg:block lg:self-start ${isChatView ? 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-3' : 'lg:top-24 lg:h-[calc(100vh-7.5rem)] lg:border-r lg:border-slate-200 lg:pr-4'}`}>
           {isChatView ? (
             <div className="soft-card chat-nav-rail flex flex-col items-center gap-2 p-2.5">
@@ -3859,7 +3936,7 @@ function App() {
           )}
         </aside>
 
-        <section className={`motion-fade-up mx-auto w-full space-y-6 ${isChatView ? 'max-w-full' : 'max-w-[980px]'}`} style={{ '--motion-delay': '80ms' }}>
+        <section className={`motion-fade-up mx-auto w-full ${isChatView ? 'max-w-full h-full min-h-0 overflow-hidden space-y-0' : 'max-w-[980px] space-y-6'}`} style={{ '--motion-delay': '80ms' }}>
           {activeView === 'home' && (
             <>
               <div className="space-y-5 stagger-container">
@@ -4779,17 +4856,51 @@ function App() {
               <p className="text-xs font-semibold text-slate-500">Create New Issue</p>
               <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Simple, mobile-friendly reporting.</h2>
               <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
+                <section className="posting-guidelines-card rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.13em] text-amber-800">Important: Read Before Posting</p>
+                  <p className="mt-2 text-sm text-amber-900">
+                    This platform is for responsible reporting of public issues. By submitting a post, you agree to the following rules:
+                  </p>
+                  <ol className="posting-guidelines-list mt-4 space-y-3">
+                    {POSTING_GUIDELINES.map((rule, index) => (
+                      <li key={`posting-guideline-${rule.title}`} className="posting-guidelines-item">
+                        <p className="text-sm font-semibold text-slate-900">{index + 1}. {rule.title}</p>
+                        <p className="mt-1 text-sm text-slate-700">{rule.detail}</p>
+                        {rule.example && <p className="mt-1 text-sm text-slate-700">Example: "{rule.example}"</p>}
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800">
+                    Goal: Report real issues with proof. Not allowed: rumors, personal attacks, or viral misinformation.
+                  </div>
+                  <label className="posting-guidelines-consent mt-4 flex items-start gap-2.5 rounded-xl border border-amber-300/70 bg-white px-3 py-2.5 text-sm font-medium text-slate-800">
+                    <input
+                      type="checkbox"
+                      className="mt-[2px] h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={hasAcceptedPostingRules}
+                      onChange={(event) => {
+                        setHasAcceptedPostingRules(event.target.checked);
+                        if (postUploadStatus === 'error') {
+                          setPostUploadStatus('idle');
+                          setPostUploadFeedback('');
+                        }
+                      }}
+                    />
+                    <span>I agree to these reporting rules and legal responsibilities.</span>
+                  </label>
+                </section>
                 <div className="space-y-4">
                   <label className="upload-zone flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition">
                     <div className="upload-zone__inner flex flex-col items-center justify-center pt-5 pb-6">
                       <div className="upload-zone__icons mb-2 flex gap-2">
                         <ImageIcon className="h-6 w-6 text-orange-500" />
                         <VideoIcon className="h-6 w-6 text-blue-600" />
+                        <FileText className="h-6 w-6 text-emerald-600" />
                       </div>
                       <p className="text-sm font-semibold text-slate-600">Click or drag files to upload</p>
-                      <p className="text-xs text-slate-500 mt-1">Photos and Videos (Max 10)</p>
+                      <p className="text-xs text-slate-500 mt-1">Images, videos, or documents (Max {MAX_POST_FILES})</p>
                     </div>
-                    <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={handleFileSelect} />
+                    <input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt" className="hidden" onChange={handleFileSelect} />
                   </label>
 
                   {mediaFiles.length > 0 && (
@@ -4798,8 +4909,13 @@ function App() {
                         <div key={idx} className="relative shrink-0 snap-start h-20 w-20 rounded-xl overflow-hidden bg-slate-200 border border-slate-300">
                           {file.type.startsWith('video/') ? (
                             <video src={URL.createObjectURL(file)} className="h-full w-full object-cover" />
-                          ) : (
+                          ) : file.type.startsWith('image/') ? (
                             <img src={URL.createObjectURL(file)} alt="preview" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-100 px-1 text-center">
+                              <FileText className="h-4 w-4 text-slate-600" />
+                              <span className="line-clamp-2 text-[10px] font-semibold leading-3 text-slate-600">{file.name}</span>
+                            </div>
                           )}
                           <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900/60 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition backdrop-blur-sm">
                             <X className="h-3 w-3" />
@@ -4851,7 +4967,7 @@ function App() {
                 <div className="space-y-2">
                   <button
                     type="submit"
-                    disabled={isPostSubmitting}
+                    disabled={isPostSubmitting || mediaFiles.length === 0 || !hasAcceptedPostingRules}
                     className={`upload-progress-btn ${isPostSubmitting ? 'upload-progress-btn--busy' : ''} ${postUploadStatus === 'success' ? 'upload-progress-btn--success' : ''}`}
                     style={{ '--upload-progress': `${postUploadProgress}%` }}
                   >
@@ -4869,6 +4985,17 @@ function App() {
                       {isPostSubmitting || postUploadProgress > 0 ? `${postUploadProgress}%` : ''}
                     </span>
                   </div>
+                  {postUploadFeedback && (
+                    <p className={`rounded-xl border px-3 py-2 text-sm ${postUploadStatus === 'error'
+                      ? 'border-red-200 bg-red-50 text-red-700'
+                      : postUploadStatus === 'success'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      {postUploadFeedback}
+                    </p>
+                  )}
                 </div>
               </form>
             </div>
@@ -4967,10 +5094,10 @@ function App() {
             </div>
           )}
 
-          {activeView === 'chat' && userProfile && (
-            <div className="chat-workspace">
+          {activeView === 'chat' && token && (
+            <div className="chat-workspace h-full min-h-0 overflow-hidden">
               <MobileFirstPrivateChatView
-                currentUsername={userProfile.username}
+                currentUsername={userProfile?.username || accountUsername || ''}
                 contacts={filteredChatContacts}
                 activeContact={activeChatContact}
                 activeMessages={activeChatMessages}
@@ -5325,7 +5452,7 @@ function PrivateChatView({
   onOpenProfile,
 }) {
   return (
-    <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
+    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
       {/* Sidebar: Contacts List */}
       <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden">
         <div className="flex flex-col border-b border-slate-200/60 bg-white/40 px-4 pt-5 pb-4 backdrop-blur-xl sm:px-5 sm:pt-6 sm:pb-5">
@@ -5555,15 +5682,13 @@ function PrivateChatView({
                 <button
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
+                  aria-label="Send message"
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-md transition-all hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   ) : (
-                    <svg className="h-5 w-5 ml-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m22 2-7 20-4-9-9-4Z"/>
-                      <path d="M22 2 11 13"/>
-                    </svg>
+                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
                   )}
                 </button>
               </div>
@@ -5605,13 +5730,10 @@ function MobileFirstPrivateChatView({
   onBackToInbox,
 }) {
   const hasActiveContact = !!activeContact;
-  const mobileSafeTopStyle = { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
-  const mobileSafeBottomStyle = { paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.85rem)' };
-
   return (
-    <div className="chat-mobile-layout motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
-      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(255,255,255,0.98))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
-        <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200/70 px-4 pb-4 pt-4 xl:hidden">
+    <div className="chat-mobile-layout h-full min-h-0 xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-3">
+      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-white sm:rounded-2xl xl:rounded-2xl`}>
+        <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4 xl:hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
@@ -5620,12 +5742,12 @@ function MobileFirstPrivateChatView({
                 {currentUsername ? `Signed in as @${currentUsername}` : 'Private conversations'}
               </p>
             </div>
-            <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-xs font-bold text-white shadow-sm">
+            <span className="inline-flex min-w-[2.5rem] items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
               {formatCount(contacts.length)}
             </span>
           </div>
 
-          <div className="mt-4 rounded-[24px] border border-slate-200 bg-white/92 p-2 shadow-[0_16px_40px_-36px_rgba(15,23,42,0.35)]">
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2">
             <SearchInput
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
@@ -5635,19 +5757,19 @@ function MobileFirstPrivateChatView({
             />
           </div>
         </div>
-        <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 px-4 pb-4 pt-4 xl:bg-white/80 xl:px-5 xl:pb-4 xl:pt-6 xl:backdrop-blur-xl">
+        <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 bg-white px-4 py-4 xl:px-5 xl:pt-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
               <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950 xl:text-[28px]">Inbox</h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">Open a conversation or jump back into the people you message most.</p>
             </div>
-            <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full bg-slate-950 px-3 py-1 text-xs font-bold text-white shadow-sm">
+            <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
               {formatCount(contacts.length)}
             </span>
           </div>
 
-          <div className="mt-4 rounded-[26px] border border-slate-200 bg-white/85 p-2 shadow-[0_16px_40px_-36px_rgba(15,23,42,0.35)]">
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2">
             <SearchInput
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
@@ -5658,10 +5780,10 @@ function MobileFirstPrivateChatView({
           </div>
         </div>
 
-        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95 xl:px-2 xl:pb-4">
+        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:px-2 xl:pb-4">
           <div className="space-y-2">
             {isThreadsLoading && contacts.length === 0 && (
-              <div className="motion-pulse rounded-[24px] border border-slate-200 bg-white/90 p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm font-medium text-slate-500">
                 Syncing conversations...
               </div>
             )}
@@ -5674,10 +5796,10 @@ function MobileFirstPrivateChatView({
                   type="button"
                   onClick={() => onSelectContact(contact.username)}
                   style={{ animationDelay: `${idx * 35}ms` }}
-                  className={`group relative flex w-full items-center gap-3 rounded-[22px] border px-3.5 py-3.5 text-left shadow-[0_16px_36px_-34px_rgba(15,23,42,0.24)] transition motion-fade-up sm:gap-4 sm:px-4 xl:rounded-[24px] xl:px-3.5 xl:py-3.5 xl:shadow-[0_16px_36px_-34px_rgba(15,23,42,0.36)] ${
+                  className={`group relative flex w-full items-center gap-3 rounded-xl border px-3.5 py-3.5 text-left transition sm:gap-4 sm:px-4 xl:px-3.5 xl:py-3.5 ${
                     isActive
-                      ? 'border-blue-200 bg-[linear-gradient(135deg,rgba(219,234,254,0.96),rgba(239,246,255,0.98))] text-slate-950'
-                      : 'border-slate-200 bg-white/96 hover:border-slate-300 hover:bg-white'
+                      ? 'border-blue-200 bg-blue-50 text-slate-950'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   <div className="relative shrink-0">
@@ -5685,11 +5807,11 @@ function MobileFirstPrivateChatView({
                       <img
                         src={contact.profilePhotoUrl}
                         alt={contact.username}
-                        className={`h-12 w-12 rounded-full object-cover sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${isActive ? 'ring-2 ring-blue-200' : 'ring-1 ring-slate-200'}`}
+                        className={`h-12 w-12 rounded-full object-cover ring-1 sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${isActive ? 'ring-blue-200' : 'ring-slate-200'}`}
                       />
                     ) : (
                       <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xs font-bold uppercase sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${
-                        isActive ? 'bg-blue-600 text-white ring-2 ring-blue-200' : 'bg-slate-900 text-white'
+                        isActive ? 'bg-blue-600 text-white ring-1 ring-blue-200' : 'bg-slate-700 text-white'
                       }`}>
                         {getInitials(contact.username)}
                       </div>
@@ -5700,7 +5822,7 @@ function MobileFirstPrivateChatView({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-bold text-slate-950 xl:text-sm">
+                          <p className="truncate text-sm font-semibold text-slate-950 xl:text-sm">
                             {contact.displayName || contact.username}
                           </p>
                           {contact.unreadCount > 0 && (
@@ -5712,7 +5834,7 @@ function MobileFirstPrivateChatView({
                         <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
                           @{contact.username}
                         </p>
-                        <p className={`mt-1 truncate text-[13px] xl:text-xs ${contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                        <p className={`mt-1 truncate text-sm xl:text-xs ${contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
                           {contact.lastMessage?.text || 'Tap to open chat'} {contact.lastMessage?.createdAt && <span className="opacity-70 xl:hidden"> • {formatTimestamp(contact.lastMessage.createdAt)}</span>}
                         </p>
                       </div>
@@ -5752,8 +5874,8 @@ function MobileFirstPrivateChatView({
                   />
                 </div>
                 <div className="xl:hidden px-2 py-4 motion-fade-up">
-                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-white/90 px-5 py-8 text-center shadow-sm">
-                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-8 ring-slate-100/80">
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <MessageCircle className="h-5 w-5" />
                     </div>
                     <p className="mt-4 text-sm font-semibold text-slate-800">No chats to show yet</p>
@@ -5768,20 +5890,19 @@ function MobileFirstPrivateChatView({
 
       <div className={`chat-mobile-thread ${
         hasActiveContact
-          ? 'fixed inset-0 z-[80] flex bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))] sm:p-3'
+          ? 'flex border border-slate-200 bg-white'
           : 'hidden'
-      } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:rounded-[28px] xl:bg-white/95 xl:glass-panel`}>
+      } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col sm:rounded-2xl xl:relative xl:z-auto xl:flex xl:rounded-2xl`}>
         {activeContact ? (
           <>
             <div
-              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/70 bg-white/95 px-3 py-3 backdrop-blur-xl sm:px-5 sm:py-4"
-              style={mobileSafeTopStyle}
+              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-3 sm:px-5 sm:py-4"
             >
               <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
                 <button
                   type="button"
                   onClick={onBackToInbox}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-slate-700 shadow-sm transition hover:bg-white xl:hidden"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-slate-700 transition hover:bg-white xl:hidden"
                   aria-label="Back to inbox"
                 >
                   <ArrowLeft className="h-4.5 w-4.5" />
@@ -5802,7 +5923,7 @@ function MobileFirstPrivateChatView({
                   )}
 
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-slate-950 group-hover:text-blue-600 sm:text-[15px]">
+                    <p className="truncate text-sm font-semibold text-slate-950 group-hover:text-blue-600 sm:text-[15px]">
                       {activeContact.displayName || activeContact.username}
                     </p>
                     <p className="truncate text-xs font-medium text-slate-500">
@@ -5815,28 +5936,26 @@ function MobileFirstPrivateChatView({
               <button
                 type="button"
                 onClick={() => onOpenProfile(activeContact.username)}
-                className="hidden rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:inline-flex"
+                className="hidden rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 sm:inline-flex"
               >
                 View profile
               </button>
             </div>
 
             <div className="chat-mobile-thread__feed relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(191,219,254,0.2),transparent_26%),linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))]" />
-
               <div className="relative space-y-4 pb-6">
-                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
+                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
                   {activeContact.displayName || activeContact.username}
                 </div>
 
                 {activeMessagesStatus === 'loading' && activeMessages.length === 0 && (
-                  <div className="mx-auto max-w-sm rounded-[20px] border border-slate-200 bg-white/90 p-4 text-center text-sm font-medium text-slate-500 shadow-sm motion-fade-up">
+                  <div className="mx-auto max-w-sm rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm font-medium text-slate-500">
                     Syncing conversation...
                   </div>
                 )}
 
                 {activeMessagesStatus === 'error' && (
-                  <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50/90 p-4 text-center text-sm font-medium text-red-700 shadow-sm motion-pop">
+                  <div className="mx-auto max-w-md rounded-xl border border-red-200 bg-red-50 p-4 text-center text-sm font-medium text-red-700">
                     {activeError || 'Unable to load this conversation right now.'}
                   </div>
                 )}
@@ -5847,19 +5966,19 @@ function MobileFirstPrivateChatView({
                     <div
                       key={message.id}
                       style={{ animationDelay: `${Math.min(idx * 45, 400)}ms` }}
-                      className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} motion-fade-up`}
+                      className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}
                     >
                       <div className={`flex max-w-[86%] flex-col gap-1.5 sm:max-w-[72%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
                         <div
-                          className={`rounded-[22px] px-4 py-3 text-sm shadow-sm sm:px-5 sm:text-[15px] ${
+                          className={`rounded-2xl px-4 py-3 text-sm sm:px-5 sm:text-[15px] ${
                             isOutgoing
-                              ? 'rounded-br-md bg-blue-600 text-white shadow-[0_18px_38px_-28px_rgba(37,99,235,0.85)]'
-                              : 'rounded-bl-md border border-slate-200 bg-white text-slate-900'
+                              ? 'rounded-br-lg bg-blue-600 text-white'
+                              : 'rounded-bl-lg border border-slate-200 bg-white text-slate-900'
                           }`}
                         >
                           <p className="leading-6">{message.text}</p>
                         </div>
-                        <p className={`px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400 ${isOutgoing ? 'text-right' : 'text-left'}`}>
+                        <p className={`px-2 text-[10px] text-slate-400 ${isOutgoing ? 'text-right' : 'text-left'}`}>
                           {message.senderUsername === currentUsername ? 'You' : message.senderUsername || activeContact.username} <span className="opacity-50">•</span> {formatTimestamp(message.createdAt)}
                         </p>
                       </div>
@@ -5869,7 +5988,7 @@ function MobileFirstPrivateChatView({
 
                 {activeMessages.length === 0 && activeMessagesStatus !== 'loading' && (
                   <div className="flex min-h-[55vh] flex-col items-center justify-center px-4 text-center motion-fade-up">
-                    <div className="mb-4 flex h-18 w-18 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-8 ring-slate-100/80">
+                    <div className="mb-4 flex h-18 w-18 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <MessageCircle className="h-7 w-7" />
                     </div>
                     <h3 className="font-display text-xl font-bold text-slate-900">Start the conversation</h3>
@@ -5886,10 +6005,9 @@ function MobileFirstPrivateChatView({
                 event.preventDefault();
                 onSendMessage(activeContact.username);
               }}
-              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 shadow-[0_-20px_48px_-40px_rgba(15,23,42,0.32)] backdrop-blur-xl sm:p-5"
-              style={mobileSafeBottomStyle}
+              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:p-5"
             >
-              <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.18)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+              <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white px-2 py-2 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
                 <textarea
                   rows={1}
                   value={activeDraft}
@@ -5901,21 +6019,19 @@ function MobileFirstPrivateChatView({
                     }
                   }}
                   placeholder={`Message ${activeContact.displayName || activeContact.username}...`}
-                  className="max-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
+                  className="max-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
                   style={{ minHeight: '46px' }}
                 />
                 <button
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
+                  aria-label="Send message"
                   className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                   ) : (
-                    <svg className="ml-0.5 h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m22 2-7 20-4-9-9-4Z" />
-                      <path d="M22 2 11 13" />
-                    </svg>
+                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
                   )}
                 </button>
               </div>
@@ -6381,7 +6497,7 @@ function ProfileConnectionsModal({
                       )}
 
                       <div className="min-w-0">
-                        <p className={`truncate text-[15px] font-normal xl:text-sm xl:font-bold ${isActive ? 'text-white xl:text-slate-950' : 'text-[#f5f5f5] xl:text-slate-950'}`}>{item.displayName || item.username}</p>
+                        <p className="truncate text-[15px] font-normal text-slate-950 xl:text-sm xl:font-bold">{item.displayName || item.username}</p>
                         <p className="truncate mt-0.5 text-xs font-semibold text-slate-500">@{item.username}</p>
                       </div>
                     </button>
@@ -6451,7 +6567,7 @@ function MobileProfilePhotoActionsSheet({
             </div>
           )}
           <div className="min-w-0">
-            <p className={`truncate text-[15px] font-normal xl:text-sm xl:font-bold ${isActive ? 'text-white xl:text-slate-950' : 'text-[#f5f5f5] xl:text-slate-950'}`}>{profileDisplayName || profileUsername}</p>
+            <p className="truncate text-[15px] font-normal text-slate-950 xl:text-sm xl:font-bold">{profileDisplayName || profileUsername}</p>
             <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">@{profileUsername}</p>
           </div>
         </div>
