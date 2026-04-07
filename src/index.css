@@ -2295,6 +2295,7 @@ html[data-theme='dark'] .theme-switch__label {
   gap: clamp(0.75rem, 1.5vw, 1rem);
   align-items: stretch;
   min-width: 0;
+  position: relative;
 }
 
 .chat-mobile-inbox,
@@ -2341,7 +2342,7 @@ html[data-theme='dark'] .theme-switch__label {
 .chat-mobile-inbox__list {
   flex: 1;
   overflow-y: auto;
-  padding: 0.8rem;
+  padding: 0.8rem 0.8rem calc(env(safe-area-inset-bottom, 0px) + 6rem);
 }
 
 .chat-mobile-inbox__list > button {
@@ -2429,6 +2430,13 @@ html[data-theme='dark'] .theme-switch__label {
   .chat-mobile-thread__feed {
     padding-left: 0.85rem;
     padding-right: 0.85rem;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1279px) {
+  .chat-mobile-thread--open {
+    border-radius: 1.75rem;
+    box-shadow: 0 28px 64px -42px rgba(15, 23, 42, 0.38);
   }
 }
 

@@ -303,6 +303,9 @@ function App() {
   const [apiNotifications, setApiNotifications] = useState(defaultNotifications);
   const [privateChatThreads, setPrivateChatThreads] = useState({});
   const [chatThreads, setChatThreads] = useState([]);
+  const [recentChatUsernames, setRecentChatUsernames] = useState(() => (
+    initialRouteState.chatUsername ? [initialRouteState.chatUsername] : []
+  ));
   const [isLoading, setIsLoading] = useState(true);
 
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -403,6 +406,18 @@ function App() {
 
   const removeFile = (indexToRemove) => {
     setMediaFiles(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const rememberChatUsername = (username) => {
+    const normalizedUsername = `${username ?? ''}`.trim();
+    if (!normalizedUsername) return;
+
+    setRecentChatUsernames((current) => {
+      const normalizedKey = getChatUsernameKey(normalizedUsername);
+      if (!normalizedKey) return current;
+      if (current.some((entry) => getChatUsernameKey(entry) === normalizedKey)) return current;
+      return [normalizedUsername, ...current].slice(0, 24);
+    });
   };
 
   const handleMediaScroll = (postId, event) => {
@@ -776,9 +791,6 @@ function App() {
           },
         }), { ...current })
       ));
-      setActiveChatUsername((currentUsername) => (
-        currentUsername || threads[0]?.username || ''
-      ));
       return threads;
     } finally {
       setIsChatThreadsLoading(false);
@@ -963,12 +975,26 @@ function App() {
   }, [activeChatUsername, activeView, token, userProfile]);
 
   useEffect(() => {
+    const normalizedUsername = `${activeChatUsername ?? ''}`.trim();
+    if (!normalizedUsername) return;
+
+    setRecentChatUsernames((current) => {
+      const normalizedKey = getChatUsernameKey(normalizedUsername);
+      if (!normalizedKey) return current;
+      if (current.some((entry) => getChatUsernameKey(entry) === normalizedKey)) return current;
+      return [normalizedUsername, ...current].slice(0, 24);
+    });
+  }, [activeChatUsername]);
+
+  useEffect(() => {
     if (!token || !userProfile?.username || activeView !== 'chat' || typeof window === 'undefined') return undefined;
 
     const refreshChat = () => {
       fetchChatThreads(token)
         .then((threads) => {
-          const fallbackUsername = activeChatUsername || threads[0]?.username || '';
+          const fallbackUsername = activeChatUsername || (
+            isDesktopChatViewport ? threads[0]?.username || '' : ''
+          );
           if (!fallbackUsername) return null;
           return fetchChatMessages(fallbackUsername, token);
         })
@@ -990,7 +1016,7 @@ function App() {
       window.removeEventListener('focus', handleWindowFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [activeChatUsername, activeView, token, userProfile?.username]);
+  }, [activeChatUsername, activeView, isDesktopChatViewport, token, userProfile?.username]);
 
   useEffect(() => {
     authStateRef.current = {
@@ -2126,9 +2152,19 @@ function App() {
     setProfileViewUsername(null);
     setActivePostId(null);
     setChatSearchQuery('');
+    rememberChatUsername(normalizedUsername);
     setActiveChatUsername(normalizedUsername);
     setActiveView('chat');
     if (normalizedUsername) preloadAuthorPreview(normalizedUsername);
+  };
+
+  const handleBackToChatInbox = () => {
+    closeProfileConnections();
+    setIsProfileSettingsOpen(false);
+    setProfileViewUsername(null);
+    setActivePostId(null);
+    setActiveChatUsername('');
+    setActiveView('chat');
   };
 
   const openAuthorProfile = (username) => {
@@ -2887,6 +2923,7 @@ function App() {
 
     return [
       ...chatThreads.map((thread) => thread.username),
+      ...recentChatUsernames,
       activeChatUsername,
       ...Object.keys(privateChatThreads),
       ...searchableAccountUsernames,
@@ -4948,7 +4985,7 @@ function App() {
                 onDraftChange={handlePrivateChatDraftChange}
                 onSendMessage={handlePrivateChatSend}
                 onOpenProfile={openAuthorProfile}
-                onBackToInbox={() => setActiveChatUsername('')}
+                onBackToInbox={handleBackToChatInbox}
               />
             </div>
           )}
@@ -5573,8 +5610,8 @@ function MobileFirstPrivateChatView({
 
   return (
     <div className="chat-mobile-layout motion-fade-up min-h-[calc(100dvh-8.6rem)] xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-4">
-      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
-        <div className="chat-mobile-inbox__header border-b border-slate-200/70 px-4 pb-4 pt-4 xl:hidden">
+      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200/80 bg-[linear-gradient(180deg,rgba(248,250,252,0.99),rgba(255,255,255,0.98))] shadow-[0_18px_50px_-42px_rgba(15,23,42,0.28)] sm:rounded-[28px] xl:glass-panel xl:rounded-[28px] xl:border-0 xl:bg-white`}>
+        <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200/70 px-4 pb-4 pt-4 xl:hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
@@ -5621,7 +5658,7 @@ function MobileFirstPrivateChatView({
           </div>
         </div>
 
-        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95 xl:px-2 pb-24">
+        <div className="chat-mobile-inbox__list flex-1 overflow-y-auto px-2 py-3 hide-scrollbar sm:px-3 sm:py-4 xl:bg-white/95 xl:px-2 xl:pb-4">
           <div className="space-y-2">
             {isThreadsLoading && contacts.length === 0 && (
               <div className="motion-pulse rounded-[24px] border border-slate-200 bg-white/90 p-5 text-center text-sm font-medium text-slate-500 shadow-sm">
@@ -5707,15 +5744,21 @@ function MobileFirstPrivateChatView({
 
             {contacts.length === 0 && !isThreadsLoading && (
               <>
-              <div className="px-2 py-8 motion-fade-up hidden xl:block">
+                <div className="px-2 py-8 motion-fade-up hidden xl:block">
                   <EmptyProfilePanel
                     icon={<MessageCircle className="h-6 w-6 text-teal-500" />}
                     title="No chats yet"
                     description="Follow people, open profiles, and start a secure discussion."
                   />
                 </div>
-                <div className="xl:hidden px-4 py-8 text-center motion-fade-up">
-                  <p className="text-[14px] text-slate-500">No chats found.</p>
+                <div className="xl:hidden px-2 py-4 motion-fade-up">
+                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-white/90 px-5 py-8 text-center shadow-sm">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400 ring-8 ring-slate-100/80">
+                      <MessageCircle className="h-5 w-5" />
+                    </div>
+                    <p className="mt-4 text-sm font-semibold text-slate-800">No chats to show yet</p>
+                    <p className="mt-1 text-[13px] leading-6 text-slate-500">Open a profile and start a private conversation to see it here.</p>
+                  </div>
                 </div>
               </>
             )}
@@ -5725,7 +5768,7 @@ function MobileFirstPrivateChatView({
 
       <div className={`chat-mobile-thread ${
         hasActiveContact
-          ? 'fixed inset-0 z-[80] flex bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))]'
+          ? 'fixed inset-0 z-[80] flex bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.98))] sm:p-3'
           : 'hidden'
       } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col xl:relative xl:z-auto xl:flex xl:rounded-[28px] xl:bg-white/95 xl:glass-panel`}>
         {activeContact ? (
@@ -5738,10 +5781,11 @@ function MobileFirstPrivateChatView({
                 <button
                   type="button"
                   onClick={onBackToInbox}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 shadow-sm transition hover:bg-white xl:hidden"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-slate-700 shadow-sm transition hover:bg-white xl:hidden"
                   aria-label="Back to inbox"
                 >
                   <ArrowLeft className="h-4.5 w-4.5" />
+                  <span className="text-[11px] font-bold uppercase tracking-[0.14em]">Inbox</span>
                 </button>
 
                 <button
@@ -5780,7 +5824,7 @@ function MobileFirstPrivateChatView({
             <div className="chat-mobile-thread__feed relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(191,219,254,0.2),transparent_26%),linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))]" />
 
-              <div className="relative space-y-4">
+              <div className="relative space-y-4 pb-6">
                 <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white/92 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 shadow-sm">
                   {activeContact.displayName || activeContact.username}
                 </div>
@@ -5842,7 +5886,7 @@ function MobileFirstPrivateChatView({
                 event.preventDefault();
                 onSendMessage(activeContact.username);
               }}
-              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 backdrop-blur-xl sm:p-5"
+              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200/70 bg-white/95 px-3 pt-3 shadow-[0_-20px_48px_-40px_rgba(15,23,42,0.32)] backdrop-blur-xl sm:p-5"
               style={mobileSafeBottomStyle}
             >
               <div className="flex items-end gap-2 rounded-[28px] border border-slate-200 bg-white px-2 py-2 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.18)] focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
