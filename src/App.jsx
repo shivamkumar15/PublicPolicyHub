@@ -28,6 +28,7 @@ import Search from 'lucide-react/dist/esm/icons/search.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Share2 from 'lucide-react/dist/esm/icons/share-2.js';
 import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.js';
+import Smile from 'lucide-react/dist/esm/icons/smile.js';
 import SquarePen from 'lucide-react/dist/esm/icons/square-pen.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
@@ -74,6 +75,7 @@ const THEME_STORAGE_KEY = 'pph-theme';
 const GENDER_OPTIONS = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 const GOOGLE_AUTH_MODE_STORAGE_KEY = 'pph-google-auth-mode';
 const MAX_POST_FILES = 10;
+const CHAT_QUICK_EMOJIS = ['😀', '😂', '😍', '🤝', '🙏', '👍', '🔥', '🎉', '💯', '🙌', '✅', '🚀'];
 const POSTING_GUIDELINES = [
   {
     title: 'Evidence is required',
@@ -5451,6 +5453,15 @@ function PrivateChatView({
   onSendMessage,
   onOpenProfile,
 }) {
+  const [emojiPickerForUsername, setEmojiPickerForUsername] = useState('');
+  const activeContactUsername = activeContact?.username || '';
+  const isEmojiPickerOpen = !!activeContactUsername && emojiPickerForUsername === activeContactUsername;
+
+  const handleEmojiInsert = (emoji) => {
+    if (!activeContactUsername || !emoji) return;
+    onDraftChange(activeContactUsername, `${activeDraft}${emoji}`);
+  };
+
   return (
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
       {/* Sidebar: Contacts List */}
@@ -5660,11 +5671,47 @@ function PrivateChatView({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                setEmojiPickerForUsername('');
                 onSendMessage(activeContact.username);
               }}
               className="z-10 shrink-0 border-t border-slate-200/60 bg-white/80 p-3 sm:p-5 backdrop-blur-xl"
             >
-              <div className="relative flex items-center gap-2.5 rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 transition-shadow focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/30 focus-within:shadow-md sm:gap-3 sm:rounded-3xl">
+              <div className="relative">
+                {isEmojiPickerOpen && (
+                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                    <div className="flex flex-wrap gap-1.5">
+                      {CHAT_QUICK_EMOJIS.map((emoji) => (
+                        <button
+                          key={`desktop-chat-emoji-${emoji}`}
+                          type="button"
+                          onClick={() => handleEmojiInsert(emoji)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:bg-slate-100"
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="relative flex items-center gap-2.5 rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 transition-shadow focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/30 focus-within:shadow-md sm:gap-3 sm:rounded-3xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmojiPickerForUsername((current) => (
+                        current === activeContactUsername ? '' : activeContactUsername
+                      ));
+                    }}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition sm:h-11 sm:w-11 ${
+                      isEmojiPickerOpen
+                        ? 'bg-slate-200 text-slate-800'
+                        : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-800'
+                    }`}
+                    aria-label={isEmojiPickerOpen ? 'Hide emoji options' : 'Show emoji options'}
+                    aria-expanded={isEmojiPickerOpen}
+                  >
+                    <Smile className="h-5 w-5" />
+                  </button>
                 <textarea
                   rows={1}
                   value={activeDraft}
@@ -5691,6 +5738,7 @@ function PrivateChatView({
                     <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
                   )}
                 </button>
+                </div>
               </div>
 
             </form>
@@ -5730,6 +5778,15 @@ function MobileFirstPrivateChatView({
   onBackToInbox,
 }) {
   const hasActiveContact = !!activeContact;
+  const [emojiPickerForUsername, setEmojiPickerForUsername] = useState('');
+  const activeContactUsername = activeContact?.username || '';
+  const isEmojiPickerOpen = !!activeContactUsername && emojiPickerForUsername === activeContactUsername;
+
+  const handleEmojiInsert = (emoji) => {
+    if (!activeContactUsername || !emoji) return;
+    onDraftChange(activeContactUsername, `${activeDraft}${emoji}`);
+  };
+
   return (
     <div className="chat-mobile-layout h-full min-h-0 xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-3">
       <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-white sm:rounded-2xl xl:rounded-2xl`}>
@@ -6003,11 +6060,47 @@ function MobileFirstPrivateChatView({
             <form
               onSubmit={(event) => {
                 event.preventDefault();
+                setEmojiPickerForUsername('');
                 onSendMessage(activeContact.username);
               }}
               className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:p-5"
             >
-              <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white px-2 py-2 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+              <div className="relative">
+                {isEmojiPickerOpen && (
+                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                    <div className="flex flex-wrap gap-1.5">
+                      {CHAT_QUICK_EMOJIS.map((emoji) => (
+                        <button
+                          key={`mobile-chat-emoji-${emoji}`}
+                          type="button"
+                          onClick={() => handleEmojiInsert(emoji)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:bg-slate-100"
+                          aria-label={`Insert ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white px-2 py-2 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmojiPickerForUsername((current) => (
+                        current === activeContactUsername ? '' : activeContactUsername
+                      ));
+                    }}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
+                      isEmojiPickerOpen
+                        ? 'bg-slate-200 text-slate-800'
+                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                    }`}
+                    aria-label={isEmojiPickerOpen ? 'Hide emoji options' : 'Show emoji options'}
+                    aria-expanded={isEmojiPickerOpen}
+                  >
+                    <Smile className="h-5 w-5" />
+                  </button>
                 <textarea
                   rows={1}
                   value={activeDraft}
@@ -6034,6 +6127,7 @@ function MobileFirstPrivateChatView({
                     <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
                   )}
                 </button>
+                </div>
               </div>
             </form>
           </>
