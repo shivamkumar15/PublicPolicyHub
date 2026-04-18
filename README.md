@@ -1,6 +1,16 @@
 # Public Policy Hub
 
-Public Policy Hub is a civic reporting platform where users can publish public issues, support posts, discuss solutions, bookmark reports, and follow profiles.
+Public Policy Hub is a civic reporting platform where users can publish public issues, support posts, discuss solutions, bookmark reports, follow profiles, and chat with other users.
+
+## Features
+
+- Publish and discuss public issues
+- Support posts and solutions
+- Bookmark reports
+- Follow user profiles
+- Chat with other users
+- Firebase Authentication
+- Real-time notifications
 
 ## Tech Stack
 
