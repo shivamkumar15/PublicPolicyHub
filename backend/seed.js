@@ -139,10 +139,26 @@ const realNotifications = [
   'Trending alert: Massive crater on WEH (Mumbai)'
 ];
 
-async function seed() {
+const toCount = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    const multiplier = normalized.endsWith('m') ? 1000000 : normalized.endsWith('k') ? 1000 : 1;
+    const numericPart = normalized.replace(/[^0-9.]/g, '');
+    const parsedFloat = Number.parseFloat(numericPart);
+    const parsed = Number.isFinite(parsedFloat) ? Math.round(parsedFloat * multiplier) : Number.NaN;
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+export async function seed() {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('Connected to MongoDB. Clearing old data...');
+    // We already have a connection if called from db.js, but let's check
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(process.env.MONGODB_URI);
+    }
+    console.log('Clearing old data...');
     
     await Post.deleteMany({});
     await City.deleteMany({});
@@ -157,7 +173,13 @@ async function seed() {
     
     console.log('Inserting real-world Posts...');
     for (const post of realPosts) {
-      await Post.updateOne({ id: post.id }, post, { upsert: true });
+      const normalizedPost = {
+        ...post,
+        support: toCount(post.support),
+        comments: toCount(post.comments),
+        solutions: toCount(post.solutions),
+      };
+      await Post.updateOne({ id: post.id }, normalizedPost, { upsert: true });
     }
 
     console.log('Inserting real-world Cities...');
@@ -171,11 +193,12 @@ async function seed() {
     }
 
     console.log('Real data seeded successfully!');
-    process.exit(0);
   } catch (err) {
     console.error('Error seeding database:', err);
-    process.exit(1);
+    throw err;
   }
 }
 
-seed();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  seed().then(() => process.exit(0)).catch(() => process.exit(1));
+}
