@@ -2911,6 +2911,8 @@ function App() {
       viewedProfileMeta?.username || '',
     ].filter(Boolean)
   )];
+  const alwaysIncludeUsername = userProfile?.username || '';
+  const alwaysIncludeUsernameInResults = alwaysIncludeUsername && normalizedSearchQuery && !searchableAccountUsernames.includes(alwaysIncludeUsername);
   const matchedSearchAccounts = normalizedSearchQuery
     ? searchableAccountUsernames
       .map((username) => {
@@ -2922,10 +2924,22 @@ function App() {
             : (previewData.profilePhotoUrl || '');
         return {
           username,
-          displayName: `${previewData.displayName ?? ''}`.trim(),
-          role: `${previewData.role ?? ''}`.trim() || 'CitizenReporter',
+          displayName: username === userProfile?.username
+            ? (userProfile?.displayName || username)
+            : username === viewedProfileMeta?.username
+              ? (viewedProfileMeta?.displayName || username)
+              : `${previewData.displayName ?? ''}`.trim(),
+          role: username === userProfile?.username
+            ? (userProfile?.role || 'CitizenReporter')
+            : username === viewedProfileMeta?.username
+              ? (viewedProfileMeta?.role || 'CitizenReporter')
+              : `${previewData.role ?? ''}`.trim() || 'CitizenReporter',
           profilePhotoUrl: derivedPhotoUrl,
-          followerCount: toCount(previewData.followerCount),
+          followerCount: username === userProfile?.username
+            ? toCount(userProfile?.followerCount)
+            : username === viewedProfileMeta?.username
+              ? toCount(viewedProfileMeta?.followerCount)
+              : toCount(previewData.followerCount),
           postsCount: authorPostCounts[username] ?? 0,
         };
       })
@@ -2936,7 +2950,9 @@ function App() {
         return firstAccount.username.localeCompare(secondAccount.username);
       })
     : [];
-  const searchAccountResults = matchedSearchAccounts.slice(0, 5);
+  const searchAccountResults = alwaysIncludeUsernameInResults
+    ? [{ username: alwaysIncludeUsername, displayName: userProfile?.displayName || alwaysIncludeUsername, role: userProfile?.role || 'CitizenReporter', profilePhotoUrl: profilePhotoUrl || userProfile?.profilePhotoUrl || '', followerCount: toCount(userProfile?.followerCount), postsCount: 0 }, ...matchedSearchAccounts].slice(0, 5)
+    : matchedSearchAccounts.slice(0, 5);
   const matchedSearchPosts = normalizedSearchQuery
     ? [...apiPosts]
       .filter((post) => postMatchesSearchQuery(post, normalizedSearchQuery))
@@ -3650,7 +3666,6 @@ function App() {
                     </div>
                   )}
                 </div>
-                <ThemeSwitch checked={theme === 'dark'} onChange={handleThemeToggle} label="Theme" />
               </form>
             </div>
 
@@ -3731,7 +3746,6 @@ function App() {
                 />
                 {renderSearchResultsDropdown()}
               </div>
-              <ThemeSwitch checked={theme === 'dark'} onChange={handleThemeToggle} label="Theme" compact />
             </form>
           </div>
         </div>

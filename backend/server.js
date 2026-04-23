@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import { seed } from './seed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +22,14 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // Connect to MongoDB
-connectDB();
+await connectDB();
+
+// Auto-seed if database is empty
+const postCount = await Post.countDocuments();
+if (postCount === 0) {
+  console.log('Database is empty. Running seed script...');
+  await seed();
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;

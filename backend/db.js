@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MongoMemoryServer } from 'mongodb-memory-server-core';
-import { seed } from './seed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,25 +15,35 @@ export const connectDB = async () => {
   try {
     let uri = process.env.MONGODB_URI;
     
-    // Check if we should use memory server
-    if (!uri || uri.includes('127.0.0.1:27017')) {
-      console.log('No external MongoDB URI found or using default local. Starting MongoMemoryServer...');
+    if (!uri) {
+      console.log('MONGODB_URI not found in .env, starting Memory Server...');
       mongod = await MongoMemoryServer.create();
       uri = mongod.getUri();
-      console.log(`MongoMemoryServer started at: ${uri}`);
     }
 
-    const conn = await mongoose.connect(uri);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    
-    // Seed data if using memory server
-    if (mongod) {
-      console.log('Seeding initial data to memory server...');
-      await seed();
+    try {
+      const conn = await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 5000,
+      });
+      console.log(`MongoDB Connected: ${conn.connection.host}`);
+      if (mongod) {
+        console.log('Using in-memory MongoDB. Data will NOT persist across restarts.');
+      } else {
+        console.log('Data will now persist after closing the server!');
+      }
+    } catch (err) {
+      if (!mongod) {
+        console.warn(`Failed to connect to local MongoDB (${err.message}). Falling back to Memory Server...`);
+        mongod = await MongoMemoryServer.create();
+        uri = mongod.getUri();
+        const conn = await mongoose.connect(uri);
+        console.log(`MongoDB Connected (Memory): ${conn.connection.host}`);
+      } else {
+        throw err;
+      }
     }
   } catch (error) {
     console.error(`Error: ${error.message}`);
-    if (mongod) await mongod.stop();
     process.exit(1);
   }
 };
