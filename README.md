@@ -11,6 +11,7 @@ Public Policy Hub is a civic reporting platform where users can publish public i
 - Chat with other users
 - Firebase Authentication
 - Real-time notifications
+- Supabase Integration (PostgreSQL)
 
 ## Tech Stack
 
@@ -18,12 +19,12 @@ Public Policy Hub is a civic reporting platform where users can publish public i
 - Tailwind CSS
 - Firebase Authentication (frontend)
 - Node.js + Express (backend)
-- MongoDB + Mongoose
+- Supabase (PostgreSQL)
 
 ## Project Structure
 
 - `src/` - frontend application
-- `backend/` - API server, DB models, and seed script
+- `backend/` - API server, database configuration, and seed script
 - `backend/uploads/` - runtime upload files (gitignored)
 
 ## Prerequisites
@@ -31,7 +32,7 @@ Public Policy Hub is a civic reporting platform where users can publish public i
 Install these before setup:
 
 - Node.js 20+ and npm 10+
-- MongoDB (local service) or Docker
+- A Supabase project (URL and Anon Key)
 - Git
 - Optional: `ffmpeg` (for generating extra video quality variants)
 
@@ -53,7 +54,8 @@ cd ..
 Create `backend/.env`:
 
 ```env
-MONGODB_URI=mongodb://127.0.0.1:27017/publicpolicyhub
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
 PORT=5000
 JWT_SECRET=change_this_to_a_long_random_string
 
@@ -62,18 +64,13 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-Note: `127.0.0.1` is used to avoid localhost/IPv6 issues some Linux setups can hit.
+### 3. Database Setup (Supabase)
 
-### 3. Start MongoDB
-
-Use one method:
-
-- Local service (Linux): start your MongoDB service (`mongod` or `mongodb`, depending on install).
-- Docker:
-
-```bash
-docker run -d --name publicpolicyhub-mongo -p 27017:27017 mongo:7
-```
+1.  Log in to your [Supabase Dashboard](https://supabase.com/dashboard).
+2.  Open the **SQL Editor**.
+3.  Create a **New Query**.
+4.  Copy the contents of `backend/schema.sql` and click **Run**. 
+    *This will create the necessary tables and disable RLS for local development.*
 
 ### 4. Start frontend + backend together
 
@@ -101,31 +98,11 @@ curl http://localhost:5000/api/posts
 
 Expected for health: `{"status":"ok"}`
 
-## Why Frontend Sometimes Cannot Connect to Backend
+## Troubleshooting
 
-The frontend calls relative paths like `/api/...` and relies on Parcel proxy config in `.proxyrc`:
-
-- `/api` -> `http://localhost:5000`
-- `/uploads` -> `http://localhost:5000`
-
-If backend is down, wrong port is used, or MongoDB is not running, API calls fail.
-
-## Troubleshooting (CachyOS/Linux)
-
-1. Check backend is running and not crashing:
-```bash
-cd backend
-npm run dev
-```
-If MongoDB is unreachable, backend exits with a DB connection error.
-
-2. Make sure MongoDB is actually listening on `27017`.
-
-3. Use `npm run dev` from project root (not `npm start`).
-
-4. If you changed backend `PORT`, update `.proxyrc` target to the same port, then restart frontend.
-
-5. If port `5000` is busy, choose a free port in `backend/.env` and match `.proxyrc`.
+1. **Database Connection**: If the backend fails to start, ensure your `SUPABASE_URL` and `SUPABASE_ANON_KEY` are correct in `backend/.env`.
+2. **Missing Data**: If the home page is empty, ensure you have successfully run the `schema.sql` in the Supabase SQL Editor. The backend will auto-seed data on its first successful run once tables are created.
+3. **RLS Errors**: If you see "Row Level Security" errors in the backend logs, ensure you ran the entire `schema.sql`, including the `ALTER TABLE ... DISABLE ROW LEVEL SECURITY` lines at the bottom.
 
 ## Available Scripts
 
