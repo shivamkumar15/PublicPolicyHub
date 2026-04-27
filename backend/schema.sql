@@ -93,3 +93,33 @@ ALTER TABLE posts DISABLE ROW LEVEL SECURITY;
 ALTER TABLE cities DISABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications DISABLE ROW LEVEL SECURITY;
 ALTER TABLE messages DISABLE ROW LEVEL SECURITY;
+
+-- Fallback: If RLS is forced to be enabled, allow everything
+DO $$ 
+BEGIN
+    -- users
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'users') THEN
+        DROP POLICY IF EXISTS "Allow all" ON users;
+        CREATE POLICY "Allow all" ON users FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- posts
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'posts') THEN
+        DROP POLICY IF EXISTS "Allow all" ON posts;
+        CREATE POLICY "Allow all" ON posts FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- cities
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'cities') THEN
+        DROP POLICY IF EXISTS "Allow all" ON cities;
+        CREATE POLICY "Allow all" ON cities FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- notifications
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'notifications') THEN
+        DROP POLICY IF EXISTS "Allow all" ON notifications;
+        CREATE POLICY "Allow all" ON notifications FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    -- messages
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'messages') THEN
+        DROP POLICY IF EXISTS "Allow all" ON messages;
+        CREATE POLICY "Allow all" ON messages FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
