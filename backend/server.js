@@ -3,12 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { connectDB } from './db.js';
-import User from './models/User.js';
-import Post from './models/Post.js';
-import City from './models/City.js';
-import Notification from './models/Notification.js';
-import Message from './models/Message.js';
+import { supabase } from './db.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -21,11 +16,8 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-// Connect to MongoDB
-await connectDB();
-
 // Auto-seed if database is empty
-const postCount = await Post.countDocuments();
+const { count: postCount } = await supabase.from('posts').select('*', { count: 'exact', head: true });
 if (postCount === 0) {
   console.log('Database is empty. Running seed script...');
   await seed();
@@ -388,46 +380,39 @@ const replaceUsernameInPost = (post, currentUsername, nextUsername) => {
 const renameUserReferences = async (currentUsername, nextUsername) => {
   if (!currentUsername || !nextUsername || currentUsername === nextUsername) return;
 
-  await Promise.all([
-    User.updateMany(
-      { following: currentUsername },
-      { $set: { 'following.$[matchedUsername]': nextUsername } },
-      { arrayFilters: [{ matchedUsername: currentUsername }] },
-    ),
-    Notification.updateMany({ recipientUsername: currentUsername }, { $set: { recipientUsername: nextUsername } }),
-    Notification.updateMany({ actorUsername: currentUsername }, { $set: { actorUsername: nextUsername } }),
-    Message.updateMany({ senderUsername: currentUsername }, { $set: { senderUsername: nextUsername } }),
-    Message.updateMany({ recipientUsername: currentUsername }, { $set: { recipientUsername: nextUsername } }),
-    Message.updateMany(
-      { participants: currentUsername },
-      { $set: { 'participants.$[matchedUsername]': nextUsername } },
-      { arrayFilters: [{ matchedUsername: currentUsername }] },
-    ),
-  ]);
+  // Supabase doesn't have an exact equivalent to arrayFilters for nested updates in a single call easily for complex logic,
+  // but for simple array replacements we can use array functions or fetch and update.
+  
+  // Update users table (following array)
+  // This is tricky in SQL without a junction table, but we can use array_replace
+  await supabase.rpc('rename_user_following', { old_username: currentUsername, new_username: nextUsername });
 
-  const posts = await Post.find({
-    $or: [
-      { author: currentUsername },
-      { supporters: currentUsername },
-      { 'commentsList.author': currentUsername },
-      { 'solutionsList.author': currentUsername },
-      { 'solutionsList.upvoters': currentUsername },
-      { 'solutionsList.downvoters': currentUsername },
-      { 'solutionsList.replies.author': currentUsername },
-      { 'solutionsList.replies.upvoters': currentUsername },
-      { 'solutionsList.replies.downvoters': currentUsername },
-    ],
-  });
+  // Update notifications
+  await supabase.from('notifications').update({ recipient_username: nextUsername }).eq('recipient_username', currentUsername);
+  await supabase.from('notifications').update({ actor_username: nextUsername }).eq('actor_username', currentUsername);
 
-  for (const post of posts) {
-    if (!replaceUsernameInPost(post, currentUsername, nextUsername)) continue;
-    await post.save();
-    broadcastPostUpdate(post);
+  // Update messages
+  await supabase.from('messages').update({ sender_username: nextUsername }).eq('sender_username', currentUsername);
+  await supabase.from('messages').update({ recipient_username: nextUsername }).eq('recipient_username', currentUsername);
+  // participants is an array
+  await supabase.rpc('rename_user_participants', { old_username: currentUsername, new_username: nextUsername });
+
+  // Update posts
+  const { data: posts, error } = await supabase.from('posts')
+    .select('*')
+    .or(`author.eq.${currentUsername},supporters.cs.{${currentUsername}}`);
+
+  if (posts) {
+    for (const post of posts) {
+      if (!replaceUsernameInPost(post, currentUsername, nextUsername)) continue;
+      await supabase.from('posts').update(post).eq('id', post.id);
+      broadcastPostUpdate(post);
+    }
   }
 };
 
 const normalizePost = (post) => {
-  const source = post?.toObject ? post.toObject() : post;
+  const source = post;
   const createdAt = getPostCreatedAt(source);
   return {
     ...source,
@@ -437,17 +422,15 @@ const normalizePost = (post) => {
     solutions: toCount(source?.solutions),
     shares: toCount(source?.shares),
     supporters: Array.isArray(source?.supporters) ? source.supporters : [],
-    commentsList: Array.isArray(source?.commentsList) ? source.commentsList : [],
-    solutionsList: Array.isArray(source?.solutionsList)
-      ? source.solutionsList.map(normalizeSolution).filter(Boolean)
-      : [],
+    commentsList: Array.isArray(source?.comments_list) ? source.comments_list : (Array.isArray(source?.commentsList) ? source.commentsList : []),
+    solutionsList: Array.isArray(source?.solutions_list)
+      ? source.solutions_list.map(normalizeSolution).filter(Boolean)
+      : (Array.isArray(source?.solutionsList) ? source.solutionsList.map(normalizeSolution).filter(Boolean) : []),
     fixes: Array.isArray(source?.fixes) ? source.fixes : [],
-    mediaList: Array.isArray(source?.mediaList)
-      ? source.mediaList.map((item) => {
-          const mediaItem = item?.toObject ? item.toObject() : item;
-          const qualities = mediaItem?.qualities instanceof Map
-            ? Object.fromEntries(mediaItem.qualities.entries())
-            : mediaItem?.qualities && typeof mediaItem.qualities === 'object'
+    mediaList: Array.isArray(source?.media_list)
+      ? source.media_list.map((item) => {
+          const mediaItem = item;
+          const qualities = mediaItem?.qualities && typeof mediaItem.qualities === 'object'
               ? mediaItem.qualities
               : undefined;
 
@@ -457,7 +440,7 @@ const normalizePost = (post) => {
             sources: Array.isArray(mediaItem?.sources) ? mediaItem.sources : [],
           };
         })
-      : [],
+      : (Array.isArray(source?.mediaList) ? source.mediaList : []),
   };
 };
 
@@ -486,23 +469,21 @@ const broadcastPostDelete = (postId) => {
 };
 
 const serializeMessage = (message, viewerUsername = '') => {
-  const source = message?.toObject ? message.toObject() : message;
-  const createdAt = source?.createdAt instanceof Date
-    ? source.createdAt
-    : source?.createdAt
-      ? new Date(source.createdAt)
-      : null;
+  const source = message;
+  const createdAt = source?.created_at
+    ? new Date(source.created_at)
+    : (source?.createdAt ? new Date(source.createdAt) : null);
 
   return {
-    id: source?._id?.toString?.() || '',
-    senderUsername: `${source?.senderUsername ?? ''}`.trim(),
-    recipientUsername: `${source?.recipientUsername ?? ''}`.trim(),
+    id: source?.id?.toString() || '',
+    senderUsername: `${source?.sender_username ?? source?.senderUsername ?? ''}`.trim(),
+    recipientUsername: `${source?.recipient_username ?? source?.recipientUsername ?? ''}`.trim(),
     text: `${source?.text ?? ''}`.trim(),
     read: !!source?.read,
     createdAt: createdAt instanceof Date && !Number.isNaN(createdAt.getTime())
       ? createdAt.toISOString()
       : null,
-    direction: `${source?.senderUsername ?? ''}`.trim() === `${viewerUsername ?? ''}`.trim() ? 'outgoing' : 'incoming',
+    direction: `${source?.sender_username ?? source?.senderUsername ?? ''}`.trim() === `${viewerUsername ?? ''}`.trim() ? 'outgoing' : 'incoming',
   };
 };
 
@@ -617,9 +598,14 @@ const validateRequestedUsername = (value) => {
   return { normalizedUsername, error: '' };
 };
 
-const findUserByNormalizedUsername = (normalizedUsername) => (
-  User.findOne({ username: new RegExp(`^${normalizedUsername}$`, 'i') })
-);
+const findUserByNormalizedUsername = async (normalizedUsername) => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('username', normalizedUsername)
+    .single();
+  return data;
+};
 
 const generateUniqueUsername = async (rawUsername, uid) => {
   const preferredBaseUsername = normalizeUsernameCandidate(rawUsername);
@@ -628,17 +614,21 @@ const generateUniqueUsername = async (rawUsername, uid) => {
       ? preferredBaseUsername
       : normalizeUsernameCandidate(`${preferredBaseUsername}citizen`)
   ) || 'citizen';
-  if (!await User.exists({ username: baseUsername })) return baseUsername;
+  
+  const { data: exists } = await supabase.from('users').select('username').eq('username', baseUsername).single();
+  if (!exists) return baseUsername;
 
   const uidSuffix = normalizeUsernameCandidate(uid).slice(-6) || `${Date.now()}`.slice(-6);
   const candidateWithUid = `${baseUsername.slice(0, Math.max(1, 24 - uidSuffix.length - 1))}_${uidSuffix}`;
-  if (!await User.exists({ username: candidateWithUid })) return candidateWithUid;
+  const { data: existsUid } = await supabase.from('users').select('username').eq('username', candidateWithUid).single();
+  if (!existsUid) return candidateWithUid;
 
   let counter = 1;
   while (counter <= 5000) {
     const suffix = `_${counter}`;
     const candidate = `${baseUsername.slice(0, Math.max(1, 24 - suffix.length))}${suffix}`;
-    if (!await User.exists({ username: candidate })) return candidate;
+    const { data: existsCounter } = await supabase.from('users').select('username').eq('username', candidate).single();
+    if (!existsCounter) return candidate;
     counter += 1;
   }
 
@@ -648,7 +638,7 @@ const generateUniqueUsername = async (rawUsername, uid) => {
 const issueAuthToken = (user) => (
   jwt.sign(
     {
-      sub: user._id.toString(),
+      sub: user.id.toString(),
       uid: user.firebase_uid || '',
       username: user.username,
       role: user.role,
@@ -671,26 +661,30 @@ const authenticateToken = async (req, res, next) => {
 
     let user = null;
     if (decoded?.sub) {
-      user = await User.findById(decoded.sub);
+      const { data } = await supabase.from('users').select('*').eq('id', decoded.sub).single();
+      user = data;
       if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
     }
 
     if (!user && decoded?.uid) {
-      user = await User.findOne({ firebase_uid: decoded.uid });
+      const { data } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
+      user = data;
     }
 
     if (!user && decoded?.email) {
-      user = await User.findOne({ email: normalizeEmail(decoded.email) });
+      const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
+      user = data;
     }
 
     if (!user && decoded?.username) {
-      user = await User.findOne({ username: decoded.username });
+      const { data } = await supabase.from('users').select('*').eq('username', decoded.username).single();
+      user = data;
     }
 
     if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
 
     req.user = {
-      id: user._id.toString(),
+      id: user.id.toString(),
       uid: user.firebase_uid || '',
       username: user.username,
       role: user.role,
@@ -716,13 +710,25 @@ const attachOptionalUser = async (req, _res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     let user = null;
-    if (decoded?.sub) user = await User.findById(decoded.sub);
-    if (!user && decoded?.uid) user = await User.findOne({ firebase_uid: decoded.uid });
-    if (!user && decoded?.email) user = await User.findOne({ email: normalizeEmail(decoded.email) });
-    if (!user && decoded?.username) user = await User.findOne({ username: decoded.username });
+    if (decoded?.sub) {
+      const { data } = await supabase.from('users').select('*').eq('id', decoded.sub).single();
+      user = data;
+    }
+    if (!user && decoded?.uid) {
+      const { data } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
+      user = data;
+    }
+    if (!user && decoded?.email) {
+      const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
+      user = data;
+    }
+    if (!user && decoded?.username) {
+      const { data } = await supabase.from('users').select('*').eq('username', decoded.username).single();
+      user = data;
+    }
 
     req.user = user ? {
-      id: user._id.toString(),
+      id: user.id.toString(),
       uid: user.firebase_uid || '',
       username: user.username,
       role: user.role,
@@ -799,16 +805,21 @@ const createNotification = async ({
   if (!normalizedRecipient || !normalizedMessage) return null;
   if (normalizedActor && normalizedActor === normalizedRecipient) return null;
 
-  const notification = await Notification.create({
-    recipientUsername: normalizedRecipient,
-    actorUsername: normalizedActor,
+  const { data, error } = await supabase.from('notifications').insert({
+    recipient_username: normalizedRecipient,
+    actor_username: normalizedActor,
     type: `${type ?? 'generic'}`.trim() || 'generic',
     message: normalizedMessage,
-    postId: `${postId ?? ''}`.trim(),
-    postTitle: `${postTitle ?? ''}`.trim(),
-  });
+    post_id: `${postId ?? ''}`.trim(),
+    post_title: `${postTitle ?? ''}`.trim(),
+  }).select().single();
 
-  return serializeNotification(notification);
+  if (error) {
+    console.error('Failed to create notification:', error.message);
+    return null;
+  }
+
+  return serializeNotification(data);
 };
 
 const getUserJoinedAt = (user) => {
@@ -833,29 +844,30 @@ const getUserJoinedAt = (user) => {
 
 const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
   const includePrivateFields = !!options?.includePrivateFields;
-  const postsCount = await Post.countDocuments({ author: user.username });
-  const followerCount = await User.countDocuments({ following: user.username });
+  const { count: postsCount } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('author', user.username);
+  const { count: followerCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).contains('following', [user.username]);
+  
   const following = getUniqueStrings(user.following);
-  const bookmarkedPostIds = getUniqueStrings(user.bookmarkedPostIds);
-  const reportedPostIds = getUniqueStrings(user.reportedPostIds);
+  const bookmarkedPostIds = getUniqueStrings(user.bookmarked_post_ids || user.bookmarkedPostIds);
+  const reportedPostIds = getUniqueStrings(user.reported_post_ids || user.reportedPostIds);
   const solutionsProposed = 8;
   const memberSince = getUserJoinedAt(user);
 
   const payload = {
     username: user.username,
-    displayName: user.displayName || '',
-    personalDescription: user.personalDescription || '',
+    displayName: user.display_name || user.displayName || '',
+    personalDescription: user.personal_description || user.personalDescription || '',
     role: user.role,
     gender: user.gender || '',
-    reputation: 540 + postsCount * 10,
+    reputation: 540 + (postsCount || 0) * 10,
     badges: ['Public Watchdog', 'Active Reporter'],
     streak: '7d',
-    postsCount,
+    postsCount: postsCount || 0,
     solutionsProposed,
-    profilePhotoUrl: user.profilePhotoUrl || '',
+    profilePhotoUrl: user.profile_photo_url || user.profilePhotoUrl || '',
     bookmarkedPostIds,
     following,
-    followerCount,
+    followerCount: followerCount || 0,
     followingCount: following.length,
     isFollowing: !!viewerUsername && following.includes(viewerUsername),
     memberSince: memberSince ? memberSince.toISOString() : null,
@@ -863,7 +875,7 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
 
   if (includePrivateFields) {
     payload.email = user.email || '';
-    payload.phoneNumber = user.phoneNumber || '';
+    payload.phoneNumber = user.phone_number || user.phoneNumber || '';
     payload.canChangePassword = !!user.password_hash && user.password_hash !== 'firebase_oauth';
     payload.reportedPostIds = reportedPostIds;
   }
@@ -1093,7 +1105,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
     const [existingUsernameOwner, existingEmailOwner] = await Promise.all([
       findUserByNormalizedUsername(normalizedUsername),
-      User.findOne({ email: normalizedEmail }),
+      supabase.from('users').select('*').eq('email', normalizedEmail).single().then(({ data }) => data),
     ]);
 
     if (existingUsernameOwner) {
@@ -1104,16 +1116,16 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = new User({
+    const { data: user, error } = await supabase.from('users').insert({
       username: normalizedUsername,
-      displayName: normalizedDisplayName,
+      display_name: normalizedDisplayName,
       email: normalizedEmail,
       gender: normalizedGender,
       role: 'CitizenReporter',
       password_hash: passwordHash,
-    });
+    }).select().single();
 
-    await user.save();
+    if (error) throw error;
 
     res.status(201).json({
       token: issueAuthToken(user),
@@ -1139,7 +1151,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Enter your password.' });
     }
 
-    const user = await User.findOne({ email: normalizedEmail });
+    const { data: user } = await supabase.from('users').select('*').eq('email', normalizedEmail).single();
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
@@ -1203,14 +1215,16 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
       return res.status(400).json({ error: usernameError });
     }
 
-    let user = await User.findOne({ firebase_uid: normalizedUid });
+    let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', normalizedUid).single();
     
     if (!user && hasValidEmail) {
-      user = await User.findOne({ email: normalizedEmail });
+      const { data } = await supabase.from('users').select('*').eq('email', normalizedEmail).single();
+      user = data;
     }
 
     if (!user && hasPhone) {
-      user = await User.findOne({ phoneNumber: normalizedPhoneNumber });
+      const { data } = await supabase.from('users').select('*').eq('phone_number', normalizedPhoneNumber).single();
+      user = data;
     }
 
     if (!user) {
@@ -1229,44 +1243,52 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
         }
       }
 
-      user = new User({
+      const { data: newUser, error } = await supabase.from('users').insert({
         username: resolvedUsername,
-        displayName: normalizedDisplayName,
+        display_name: normalizedDisplayName,
         firebase_uid: normalizedUid,
-        email: hasValidEmail ? normalizedEmail : undefined,
+        email: hasValidEmail ? normalizedEmail : null,
         gender: normalizedGender,
-        phoneNumber: hasPhone ? normalizedPhoneNumber : undefined,
+        phone_number: hasPhone ? normalizedPhoneNumber : null,
         role: 'CitizenReporter',
         password_hash: 'firebase_oauth'
-      });
+      }).select().single();
+      
+      if (error) throw error;
+      user = newUser;
     } else {
       if (user.firebase_uid && user.firebase_uid !== normalizedUid) {
         return res.status(409).json({ error: 'This account is already linked to another login.' });
       }
 
-      if (!user.firebase_uid) user.firebase_uid = normalizedUid;
+      const updateData = {};
+      if (!user.firebase_uid) updateData.firebase_uid = normalizedUid;
 
       const canUpdateEmail = !hasValidEmail || !user.email || user.email === normalizedEmail;
       if (!canUpdateEmail) {
-        const emailOwner = await User.findOne({ email: normalizedEmail, _id: { $ne: user._id } });
+        const { data: emailOwner } = await supabase.from('users').select('*').eq('email', normalizedEmail).neq('id', user.id).single();
         if (emailOwner) {
           return res.status(409).json({ error: 'Email already belongs to another account.' });
         }
       }
 
-      if (hasValidEmail) user.email = normalizedEmail;
-      if (hasPhone && user.phoneNumber && user.phoneNumber !== normalizedPhoneNumber) {
-        const phoneOwner = await User.findOne({ phoneNumber: normalizedPhoneNumber, _id: { $ne: user._id } });
+      if (hasValidEmail) updateData.email = normalizedEmail;
+      if (hasPhone && (user.phone_number || user.phoneNumber) && (user.phone_number || user.phoneNumber) !== normalizedPhoneNumber) {
+        const { data: phoneOwner } = await supabase.from('users').select('*').eq('phone_number', normalizedPhoneNumber).neq('id', user.id).single();
         if (phoneOwner) {
           return res.status(409).json({ error: 'Phone number already belongs to another account.' });
         }
       }
-      if (hasPhone) user.phoneNumber = normalizedPhoneNumber;
-      if (hasGender && normalizedGender) user.gender = normalizedGender;
-      if (!user.displayName && normalizedDisplayName) user.displayName = normalizedDisplayName;
-    }
+      if (hasPhone) updateData.phone_number = normalizedPhoneNumber;
+      if (hasGender && normalizedGender) updateData.gender = normalizedGender;
+      if (!(user.display_name || user.displayName) && normalizedDisplayName) updateData.display_name = normalizedDisplayName;
 
-    await user.save();
+      if (Object.keys(updateData).length > 0) {
+        const { data: updatedUser, error } = await supabase.from('users').update(updateData).eq('id', user.id).select().single();
+        if (error) throw error;
+        user = updatedUser;
+      }
+    }
     
     res.json({
       token: issueAuthToken(user),
@@ -1284,7 +1306,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
 app.get('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     res.json(await buildProfilePayload(user, req.user.username, { includePrivateFields: true }));
@@ -1300,11 +1322,8 @@ app.patch('/api/users/profile/gender', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Choose a gender option to continue.' });
     }
 
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: 'Profile not found' });
-
-    user.gender = normalizedGender;
-    await user.save();
+    const { data: user, error } = await supabase.from('users').update({ gender: normalizedGender }).eq('id', req.user.id).select().single();
+    if (error || !user) return res.status(404).json({ error: 'Profile not found' });
 
     res.json({ gender: user.gender });
   } catch (error) {
@@ -1318,12 +1337,12 @@ app.get('/api/users/:username', attachOptionalUser, async (req, res) => {
     const targetUsername = `${req.params.username ?? ''}`.trim();
     if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
 
-    const user = await User.findOne({ username: targetUsername });
+    const { data: user } = await supabase.from('users').select('*').eq('username', targetUsername).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     const payload = await buildProfilePayload(user, req.user?.username || '');
     const viewerFollowing = req.user
-      ? getUniqueStrings((await User.findById(req.user.id).select('following').lean())?.following)
+      ? getUniqueStrings((await supabase.from('users').select('following').eq('id', req.user.id).single()).data?.following)
       : [];
 
     res.json({
@@ -1346,11 +1365,11 @@ app.get('/api/users/:username/connections', attachOptionalUser, async (req, res)
       return res.status(400).json({ error: 'Connection type must be followers or following' });
     }
 
-    const targetUser = await User.findOne({ username: targetUsername }).select('username following').lean();
+    const { data: targetUser } = await supabase.from('users').select('username, following').eq('username', targetUsername).single();
     if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
 
     const viewerFollowing = req.user
-      ? getUniqueStrings((await User.findById(req.user.id).select('following').lean())?.following)
+      ? getUniqueStrings((await supabase.from('users').select('following').eq('id', req.user.id).single()).data?.following)
       : [];
 
     let connectionUsers = [];
@@ -1358,20 +1377,17 @@ app.get('/api/users/:username/connections', attachOptionalUser, async (req, res)
     if (connectionType === 'following') {
       const followingUsernames = getUniqueStrings(targetUser.following);
       if (followingUsernames.length > 0) {
-        const followingUsers = await User.find({ username: { $in: followingUsernames } })
-          .select('username role profilePhotoUrl')
-          .lean();
+        const { data: followingUsers } = await supabase.from('users').select('username, role, profile_photo_url').in('username', followingUsernames);
         const userByUsername = new Map(
-          followingUsers.map((user) => [user.username, user]),
+          followingUsers.map((u) => [u.username, u]),
         );
         connectionUsers = followingUsernames
           .map((username) => userByUsername.get(username))
           .filter(Boolean);
       }
     } else {
-      connectionUsers = await User.find({ following: targetUsername })
-        .select('username role profilePhotoUrl')
-        .lean();
+      const { data: followers } = await supabase.from('users').select('username, role, profile_photo_url').contains('following', [targetUsername]);
+      connectionUsers = followers || [];
       connectionUsers.sort((firstUser, secondUser) => firstUser.username.localeCompare(secondUser.username));
     }
 
@@ -1392,13 +1408,14 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
   try {
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
 
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     const nextPhotoUrl = `/uploads/${req.file.filename}`;
-    const previousPhotoUrl = user.profilePhotoUrl;
-    user.profilePhotoUrl = nextPhotoUrl;
-    await user.save();
+    const previousPhotoUrl = user.profile_photo_url || user.profilePhotoUrl;
+    
+    const { error } = await supabase.from('users').update({ profile_photo_url: nextPhotoUrl }).eq('id', req.user.id);
+    if (error) throw error;
 
     if (previousPhotoUrl && previousPhotoUrl !== nextPhotoUrl) {
       try {
@@ -1417,7 +1434,7 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
 
 app.patch('/api/users/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     const updates = req.body && typeof req.body === 'object' ? req.body : {};
@@ -1426,48 +1443,48 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
     const hasPersonalDescriptionUpdate = Object.prototype.hasOwnProperty.call(updates, 'personalDescription');
 
     if (!hasDisplayNameUpdate && !hasUsernameUpdate && !hasPersonalDescriptionUpdate) {
-      return res.status(400).json({ error: 'No profile changes were provided.' });
+      return res.status(400).json({ error: 'At least one field (displayName, username, personalDescription) is required.' });
     }
 
-    if (hasDisplayNameUpdate) {
-      const nextDisplayName = normalizeDisplayName(updates.displayName);
-      if (!nextDisplayName) {
-        return res.status(400).json({ error: 'Display name is required.' });
-      }
-      user.displayName = nextDisplayName;
-    }
+    const updateData = {};
+    const currentUsername = user.username;
 
-    if (hasPersonalDescriptionUpdate) {
-      user.personalDescription = normalizePersonalDescription(updates.personalDescription);
-    }
-
-    let nextToken = '';
     if (hasUsernameUpdate) {
       const { normalizedUsername, error: usernameError } = validateRequestedUsername(updates.username);
       if (usernameError) return res.status(400).json({ error: usernameError });
 
-      const currentUsername = `${user.username ?? ''}`.trim();
       if (normalizedUsername !== currentUsername) {
-        const existingUsernameOwner = await findUserByNormalizedUsername(normalizedUsername);
-        if (existingUsernameOwner && `${existingUsernameOwner._id}` !== `${user._id}`) {
-          return res.status(409).json({ error: 'That username is already taken.' });
-        }
-
-        user.username = normalizedUsername;
-        await user.save();
-        await renameUserReferences(currentUsername, normalizedUsername);
-        nextToken = issueAuthToken(user);
+        const existingUser = await findUserByNormalizedUsername(normalizedUsername);
+        if (existingUser) return res.status(409).json({ error: 'That username is already taken.' });
+        updateData.username = normalizedUsername;
       }
     }
 
-    if (!hasUsernameUpdate || !nextToken) {
-      await user.save();
-      nextToken = issueAuthToken(user);
+    if (hasDisplayNameUpdate) {
+      updateData.display_name = normalizeDisplayName(updates.displayName);
+    }
+
+    if (hasPersonalDescriptionUpdate) {
+      updateData.personal_description = normalizePersonalDescription(updates.personalDescription);
+    }
+
+    let updatedUser = user;
+    let nextToken = undefined;
+
+    if (Object.keys(updateData).length > 0) {
+      const { data, error } = await supabase.from('users').update(updateData).eq('id', user.id).select().single();
+      if (error) throw error;
+      updatedUser = data;
+      
+      if (updateData.username) {
+        nextToken = issueAuthToken(updatedUser);
+        await renameUserReferences(currentUsername, updateData.username);
+      }
     }
 
     res.json({
       token: nextToken,
-      profile: await buildProfilePayload(user, user.username, { includePrivateFields: true }),
+      profile: await buildProfilePayload(updatedUser, updatedUser.username, { includePrivateFields: true }),
     });
   } catch (error) {
     console.error('Error updating profile details:', error);
@@ -1477,7 +1494,7 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
 
 app.patch('/api/users/profile/password', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     if (!user.password_hash || user.password_hash === 'firebase_oauth') {
@@ -1497,8 +1514,8 @@ app.patch('/api/users/profile/password', authenticateToken, async (req, res) => 
       return res.status(401).json({ error: 'Current password is incorrect.' });
     }
 
-    user.password_hash = await bcrypt.hash(nextPassword, 12);
-    await user.save();
+    const newPasswordHash = await bcrypt.hash(nextPassword, 12);
+    await supabase.from('users').update({ password_hash: newPasswordHash }).eq('id', req.user.id);
 
     res.json({ ok: true });
   } catch (error) {
@@ -1513,9 +1530,12 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
     if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
     if (targetUsername === req.user.username) return res.status(400).json({ error: 'You cannot follow yourself' });
 
-    const [viewer, targetUser] = await Promise.all([
-      User.findById(req.user.id),
-      User.findOne({ username: new RegExp(`^${targetUsername}$`, 'i') }),
+    const [
+      { data: viewer },
+      { data: targetUser }
+    ] = await Promise.all([
+      supabase.from('users').select('*').eq('id', req.user.id).single(),
+      supabase.from('users').select('*').ilike('username', targetUsername).single(),
     ]);
 
     if (!viewer) return res.status(404).json({ error: 'Profile not found' });
@@ -1526,11 +1546,11 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
 
     const following = getUniqueStrings(viewer.following);
     const isFollowing = following.includes(actualTargetUser);
-    viewer.following = isFollowing
+    const nextFollowing = isFollowing
       ? following.filter((username) => username !== actualTargetUser)
       : [...following, actualTargetUser];
 
-    await viewer.save();
+    await supabase.from('users').update({ following: nextFollowing }).eq('id', viewer.id);
 
     if (!isFollowing) {
       await createNotification({
@@ -1541,12 +1561,13 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
       });
     }
 
-    const followerCount = await User.countDocuments({ following: actualTargetUser });
+    const { count: followerCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).contains('following', [actualTargetUser]);
+    
     res.json({
-      following: getUniqueStrings(viewer.following),
+      following: nextFollowing,
       targetUsername: actualTargetUser,
       isFollowing: !isFollowing,
-      followerCount,
+      followerCount: followerCount || 0,
       followingCount: getUniqueStrings(targetUser.following).length,
     });
   } catch (error) {
@@ -1558,65 +1579,56 @@ app.post('/api/users/:username/follow', authenticateToken, async (req, res) => {
 app.get('/api/chats', authenticateToken, async (req, res) => {
   try {
     const viewerUsername = `${req.user?.username ?? ''}`.trim();
-    const viewerUsernameKey = getUsernameKey(viewerUsername);
-    const viewerUsernameMatcher = buildFlexibleUsernameMatcher(viewerUsername);
     if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
-    if (!viewerUsernameKey || !viewerUsernameMatcher) return res.status(401).json({ error: 'Unauthorized' });
 
-    const messages = await Message.find({
-      $or: [
-        { senderUsername: viewerUsernameMatcher },
-        { recipientUsername: viewerUsernameMatcher },
-      ],
-    }).sort({ createdAt: -1 }).lean();
+    // Fetch all messages involving the viewer
+    const { data: messages, error: messagesError } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`sender_username.eq.${viewerUsername},recipient_username.eq.${viewerUsername}`)
+      .order('created_at', { ascending: false });
+
+    if (messagesError) throw messagesError;
+
     const unreadCounts = messages.reduce((counts, message) => {
-      const senderUsername = `${message?.senderUsername ?? ''}`.trim();
-      const recipientUsername = `${message?.recipientUsername ?? ''}`.trim();
-      const senderUsernameKey = getUsernameKey(senderUsername);
-      const recipientUsernameKey = getUsernameKey(recipientUsername);
+      const senderUsername = `${message.sender_username ?? ''}`.trim();
+      const recipientUsername = `${message.recipient_username ?? ''}`.trim();
 
-      if (recipientUsernameKey !== viewerUsernameKey || message?.read || !senderUsernameKey) return counts;
-      counts[senderUsernameKey] = (counts[senderUsernameKey] ?? 0) + 1;
+      if (recipientUsername !== viewerUsername || message.read || !senderUsername) return counts;
+      counts[senderUsername] = (counts[senderUsername] ?? 0) + 1;
       return counts;
     }, {});
 
-    const latestMessageByUsernameKey = new Map();
-    const counterpartLabelByUsernameKey = new Map();
+    const latestMessageByUsername = new Map();
+    const counterpartLabelByUsername = new Map();
     messages.forEach((message) => {
-      const senderUsername = `${message?.senderUsername ?? ''}`.trim();
-      const recipientUsername = `${message?.recipientUsername ?? ''}`.trim();
-      const senderUsernameKey = getUsernameKey(senderUsername);
-      const recipientUsernameKey = getUsernameKey(recipientUsername);
-      const counterpartUsername = senderUsernameKey === viewerUsernameKey ? recipientUsername : senderUsername;
-      const counterpartUsernameKey = senderUsernameKey === viewerUsernameKey ? recipientUsernameKey : senderUsernameKey;
+      const senderUsername = `${message.sender_username ?? ''}`.trim();
+      const recipientUsername = `${message.recipient_username ?? ''}`.trim();
+      const counterpartUsername = senderUsername === viewerUsername ? recipientUsername : senderUsername;
 
-      if (!counterpartUsername || !counterpartUsernameKey || latestMessageByUsernameKey.has(counterpartUsernameKey)) return;
+      if (!counterpartUsername || latestMessageByUsername.has(counterpartUsername)) return;
 
-      latestMessageByUsernameKey.set(counterpartUsernameKey, message);
-      counterpartLabelByUsernameKey.set(counterpartUsernameKey, counterpartUsername);
+      latestMessageByUsername.set(counterpartUsername, message);
+      counterpartLabelByUsername.set(counterpartUsername, counterpartUsername);
     });
 
-    const counterpartUsernameKeys = [...latestMessageByUsernameKey.keys()];
-    const counterpartMatchers = counterpartUsernameKeys
-      .map((usernameKey) => buildFlexibleUsernameMatcher(usernameKey))
-      .filter(Boolean);
-    const counterpartUsers = counterpartMatchers.length > 0
-      ? await User.find({ $or: counterpartMatchers.map((matcher) => ({ username: matcher })) })
-        .select('username displayName role profilePhotoUrl')
-        .lean()
-      : [];
-    const userByUsernameKey = new Map(counterpartUsers.map((user) => [getUsernameKey(user.username), user]));
+    const counterpartUsernames = [...latestMessageByUsername.keys()];
+    const { data: counterpartUsers } = counterpartUsernames.length > 0
+      ? await supabase.from('users').select('username, display_name, role, profile_photo_url').in('username', counterpartUsernames)
+      : { data: [] };
+    
+    const userByUsername = new Map(counterpartUsers.map((user) => [user.username, user]));
 
-    const threads = counterpartUsernameKeys.map((usernameKey) => {
-      const user = userByUsernameKey.get(usernameKey) ?? {};
-      const fallbackUsername = `${counterpartLabelByUsernameKey.get(usernameKey) ?? ''}`.trim();
+    const threads = counterpartUsernames.map((username) => {
+      const user = userByUsername.get(username) ?? {};
+      const fallbackUsername = `${counterpartLabelByUsername.get(username) ?? ''}`.trim();
       return {
         username: `${user?.username ?? fallbackUsername}`.trim(),
-        displayName: `${user?.displayName ?? fallbackUsername}`.trim(),
+        displayName: `${user?.display_name || user?.displayName || fallbackUsername}`.trim(),
         role: `${user?.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
-        profilePhotoUrl: `${user?.profilePhotoUrl ?? ''}`.trim(),
-        unreadCount: unreadCounts[usernameKey] ?? 0,
-        lastMessage: serializeMessage(latestMessageByUsernameKey.get(usernameKey), viewerUsername),
+        profilePhotoUrl: `${user?.profile_photo_url || user?.profilePhotoUrl || ''}`.trim(),
+        unreadCount: unreadCounts[username] ?? 0,
+        lastMessage: serializeMessage(latestMessageByUsername.get(username), viewerUsername),
       };
     }).filter((thread) => thread.username);
 
@@ -1631,49 +1643,31 @@ app.get('/api/chats/:username/messages', authenticateToken, async (req, res) => 
   try {
     const viewerUsername = `${req.user?.username ?? ''}`.trim();
     const targetUsername = `${req.params.username ?? ''}`.trim();
-    const viewerUsernameKey = getUsernameKey(viewerUsername);
-    const targetUsernameKey = getUsernameKey(targetUsername);
-    const viewerUsernameMatcher = buildFlexibleUsernameMatcher(viewerUsername);
     if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
     if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
-    if (!viewerUsernameKey || !targetUsernameKey || !viewerUsernameMatcher) {
-      return res.status(400).json({ error: 'Username is required' });
-    }
-    if (targetUsernameKey === viewerUsernameKey) return res.status(400).json({ error: 'Cannot open a private chat with yourself' });
+    if (targetUsername === viewerUsername) return res.status(400).json({ error: 'Cannot open a private chat with yourself' });
 
-    const targetUser = await User.findOne({ username: buildFlexibleUsernameMatcher(targetUsername) })
-      .select('username displayName role profilePhotoUrl')
-      .lean();
+    const { data: targetUser } = await supabase.from('users').select('username, display_name, role, profile_photo_url').ilike('username', targetUsername).single();
     if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
 
     const actualTargetUser = targetUser.username;
-    const targetUsernameMatcher = buildFlexibleUsernameMatcher(actualTargetUser);
-    if (!targetUsernameMatcher) return res.status(404).json({ error: 'Profile not found' });
 
-    const messages = await Message.find({
-      $or: [
-        { senderUsername: viewerUsernameMatcher, recipientUsername: targetUsernameMatcher },
-        { senderUsername: targetUsernameMatcher, recipientUsername: viewerUsernameMatcher },
-      ],
-    }).sort({ createdAt: 1 }).lean();
+    const { data: messages } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_username.eq.${viewerUsername},recipient_username.eq.${actualTargetUser}),and(sender_username.eq.${actualTargetUser},recipient_username.eq.${viewerUsername})`)
+      .order('created_at', { ascending: true });
 
-    await Message.updateMany(
-      {
-        senderUsername: targetUsernameMatcher,
-        recipientUsername: viewerUsernameMatcher,
-        read: false,
-      },
-      { $set: { read: true } },
-    );
+    await supabase.from('messages').update({ read: true }).eq('sender_username', actualTargetUser).eq('recipient_username', viewerUsername).eq('read', false);
 
     res.json({
       thread: {
         username: targetUser.username,
-        displayName: `${targetUser.displayName ?? ''}`.trim(),
+        displayName: `${targetUser.display_name || targetUser.displayName || ''}`.trim(),
         role: `${targetUser.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
-        profilePhotoUrl: `${targetUser.profilePhotoUrl ?? ''}`.trim(),
+        profilePhotoUrl: `${targetUser.profile_photo_url || targetUser.profilePhotoUrl || ''}`.trim(),
       },
-      messages: messages.map((message) => serializeMessage(message, viewerUsername)),
+      messages: (messages || []).map((message) => serializeMessage(message, viewerUsername)),
     });
   } catch (error) {
     console.error('Error fetching chat messages:', error);
@@ -1686,28 +1680,27 @@ app.post('/api/chats/:username/messages', authenticateToken, async (req, res) =>
     const viewerUsername = `${req.user?.username ?? ''}`.trim();
     const targetUsername = `${req.params.username ?? ''}`.trim();
     const text = `${req.body?.text ?? ''}`.trim();
-    const viewerUsernameKey = getUsernameKey(viewerUsername);
-    const targetUsernameKey = getUsernameKey(targetUsername);
 
     if (!viewerUsername) return res.status(401).json({ error: 'Unauthorized' });
     if (!targetUsername) return res.status(400).json({ error: 'Username is required' });
-    if (!viewerUsernameKey || !targetUsernameKey) return res.status(400).json({ error: 'Username is required' });
-    if (targetUsernameKey === viewerUsernameKey) return res.status(400).json({ error: 'Cannot send a private message to yourself' });
+    if (targetUsername === viewerUsername) return res.status(400).json({ error: 'Cannot send a private message to yourself' });
     if (!text) return res.status(400).json({ error: 'Message text is required' });
     if (text.length > 2000) return res.status(400).json({ error: 'Message is too long' });
 
-    const targetUser = await User.findOne({ username: buildFlexibleUsernameMatcher(targetUsername) }).select('username').lean();
+    const { data: targetUser } = await supabase.from('users').select('username').ilike('username', targetUsername).single();
     if (!targetUser) return res.status(404).json({ error: 'Profile not found' });
 
     const actualTargetUser = targetUser.username;
 
-    const message = await Message.create({
-      senderUsername: viewerUsername,
-      recipientUsername: actualTargetUser,
+    const { data: message, error } = await supabase.from('messages').insert({
+      sender_username: viewerUsername,
+      recipient_username: actualTargetUser,
       participants: buildParticipants(viewerUsername, actualTargetUser),
       text,
       read: false,
-    });
+    }).select().single();
+
+    if (error) throw error;
 
     await createNotification({
       recipientUsername: actualTargetUser,
@@ -1729,8 +1722,9 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.get('/api/posts', async (req, res) => {
   try {
-    const posts = await Post.find().sort({ _id: -1 }).lean();
-    res.json(posts.map(normalizePost));
+    const { data: posts, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json((posts || []).map(normalizePost));
   } catch (error) {
     console.error('Error fetching posts:', error);
     res.status(500).json({ error: 'Database connection error' });
@@ -1739,10 +1733,10 @@ app.get('/api/posts', async (req, res) => {
 
 app.get('/api/posts/:postId/ai-summary', async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const summary = await createAiSolutionSummary(post);
+    const summary = await createAiSolutionSummary(normalizePost(post));
     res.json(summary);
   } catch (error) {
     console.error('Error generating AI solution summary:', error);
@@ -1801,14 +1795,23 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
   }
 
   try {
-    const newPost = new Post({
-      id, location: location || 'India', department: department || 'General',
-      title, description, author, createdAt: new Date(), media: media || 'IMAGE',
-      tag: department || 'Issue', accent: 'from-slate-900 via-slate-800 to-slate-700',
-      fixes, mediaList
-    });
+    const { data: newPost, error } = await supabase.from('posts').insert({
+      id,
+      location: location || 'India',
+      department: department || 'General',
+      title,
+      description,
+      author,
+      created_at: new Date(),
+      media: media || 'IMAGE',
+      tag: department || 'Issue',
+      accent: 'from-slate-900 via-slate-800 to-slate-700',
+      fixes,
+      media_list: mediaList
+    }).select().single();
     
-    await newPost.save();
+    if (error) throw error;
+
     broadcastPostUpdate(newPost, 'created');
     res.status(201).json(normalizePost(newPost));
   } catch (error) {
@@ -1819,15 +1822,16 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
 
 app.delete('/api/posts/:postId', authenticateToken, async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
     if (post.author !== req.user.username) {
       return res.status(403).json({ error: 'You can only delete your own posts.' });
     }
 
-    const mediaFilePaths = collectPostMediaFilePaths(post);
-    await Post.deleteOne({ _id: post._id });
+    const mediaFilePaths = collectPostMediaFilePaths(normalizePost(post));
+    const { error } = await supabase.from('posts').delete().eq('id', post.id);
+    if (error) throw error;
 
     await Promise.all(
       mediaFilePaths.map(async (mediaFilePath) => {
@@ -1849,22 +1853,30 @@ app.delete('/api/posts/:postId', authenticateToken, async (req, res) => {
 
 app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const currentSupportCount = toCount(post.support);
-    if (!Array.isArray(post.supporters)) post.supporters = [];
-    const existingIndex = post.supporters.findIndex((username) => username === req.user.username);
+    const supporters = Array.isArray(post.supporters) ? post.supporters : [];
+    const username = req.user.username;
+    const existingIndex = supporters.indexOf(username);
 
     const addedSupport = existingIndex < 0;
-    if (existingIndex >= 0) {
-      post.supporters.splice(existingIndex, 1);
-      post.support = Math.max(currentSupportCount - 1, 0);
-    } else {
-      post.supporters.push(req.user.username);
-      post.support = currentSupportCount + 1;
-    }
-    await post.save();
+    const nextSupporters = addedSupport
+      ? [...supporters, username]
+      : supporters.filter((u) => u !== username);
+
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({
+        supporters: nextSupporters,
+        support: nextSupporters.length
+      })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     if (addedSupport) {
       await createNotification({
         recipientUsername: post.author,
@@ -1875,8 +1887,8 @@ app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
         message: `${req.user.username} supported your report "${post.title}".`,
       });
     }
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error updating support:', error);
     res.status(500).json({ error: 'Failed to update support' });
@@ -1885,22 +1897,23 @@ app.post('/api/posts/:postId/support', authenticateToken, async (req, res) => {
 
 app.post('/api/posts/:postId/bookmark', authenticateToken, async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId }).select('id').lean();
+    const { data: post } = await supabase.from('posts').select('id').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('id, bookmarked_post_ids').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
-    const bookmarkedPostIds = getUniqueStrings(user.bookmarkedPostIds);
+    const bookmarkedPostIds = getUniqueStrings(user.bookmarked_post_ids || user.bookmarkedPostIds);
     const isBookmarked = bookmarkedPostIds.includes(post.id);
-    user.bookmarkedPostIds = isBookmarked
+    const nextBookmarks = isBookmarked
       ? bookmarkedPostIds.filter((postId) => postId !== post.id)
       : [post.id, ...bookmarkedPostIds];
 
-    await user.save();
+    const { error } = await supabase.from('users').update({ bookmarked_post_ids: nextBookmarks }).eq('id', user.id);
+    if (error) throw error;
 
     res.json({
-      bookmarkedPostIds: getUniqueStrings(user.bookmarkedPostIds),
+      bookmarkedPostIds: nextBookmarks,
       saved: !isBookmarked,
       postId: post.id,
     });
@@ -1912,28 +1925,29 @@ app.post('/api/posts/:postId/bookmark', authenticateToken, async (req, res) => {
 
 app.post('/api/posts/:postId/report', authenticateToken, async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId }).select('id author').lean();
+    const { data: post } = await supabase.from('posts').select('id, author').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
     if (post.author === req.user.username) {
       return res.status(400).json({ error: 'You cannot report your own post' });
     }
 
-    const user = await User.findById(req.user.id);
+    const { data: user } = await supabase.from('users').select('id, reported_post_ids').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
-    const reportedPostIds = getUniqueStrings(user.reportedPostIds);
+    const reportedPostIds = getUniqueStrings(user.reported_post_ids || user.reportedPostIds);
     const alreadyReported = reportedPostIds.includes(post.id);
+    let nextReports = reportedPostIds;
 
     if (!alreadyReported) {
-      user.reportedPostIds = [post.id, ...reportedPostIds];
-      await user.save();
+      nextReports = [post.id, ...reportedPostIds];
+      await supabase.from('users').update({ reported_post_ids: nextReports }).eq('id', user.id);
     }
 
     res.json({
       postId: post.id,
       reported: true,
       alreadyReported,
-      reportedPostIds: alreadyReported ? reportedPostIds : getUniqueStrings(user.reportedPostIds),
+      reportedPostIds: nextReports,
     });
   } catch (error) {
     console.error('Error reporting post:', error);
@@ -1946,18 +1960,29 @@ app.post('/api/posts/:postId/comments', authenticateToken, async (req, res) => {
   if (!text) return res.status(400).json({ error: 'Comment text is required' });
 
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    if (!Array.isArray(post.commentsList)) post.commentsList = [];
-    post.commentsList.push({
+    const commentsList = Array.isArray(post.comments_list || post.commentsList) ? (post.comments_list || post.commentsList) : [];
+    const newComment = {
       author: req.user.username,
       text,
       createdAt: new Date(),
-    });
-    post.comments = post.commentsList.length;
+    };
+    const nextComments = [...commentsList, newComment];
 
-    await post.save();
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({
+        comments_list: nextComments,
+        comments: nextComments.length
+      })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     await createNotification({
       recipientUsername: post.author,
       actorUsername: req.user.username,
@@ -1966,8 +1991,8 @@ app.post('/api/posts/:postId/comments', authenticateToken, async (req, res) => {
       postTitle: post.title,
       message: `${req.user.username} commented on your report "${post.title}".`,
     });
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error adding comment:', error);
     res.status(500).json({ error: 'Failed to add comment' });
@@ -1979,26 +2004,38 @@ app.post('/api/posts/:postId/solutions', authenticateToken, async (req, res) => 
   if (!text) return res.status(400).json({ error: 'Solution text is required' });
 
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    if (!Array.isArray(post.solutionsList)) post.solutionsList = [];
-    post.solutionsList.push({
+    const solutionsList = Array.isArray(post.solutions_list || post.solutionsList) ? (post.solutions_list || post.solutionsList) : [];
+    const newSolution = {
       author: req.user.username,
       text,
       createdAt: new Date(),
       upvoters: [],
       downvoters: [],
       replies: [],
-    });
-    post.solutions = post.solutionsList.length;
+    };
+    const nextSolutions = [...solutionsList, newSolution];
 
-    if (!Array.isArray(post.fixes)) post.fixes = [];
-    if (!post.fixes.includes(text)) post.fixes.unshift(text);
-    post.fixes = post.fixes.slice(0, 8);
+    const currentFixes = Array.isArray(post.fixes) ? post.fixes : [];
+    let nextFixes = [...currentFixes];
+    if (!nextFixes.includes(text)) nextFixes.unshift(text);
+    nextFixes = nextFixes.slice(0, 8);
 
-    post.markModified('solutionsList');
-    await post.save();
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({
+        solutions_list: nextSolutions,
+        solutions: nextSolutions.length,
+        fixes: nextFixes
+      })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     await createNotification({
       recipientUsername: post.author,
       actorUsername: req.user.username,
@@ -2007,8 +2044,8 @@ app.post('/api/posts/:postId/solutions', authenticateToken, async (req, res) => 
       postTitle: post.title,
       message: `${req.user.username} proposed a solution on your report "${post.title}".`,
     });
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error adding solution:', error);
     res.status(500).json({ error: 'Failed to add solution' });
@@ -2026,19 +2063,21 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
   }
 
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const solution = ensureWritableSolution(post, solutionIndex);
+    const solutionsList = Array.isArray(post.solutions_list || post.solutionsList) ? (post.solutions_list || post.solutionsList) : [];
+    const solution = solutionsList[solutionIndex];
     if (!solution) return res.status(404).json({ error: 'Solution not found' });
+    
     const targetEntry = ensureWritableDiscussionTarget(solution, targetPath);
     if (!targetEntry) return res.status(404).json({ error: 'Reply not found' });
 
     const username = req.user.username;
     const hadUpvote = Array.isArray(targetEntry.upvoters) && targetEntry.upvoters.includes(username);
     const hadDownvote = Array.isArray(targetEntry.downvoters) && targetEntry.downvoters.includes(username);
-    targetEntry.upvoters = targetEntry.upvoters.filter((value) => value !== username);
-    targetEntry.downvoters = targetEntry.downvoters.filter((value) => value !== username);
+    targetEntry.upvoters = (targetEntry.upvoters || []).filter((value) => value !== username);
+    targetEntry.downvoters = (targetEntry.downvoters || []).filter((value) => value !== username);
 
     if (voteType === 'up' && !hadUpvote) {
       targetEntry.upvoters.push(username);
@@ -2049,8 +2088,15 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
     const createdUpvote = voteType === 'up' && !hadUpvote;
     const createdDownvote = voteType === 'down' && !hadDownvote;
 
-    post.markModified('solutionsList');
-    await post.save();
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({ solutions_list: solutionsList })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     if (createdUpvote || createdDownvote) {
       const targetLabel = targetPath.length > 0 ? 'reply' : 'solution';
       await createNotification({
@@ -2064,8 +2110,8 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/vote', authenticateToken, 
           : `${req.user.username} disagreed with your ${targetLabel} on "${post.title}".`,
       });
     }
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error voting on solution:', error);
     res.status(500).json({ error: 'Failed to update solution vote' });
@@ -2081,18 +2127,28 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
   if (!text) return res.status(400).json({ error: 'Reply text is required' });
 
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const solution = ensureWritableSolution(post, solutionIndex);
+    const solutionsList = Array.isArray(post.solutions_list || post.solutionsList) ? (post.solutions_list || post.solutionsList) : [];
+    const solution = solutionsList[solutionIndex];
     if (!solution) return res.status(404).json({ error: 'Solution not found' });
+    
     const parentEntry = ensureWritableDiscussionTarget(solution, parentPath);
     if (!parentEntry) return res.status(404).json({ error: 'Reply target not found' });
 
+    if (!Array.isArray(parentEntry.replies)) parentEntry.replies = [];
     parentEntry.replies.push(createDiscussionEntry(req.user.username, text));
 
-    post.markModified('solutionsList');
-    await post.save();
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({ solutions_list: solutionsList })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     const targetLabel = parentPath.length > 0 ? 'reply' : 'solution';
     await createNotification({
       recipientUsername: parentEntry.author,
@@ -2102,8 +2158,8 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
       postTitle: post.title,
       message: `${req.user.username} replied to your ${targetLabel} on "${post.title}".`,
     });
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error replying to solution:', error);
     res.status(500).json({ error: 'Failed to add solution reply' });
@@ -2112,11 +2168,19 @@ app.post('/api/posts/:postId/solutions/:solutionIndex/replies', authenticateToke
 
 app.post('/api/posts/:postId/share', attachOptionalUser, async (req, res) => {
   try {
-    const post = await Post.findOne({ id: req.params.postId });
+    const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    post.shares = toCount(post.shares) + 1;
-    await post.save();
+    const nextShares = (toCount(post.shares) || 0) + 1;
+    const { data: updatedPost, error } = await supabase
+      .from('posts')
+      .update({ shares: nextShares })
+      .eq('id', post.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
     await createNotification({
       recipientUsername: post.author,
       actorUsername: req.user?.username || '',
@@ -2127,8 +2191,8 @@ app.post('/api/posts/:postId/share', attachOptionalUser, async (req, res) => {
         ? `${req.user.username} shared your report "${post.title}".`
         : `Someone shared your report "${post.title}".`,
     });
-    broadcastPostUpdate(post);
-    res.json(normalizePost(post));
+    broadcastPostUpdate(updatedPost);
+    res.json(normalizePost(updatedPost));
   } catch (error) {
     console.error('Error updating share:', error);
     res.status(500).json({ error: 'Failed to update share' });
@@ -2137,8 +2201,9 @@ app.post('/api/posts/:postId/share', attachOptionalUser, async (req, res) => {
 
 app.get('/api/cities', async (req, res) => {
   try {
-    const cities = await City.find().sort({ issues: -1 }).lean();
-    res.json(cities);
+    const { data: cities, error } = await supabase.from('cities').select('*').order('issues', { ascending: false });
+    if (error) throw error;
+    res.json(cities || []);
   } catch {
     res.status(500).json({ error: 'Database connection error' });
   }
@@ -2146,12 +2211,20 @@ app.get('/api/cities', async (req, res) => {
 
 app.get('/api/notifications', attachOptionalUser, async (req, res) => {
   try {
-    const usernameMatcher = buildFlexibleUsernameMatcher(req.user?.username ?? '');
-    const query = usernameMatcher
-      ? { recipientUsername: usernameMatcher }
-      : { recipientUsername: '' };
-    const notifications = await Notification.find(query).sort({ created_at: -1 }).limit(20).lean();
-    res.json(notifications.map(serializeNotification));
+    const viewerUsername = `${req.user?.username ?? ''}`.trim();
+    if (!viewerUsername) {
+      return res.json([]);
+    }
+    
+    const { data: notifications, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('recipient_username', viewerUsername)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) throw error;
+    res.json((notifications || []).map(serializeNotification));
   } catch (error) {
     console.error('Error fetching notifications:', error);
     res.status(500).json({ error: 'Database connection error' });
@@ -2160,15 +2233,18 @@ app.get('/api/notifications', attachOptionalUser, async (req, res) => {
 
 app.patch('/api/notifications/read', authenticateToken, async (req, res) => {
   try {
-    const usernameMatcher = buildFlexibleUsernameMatcher(req.user?.username ?? '');
-    if (!usernameMatcher) return res.status(400).json({ error: 'Username is required' });
+    const viewerUsername = `${req.user?.username ?? ''}`.trim();
+    if (!viewerUsername) return res.status(400).json({ error: 'Username is required' });
 
-    const result = await Notification.updateMany(
-      { recipientUsername: usernameMatcher, read: false },
-      { $set: { read: true } },
-    );
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('recipient_username', viewerUsername)
+      .eq('read', false);
 
-    res.json({ ok: true, updatedCount: result.modifiedCount ?? 0 });
+    if (error) throw error;
+
+    res.json({ ok: true });
   } catch (error) {
     console.error('Error marking notifications as read:', error);
     res.status(500).json({ error: 'Failed to mark notifications as read' });

@@ -1,11 +1,7 @@
-import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import User from './models/User.js';
-import Post from './models/Post.js';
-import City from './models/City.js';
-import Notification from './models/Notification.js';
+import { supabase } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -154,42 +150,55 @@ const toCount = (value) => {
 
 export async function seed() {
   try {
-    // We already have a connection if called from db.js, but let's check
-    if (mongoose.connection.readyState === 0) {
-      await mongoose.connect(process.env.MONGODB_URI);
-    }
     console.log('Clearing old data...');
     
-    await Post.deleteMany({});
-    await City.deleteMany({});
-    await Notification.deleteMany({});
-    await User.deleteMany({});
+    await supabase.from('posts').delete().neq('id', '');
+    await supabase.from('cities').delete().neq('city', '');
+    await supabase.from('notifications').delete().neq('message', '');
+    await supabase.from('users').delete().neq('username', '');
 
     console.log('Inserting real-world Users...');
     const users = [...new Set(realPosts.map(p => p.author))];
     for (const username of users) {
-      await User.updateOne({ username }, { username, role: 'User' }, { upsert: true });
+      await supabase.from('users').upsert({ username, role: 'User' }, { onConflict: 'username' });
     }
     
     console.log('Inserting real-world Posts...');
     for (const post of realPosts) {
       const normalizedPost = {
-        ...post,
+        id: post.id,
+        author: post.author,
+        title: post.title,
+        description: post.description,
+        location: post.location,
+        department: post.department,
+        media: post.media,
+        tag: post.tag,
+        accent: post.accent,
         support: toCount(post.support),
         comments: toCount(post.comments),
         solutions: toCount(post.solutions),
+        created_at: new Date(Date.now() - (parseInt(post.time) || 1) * 3600000), // Approximate date
+        fixes: post.fixes || [],
+        media_list: post.mediaList || []
       };
-      await Post.updateOne({ id: post.id }, normalizedPost, { upsert: true });
+      const { error } = await supabase.from('posts').upsert(normalizedPost, { onConflict: 'id' });
+      if (error) {
+        console.error(`Error inserting post ${post.id}:`, error.message);
+      }
     }
 
     console.log('Inserting real-world Cities...');
     for (const city of realCities) {
-      await City.updateOne({ city: city.city }, city, { upsert: true });
+      await supabase.from('cities').upsert(city, { onConflict: 'city' });
     }
 
     console.log('Inserting real-world Notifications...');
     for (const message of realNotifications) {
-      await Notification.create({ message });
+      await supabase.from('notifications').insert({ 
+        message, 
+        recipient_username: 'CleanAirDelhi', // Assign to one of the seeded users
+      });
     }
 
     console.log('Real data seeded successfully!');
