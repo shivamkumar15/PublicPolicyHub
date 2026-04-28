@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: ['selector', '[data-theme="dark"]'],
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -12,9 +13,9 @@ module.exports = {
           text: '#111827',
         },
       },
-      fontFamily: {
-        sans: ['Manrope', 'Segoe UI', 'sans-serif'],
-        display: ['Space Grotesk', 'Manrope', 'sans-serif'],
+fontFamily: {
+        sans: ['Inter', 'Segoe UI', 'sans-serif'],
+        display: ['Inter', 'sans-serif'],
       },
       keyframes: {
         rise: {

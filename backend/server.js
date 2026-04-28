@@ -43,7 +43,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'better_india_secret_key_123';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const sseClients = new Set();
 
 // Middleware
@@ -651,19 +651,7 @@ const generateUniqueUsername = async (rawUsername, uid) => {
   throw new Error('Unable to generate a unique username');
 };
 
-const issueAuthToken = (user) => (
-  jwt.sign(
-    {
-      sub: user.id.toString(),
-      uid: user.firebase_uid || '',
-      username: user.username,
-      role: user.role,
-      email: user.email || '',
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  )
-);
+
 
 // Auth Middleware
 const authenticateToken = async (req, res, next) => {
@@ -671,6 +659,11 @@ const authenticateToken = async (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
   
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+
+  if (admin.apps.length === 0) {
+    console.error('Auth verification error: Firebase Admin SDK not initialized.');
+    return res.status(500).json({ error: 'Server configuration error: Firebase not initialized.' });
+  }
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
@@ -702,7 +695,7 @@ const attachOptionalUser = async (req, _res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) {
+  if (!token || admin.apps.length === 0) {
     req.user = null;
     next();
     return;
@@ -876,9 +869,9 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
 
 const buildConnectionListEntry = (user, viewerFollowing = [], viewerUsername = '') => ({
   username: user.username,
-  displayName: user.displayName || '',
+  displayName: user.displayName || user.display_name || '',
   role: user.role || 'CitizenReporter',
-  profilePhotoUrl: user.profilePhotoUrl || '',
+  profilePhotoUrl: user.profilePhotoUrl || user.profile_photo_url || '',
   isOwnProfile: !!viewerUsername && user.username === viewerUsername,
   isFollowing: !!viewerUsername && viewerFollowing.includes(user.username),
 });
@@ -900,20 +893,7 @@ const buildFallbackSolutionSummary = (solutionEntries) => {
 };
 
 const extractOpenAiOutputText = (data) => {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
-    return data.output_text.trim();
-  }
-
-  const outputItems = Array.isArray(data?.output) ? data.output : [];
-  const fragments = outputItems.flatMap((item) => {
-    const content = Array.isArray(item?.content) ? item.content : [];
-    return content
-      .filter((part) => part?.type === 'output_text' && typeof part?.text === 'string')
-      .map((part) => part.text.trim())
-      .filter(Boolean);
-  });
-
-  return fragments.join('\n').trim();
+  return data?.choices?.[0]?.message?.content || data?.output_text || '';
 };
 
 const parseOpenAiSolutionSummary = (data) => {
@@ -1000,39 +980,27 @@ const createAiSolutionSummary = async (post) => {
   ].join('\n');
 
   try {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
-        input: prompt,
+        model: OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a civic engagement assistant summarizing community solutions.' },
+          { role: 'user', content: prompt }
+        ],
         temperature: 0.3,
-        max_output_tokens: 220,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'solution_summary',
-            strict: true,
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                most_agreed: { type: 'string' },
-                common_solution: { type: 'string' },
-              },
-              required: ['most_agreed', 'common_solution'],
-            },
-          },
-        },
+        max_tokens: 250,
+        response_format: { type: 'json_object' },
       }),
     });
 
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data?.error?.message || 'OpenAI request failed');
+      throw new Error(data?.error?.message || `OpenAI request failed with status ${response.status}`);
     }
 
     const parsed = parseOpenAiSolutionSummary(data);
@@ -1076,102 +1044,27 @@ app.get('/api/auth/username-availability', async (req, res) => {
   }
 });
 
+/*
+// --- Legacy Auth Routes (Deprecated in favor of Firebase) ---
 app.post('/api/auth/signup', async (req, res) => {
-  try {
-    const { normalizedUsername, error: usernameError } = validateRequestedUsername(req.body?.username);
-    const normalizedDisplayName = normalizeDisplayName(req.body?.displayName);
-    const normalizedEmail = normalizeEmail(req.body?.email);
-    const normalizedGender = normalizeGender(req.body?.gender);
-    const password = `${req.body?.password ?? ''}`;
-
-    if (usernameError) {
-      return res.status(400).json({ error: usernameError });
-    }
-    if (!normalizedEmail || !normalizedEmail.includes('@')) {
-      return res.status(400).json({ error: 'Enter a valid email address.' });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters.' });
-    }
-
-    const [existingUsernameOwner, existingEmailOwner] = await Promise.all([
-      findUserByNormalizedUsername(normalizedUsername),
-      supabase.from('users').select('*').eq('email', normalizedEmail).single().then(({ data }) => data),
-    ]);
-
-    if (existingUsernameOwner) {
-      return res.status(409).json({ error: 'That username is already taken.' });
-    }
-    if (existingEmailOwner) {
-      return res.status(409).json({ error: 'An account with this email already exists.' });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const { data: user, error } = await supabase.from('users').insert({
-      username: normalizedUsername,
-      display_name: normalizedDisplayName,
-      email: normalizedEmail,
-      gender: normalizedGender,
-      role: 'CitizenReporter',
-      password_hash: passwordHash,
-    }).select().single();
-
-    if (error) throw error;
-
-    res.status(201).json({
-      token: issueAuthToken(user),
-      username: user.username,
-      role: user.role,
-      uid: user.firebase_uid || '',
-    });
-  } catch (error) {
-    console.error('Email signup error:', error);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
+  // ... (Legacy code)
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  try {
-    const normalizedEmail = normalizeEmail(req.body?.email);
-    const password = `${req.body?.password ?? ''}`;
-
-    if (!normalizedEmail || !normalizedEmail.includes('@')) {
-      return res.status(400).json({ error: 'Enter a valid email address.' });
-    }
-    if (!password) {
-      return res.status(400).json({ error: 'Enter your password.' });
-    }
-
-    const { data: user } = await supabase.from('users').select('*').eq('email', normalizedEmail).single();
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-    if (!user.password_hash || user.password_hash === 'firebase_oauth') {
-      return res.status(400).json({ error: 'This account uses Google or phone sign-in.' });
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    res.json({
-      token: issueAuthToken(user),
-      username: user.username,
-      role: user.role,
-      uid: user.firebase_uid || '',
-    });
-  } catch (error) {
-    console.error('Email login error:', error);
-    res.status(500).json({ error: 'Internal server error.' });
-  }
+  // ... (Legacy code)
 });
+*/
 
 app.post('/api/auth/firebaseLogin', async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+
+  if (admin.apps.length === 0) {
+    console.error('Firebase Login error: Firebase Admin SDK not initialized.');
+    return res.status(500).json({ error: 'Server configuration error: Firebase not initialized.' });
+  }
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
@@ -1353,7 +1246,7 @@ app.get('/api/users/:username/connections', attachOptionalUser, async (req, res)
     if (connectionType === 'following') {
       const followingUsernames = getUniqueStrings(targetUser.following);
       if (followingUsernames.length > 0) {
-        const { data: followingUsers } = await supabase.from('users').select('username, role, profile_photo_url').in('username', followingUsernames);
+        const { data: followingUsers } = await supabase.from('users').select('username, role, profile_photo_url, display_name').in('username', followingUsernames);
         const userByUsername = new Map(
           followingUsers.map((u) => [u.username, u]),
         );
@@ -1362,7 +1255,7 @@ app.get('/api/users/:username/connections', attachOptionalUser, async (req, res)
           .filter(Boolean);
       }
     } else {
-      const { data: followers } = await supabase.from('users').select('username, role, profile_photo_url').contains('following', [targetUsername]);
+      const { data: followers } = await supabase.from('users').select('username, role, profile_photo_url, display_name').contains('following', [targetUsername]);
       connectionUsers = followers || [];
       connectionUsers.sort((firstUser, secondUser) => firstUser.username.localeCompare(secondUser.username));
     }

@@ -3253,10 +3253,10 @@ function App() {
             </div>
           ) : (
             <>
-              <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
+              <div className="absolute inset-0 bg-slate-900" />
               <div className="absolute inset-0 bg-[linear-gradient(180deg,_transparent_0%,_rgba(2,6,23,0.62)_100%)]" />
-              <div className="absolute left-3 top-3 rounded-md bg-slate-950/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
-              <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white">
+              <div className="absolute left-3 top-3 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
+              <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white dark:bg-slate-900 text-white">
                 <Play className="ml-1 h-7 w-7 fill-current" />
               </button>
             </>
@@ -3271,7 +3271,7 @@ function App() {
                   scrollMediaByStep(post.id, -1);
                 }}
                 disabled={!canGoPrev}
-                className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
+                className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900 p-2 text-white  disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -3282,7 +3282,7 @@ function App() {
                   scrollMediaByStep(post.id, 1);
                 }}
                 disabled={!canGoNext}
-                className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
+                className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900 p-2 text-white  disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
@@ -3306,7 +3306,7 @@ function App() {
                       current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
                     ));
                   }}
-                  className={`h-1.5 rounded-full transition-all ${activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'
+                  className={`h-1.5 rounded-full transition-all ${activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white dark:bg-slate-900 hover:bg-white dark:bg-slate-900'
                     }`}
                   aria-label={`Go to media ${dotIndex + 1}`}
                 />
@@ -3338,7 +3338,7 @@ function App() {
         style={indentPx > 0 ? { marginLeft: `${indentPx}px` } : undefined}
       >
         <div className="flex items-start gap-3">
-          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
+          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-slate-800 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
             {getInitials(entry.author || 'Community member')}
           </div>
 
@@ -3451,7 +3451,7 @@ function App() {
     if (!(isSearchOpen && normalizedSearchQuery)) return null;
 
     return (
-      <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 max-h-[min(70vh,calc(100vh-8.5rem))] overflow-y-auto rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)] sm:rounded-[28px]">
+      <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 max-h-[min(70vh,calc(100vh-8.5rem))] overflow-y-auto rounded-[24px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)] sm:rounded-[28px]">
         <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-4 sm:px-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
           <p className="mt-1 text-sm text-slate-600">
@@ -3470,7 +3470,7 @@ function App() {
                   key={`search-account-${account.username}`}
                   type="button"
                   onClick={() => handleSearchProfileOpen(account.username)}
-                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   {account.profilePhotoUrl ? (
                     <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
@@ -3502,7 +3502,7 @@ function App() {
                   key={`search-post-${post.id}`}
                   type="button"
                   onClick={() => handleSearchPostOpen(post.id)}
-                  className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                  className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
@@ -3542,7 +3542,7 @@ function App() {
   return (
     <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
       <div className="sticky top-0 z-50">
-      <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
+      <header className="app-header border-b border-slate-200/90 bg-white dark:bg-slate-900 ">
         <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
           <div className="flex w-full items-center gap-2 sm:gap-3">
             <button
@@ -3588,7 +3588,7 @@ function App() {
                   />
 
                   {isSearchOpen && normalizedSearchQuery && (
-                    <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)]">
+                    <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)]">
                       <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
                         <p className="mt-1 text-sm text-slate-600">
@@ -3607,7 +3607,7 @@ function App() {
                                 key={`search-account-${account.username}`}
                                 type="button"
                                 onClick={() => handleSearchProfileOpen(account.username)}
-                                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
                               >
                                 {account.profilePhotoUrl ? (
                                   <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
@@ -3639,7 +3639,7 @@ function App() {
                                 key={`search-post-${post.id}`}
                                 type="button"
                                 onClick={() => handleSearchPostOpen(post.id)}
-                                className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50"
+                                className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
                               >
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
@@ -3674,7 +3674,7 @@ function App() {
                 ref={mobileSearchToggleRef}
                 type="button"
                 onClick={() => setIsSearchOpen((current) => !current)}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50 md:hidden ${isSearchOpen ? 'border-blue-200 text-blue-600 ring-2 ring-blue-100' : ''}`}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 md:hidden ${isSearchOpen ? 'border-blue-200 text-blue-600 ring-2 ring-blue-100' : ''}`}
                 aria-label={isSearchOpen ? 'Close search' : 'Open search'}
                 aria-expanded={isSearchOpen}
                 aria-controls="mobile-search-panel"
@@ -3697,7 +3697,7 @@ function App() {
                   <button
                     type="button"
                     onClick={openOwnProfile}
-                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 transition hover:bg-slate-50 sm:gap-3 sm:rounded-2xl sm:px-2.5"
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-1.5 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:gap-3 sm:rounded-2xl sm:px-2.5"
                   >
                     {profilePhotoUrl ? (
                       <img src={profilePhotoUrl} alt="Profile" className="h-9 w-9 rounded-xl object-cover sm:h-10 sm:w-10 sm:rounded-2xl" />
@@ -3723,7 +3723,7 @@ function App() {
       </header>
 
       {isSearchOpen && (
-        <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
+        <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white dark:bg-slate-900 px-4 py-3  md:hidden">
           <div ref={mobileSearchPanelRef} className="mx-auto max-w-[1580px]">
             <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
@@ -3773,7 +3773,7 @@ function App() {
                     onClick={() => handleNavClick(item.id)}
                     className={`nav-pill chat-nav-pill relative flex h-12 w-12 items-center justify-center rounded-2xl border text-base font-semibold transition ${isActive
                       ? 'nav-pill--active border-blue-200 bg-blue-600 text-white shadow-[0_18px_30px_-20px_rgba(37,99,235,0.8)]'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <Icon className="nav-pill__icon h-5 w-5" />
@@ -3846,8 +3846,8 @@ function App() {
                       key={`${department}-${count}`}
                       onClick={() => handleDepartmentFilterSelect(department)}
                       className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
-                        ? 'border-blue-200 bg-blue-50 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
-                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white'
+                        ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white'
                         }`}
                     >
                       <div className="min-w-0">
@@ -4029,7 +4029,7 @@ function App() {
 
                             {isAuthorHoverOpen && (
                               <div
-                                className="motion-pop absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur"
+                                className="motion-pop absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] "
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <div className="flex items-start gap-3">
@@ -4098,8 +4098,8 @@ function App() {
                                   handleToggleFollow(post.author);
                                 }}
                                 className={`inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${isFollowingAuthor
-                                  ? 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                  : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                  ? 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                  : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-blue-700 hover:bg-blue-100'
                                   }`}
                               >
                                 {isFollowingAuthor ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
@@ -4117,7 +4117,7 @@ function App() {
                                   event.stopPropagation();
                                   setActivePostMenuId((current) => (current === post.id ? null : post.id));
                                 }}
-                                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-500 transition hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700"
                                 aria-label="Open post menu"
                                 aria-expanded={isPostMenuOpen}
                               >
@@ -4126,7 +4126,7 @@ function App() {
 
                               {isPostMenuOpen && (
                                 <div
-                                  className="motion-pop absolute right-0 top-12 z-40 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.5)]"
+                                  className="motion-pop absolute right-0 top-12 z-40 w-52 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2 shadow-[0_18px_40px_-24px_rgba(15,23,42,0.5)]"
                                   onClick={(event) => event.stopPropagation()}
                                 >
                                   <button
@@ -4188,7 +4188,7 @@ function App() {
                           </div>
                         </div>
                         <div>
-                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
+                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 hover:gradient-text-animate transition-all">{post.title}</h3>
                           <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
                           {isTruncated && (
                             <button
@@ -4219,8 +4219,8 @@ function App() {
                                 event.stopPropagation();
                                 handleSupport(post.id);
                               }}
-                              className={`btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 animate-glow'
+                              className={`btn-interactive  flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
+                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 '
                                 : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-blue-300'
                                 }`}
                             >
@@ -4234,7 +4234,7 @@ function App() {
                                 event.stopPropagation();
                                 handleSolutionClick(post.id);
                               }}
-                              className="btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 hover:border-amber-300"
+                              className="btn-interactive  flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 hover:border-amber-300"
                             >
                               <Lightbulb className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Solution {formatCount(post.solutions)}</span>
@@ -4246,7 +4246,7 @@ function App() {
                                 event.stopPropagation();
                                 handleShare(post.id);
                               }}
-                              className="btn-interactive hover-lift flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              className="btn-interactive  flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-1 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <Share2 className="h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Share {formatCount(post.shares)}</span>
@@ -4346,7 +4346,7 @@ function App() {
               <div className="soft-card signal-hero p-5 sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="max-w-2xl">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
                       <MessageCircle className="h-3.5 w-3.5" />
                       Debate Hub
                     </span>
@@ -4385,7 +4385,7 @@ function App() {
                           setActivePostId(post.id);
                           setActiveView('post');
                         }}
-                        className="soft-card signal-tile w-full rounded-[28px] border border-slate-200 p-5 text-left transition hover:-translate-y-0.5 hover:bg-white"
+                        className="soft-card signal-tile w-full rounded-[28px] border border-slate-200 p-5 text-left transition  hover:bg-white"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="min-w-0 flex-1">
@@ -4592,7 +4592,7 @@ function App() {
                               disabled={isSubmittingActiveAuthorFollow}
                               onClick={() => handleToggleFollow(activePost.author)}
                               className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${isFollowingActiveAuthor
-                                ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                ? 'border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                                 : 'bg-slate-900 text-white hover:bg-slate-800'
                                 }`}
                             >
@@ -4644,7 +4644,7 @@ function App() {
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => focusCommentInput(activePost.id)}
-                              className="flex items-center justify-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex items-center justify-center gap-1 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <MessageCircle className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Comment {formatCount(activePost.comments)}</span>
@@ -4933,7 +4933,7 @@ function App() {
                               <span className="line-clamp-2 text-[10px] font-semibold leading-3 text-slate-600">{file.name}</span>
                             </div>
                           )}
-                          <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900/60 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition backdrop-blur-sm">
+                          <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition ">
                             <X className="h-3 w-3" />
                           </button>
                         </div>
@@ -4970,8 +4970,8 @@ function App() {
                         type="button"
                         onClick={() => setPostForm({ ...postForm, department })}
                         className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${postForm.department === department
-                          ? 'border-blue-200 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-blue-700'
+                          : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-600 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                           }`}
                       >
                         {department}
@@ -5035,7 +5035,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => markNotificationsRead(token).catch((error) => alert(error.message))}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                   >
                     Mark all read
                   </button>
@@ -5072,7 +5072,7 @@ function App() {
                       key={item.id}
                       className={`alert-card rounded-xl border p-4 pl-5 transition ${item.read
                         ? 'border-slate-200 bg-slate-50'
-                        : 'border-blue-200 bg-blue-50/70 shadow-[0_20px_45px_-34px_rgba(37,99,235,0.45)]'
+                        : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20/70 shadow-[0_20px_45px_-34px_rgba(37,99,235,0.45)]'
                         }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -5090,7 +5090,7 @@ function App() {
                           <button
                             type="button"
                             onClick={action.onClick}
-                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                           >
                             {action.label}
                             <ArrowUpRight className="h-3.5 w-3.5" />
@@ -5266,7 +5266,7 @@ function App() {
             <div className="soft-card overflow-hidden p-4">
               <div className="rounded-[26px] border border-blue-100 bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.45),_rgba(255,255,255,0.96)_58%)] p-4">
                 <div className="space-y-3">
-                  <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Most agreed</p>
                     <p className="mt-2 text-sm leading-6 text-slate-700">
                       {activePostAiStatus === 'loading' && 'Generating summary...'}
@@ -5276,7 +5276,7 @@ function App() {
                     </p>
                   </div>
 
-                  <div className="rounded-3xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Common solution</p>
                     <p className="mt-2 text-sm leading-6 text-slate-700">
                       {activePostAiStatus === 'loading' && 'Combining the most common ideas...'}
@@ -5334,7 +5334,7 @@ function App() {
         value={genderPromptValue}
       />
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur-md lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900  lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="mx-auto flex max-w-xl items-center justify-around gap-1 px-2 py-1.5">
           {navItems.map((item) => {
             const Icon = item.Icon;
@@ -5349,7 +5349,7 @@ function App() {
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
                 className={`mobile-nav-pill relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${isActive ? 'mobile-nav-pill--active ' : ''
-                  }${isActive ? 'text-blue-700' : 'text-slate-400 active:scale-95'
+                  }${isActive ? 'text-blue-700' : 'text-slate-400 '
                   }`}
               >
                 <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
@@ -5382,8 +5382,8 @@ function GenderPromptModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_32px_80px_-40px_rgba(15,23,42,0.55)]">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900 px-4 ">
+      <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-6 shadow-[0_32px_80px_-40px_rgba(15,23,42,0.55)]">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Profile setup</p>
@@ -5396,7 +5396,7 @@ function GenderPromptModal({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Close gender prompt"
           >
             <X className="h-4 w-4" />
@@ -5432,7 +5432,7 @@ function GenderPromptModal({
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Later
             </button>
@@ -5480,7 +5480,7 @@ function PrivateChatView({
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
       {/* Sidebar: Contacts List */}
       <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex flex-col border-b border-slate-200/60 bg-white/40 px-4 pt-5 pb-4 backdrop-blur-xl sm:px-5 sm:pt-6 sm:pb-5">
+        <div className="flex flex-col border-b border-slate-200/60 bg-white dark:bg-slate-900 px-4 pt-5 pb-4  sm:px-5 sm:pt-6 sm:pb-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">Messages</p>
@@ -5504,7 +5504,7 @@ function PrivateChatView({
         <div className="flex-1 overflow-y-auto px-2.5 py-3 hide-scrollbar sm:px-3 sm:py-4">
           <div className="space-y-1.5">
             {isThreadsLoading && contacts.length === 0 && (
-              <div className="motion-pulse rounded-2xl bg-white/40 p-5 text-center text-sm font-medium text-slate-500">
+              <div className="motion-pulse rounded-2xl bg-white dark:bg-slate-900 p-5 text-center text-sm font-medium text-slate-500">
                 Syncing securely...
               </div>
             )}
@@ -5519,15 +5519,15 @@ function PrivateChatView({
                   style={{ animationDelay: `${idx * 40}ms` }}
                   className={`group relative flex w-full items-center gap-3 rounded-[1.25rem] p-2.5 text-left transition-all duration-300 motion-fade-up sm:gap-4 sm:rounded-2xl sm:p-3 ${
                     isActive
-                      ? 'bg-gradient-to-br from-blue-600 to-teal-500 text-white shadow-md'
-                      : 'hover:bg-white/70 hover:shadow-sm'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'hover:bg-white dark:bg-slate-900 hover:shadow-sm'
                   }`}
                 >
                   <div className="relative shrink-0">
                     {contact.profilePhotoUrl ? (
-                      <img src={contact.profilePhotoUrl} alt={contact.username} className={`h-11 w-11 rounded-full object-cover shadow-sm transition-transform duration-300 group-hover:scale-105 sm:h-12 sm:w-12 ${isActive ? 'ring-2 ring-white/50' : 'ring-1 ring-slate-200'}`} />
+                      <img src={contact.profilePhotoUrl} alt={contact.username} className={`h-11 w-11 rounded-full object-cover shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 ${isActive ? 'ring-2 ring-white/50' : 'ring-1 ring-slate-200'}`} />
                     ) : (
-                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group-hover:scale-105 sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white/20 text-white ring-2 ring-white/50' : 'bg-gradient-to-br from-slate-800 to-slate-950 text-white'}`}>
+                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white dark:bg-slate-900 text-white ring-2 ring-white/50' : 'bg-slate-900 text-white'}`}>
                         {getInitials(contact.username)}
                       </div>
                     )}
@@ -5590,11 +5590,11 @@ function PrivateChatView({
         {activeContact ? (
           <>
             {/* Chat Header */}
-            <div className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white/70 px-4 py-3.5 backdrop-blur-xl sm:gap-4 sm:px-5 sm:py-4">
+            <div className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white dark:bg-slate-900 px-4 py-3.5  sm:gap-4 sm:px-5 sm:py-4">
               <button
                 type="button"
                 onClick={() => onOpenProfile(activeContact.username)}
-                className="group flex min-w-0 items-center gap-3 text-left transition-transform duration-300 hover:translate-x-1"
+                className="group flex min-w-0 items-center gap-3 text-left transition-transform duration-300 "
               >
                 {activeContact.profilePhotoUrl ? (
                   <img src={activeContact.profilePhotoUrl} alt={activeContact.username} className="h-9 w-9 rounded-full object-cover shadow-sm ring-1 ring-slate-200 sm:h-10 sm:w-10" />
@@ -5617,7 +5617,7 @@ function PrivateChatView({
               <button
                 type="button"
                 onClick={() => onOpenProfile(activeContact.username)}
-                className="hidden sm:inline-flex items-center justify-center rounded-full bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200/80 transition-all hover:bg-slate-50 hover:shadow-md hover:ring-slate-300"
+                className="hidden sm:inline-flex items-center justify-center rounded-full bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm ring-1 ring-slate-200/80 transition-all hover:bg-slate-50 dark:hover:bg-slate-800 hover:shadow-md hover:ring-slate-300"
               >
                 View Profile
               </button>
@@ -5628,7 +5628,7 @@ function PrivateChatView({
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.03)_0%,_transparent_100%)] pointer-events-none" />
               
               {activeMessagesStatus === 'loading' && activeMessages.length === 0 && (
-                <div className="mx-auto max-w-sm rounded-[20px] bg-white/70 p-4 text-center text-sm font-medium text-slate-500 shadow-sm backdrop-blur-md ring-1 ring-slate-200/50 motion-fade-up">
+                <div className="mx-auto max-w-sm rounded-[20px] bg-white dark:bg-slate-900 p-4 text-center text-sm font-medium text-slate-500 shadow-sm  ring-1 ring-slate-200/50 motion-fade-up">
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse" />
                     Syncing conversation...
@@ -5637,7 +5637,7 @@ function PrivateChatView({
               )}
               
               {activeMessagesStatus === 'error' && (
-                <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50/90 p-4 text-center text-sm font-medium text-red-700 shadow-sm backdrop-blur-md motion-pop">
+                <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50 dark:bg-red-900/20 p-4 text-center text-sm font-medium text-red-700 shadow-sm  motion-pop">
                   {activeError || 'Unable to load this conversation right now.'}
                 </div>
               )}
@@ -5654,7 +5654,7 @@ function PrivateChatView({
                       <div 
                         className={`relative rounded-[1.5rem] px-4 py-3 shadow-sm transition-all hover:shadow-md sm:rounded-3xl sm:px-5 sm:py-3.5 ${
                           isOutgoing
-                            ? 'bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-br-md'
+                            ? 'bg-slate-900 text-white rounded-br-md'
                             : 'bg-white text-slate-900 border border-slate-200/60 rounded-bl-md'
                         }`}
                       >
@@ -5688,11 +5688,11 @@ function PrivateChatView({
                 setEmojiPickerForUsername('');
                 onSendMessage(activeContact.username);
               }}
-              className="z-10 shrink-0 border-t border-slate-200/60 bg-white/80 p-3 sm:p-5 backdrop-blur-xl"
+              className="z-10 shrink-0 border-t border-slate-200/60 bg-white dark:bg-slate-900 p-3 sm:p-5 "
             >
               <div className="relative">
                 {isEmojiPickerOpen && (
-                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2 shadow-lg">
                     <div className="flex flex-wrap gap-1.5">
                       {CHAT_QUICK_EMOJIS.map((emoji) => (
                         <button
@@ -5744,7 +5744,7 @@ function PrivateChatView({
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
                   aria-label="Send message"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-md transition-all hover:scale-105 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-all  hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -5803,8 +5803,8 @@ function MobileFirstPrivateChatView({
 
   return (
     <div className="chat-mobile-layout h-full min-h-0 xl:grid xl:min-h-0 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] xl:gap-3">
-      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-white sm:rounded-2xl xl:rounded-2xl`}>
-        <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4 xl:hidden">
+      <div className={`chat-mobile-inbox min-h-0 overflow-hidden ${hasActiveContact ? 'hidden xl:flex' : 'flex'} flex-col border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 sm:rounded-2xl xl:rounded-2xl`}>
+        <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4 xl:hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
@@ -5818,7 +5818,7 @@ function MobileFirstPrivateChatView({
             </span>
           </div>
 
-          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2">
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2">
             <SearchInput
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
@@ -5828,7 +5828,7 @@ function MobileFirstPrivateChatView({
             />
           </div>
         </div>
-        <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 bg-white px-4 py-4 xl:px-5 xl:pt-5">
+        <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4 xl:px-5 xl:pt-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
@@ -5840,7 +5840,7 @@ function MobileFirstPrivateChatView({
             </span>
           </div>
 
-          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-2">
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2">
             <SearchInput
               value={searchQuery}
               onChange={(event) => onSearchQueryChange(event.target.value)}
@@ -5869,8 +5869,8 @@ function MobileFirstPrivateChatView({
                   style={{ animationDelay: `${idx * 35}ms` }}
                   className={`group relative flex w-full items-center gap-3 rounded-xl border px-3.5 py-3.5 text-left transition sm:gap-4 sm:px-4 xl:px-3.5 xl:py-3.5 ${
                     isActive
-                      ? 'border-blue-200 bg-blue-50 text-slate-950'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-slate-950'
+                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
                   <div className="relative shrink-0">
@@ -5902,10 +5902,10 @@ function MobileFirstPrivateChatView({
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500 dark:text-slate-500">
                           @{contact.username}
                         </p>
-                        <p className={`mt-1 truncate text-sm xl:text-xs ${contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500'}`}>
+                        <p className={`mt-1 truncate text-sm xl:text-xs ${contact.unreadCount > 0 ? 'font-medium text-slate-700' : 'text-slate-500 dark:text-slate-500'}`}>
                           {contact.lastMessage?.text || 'Tap to open chat'} {contact.lastMessage?.createdAt && <span className="opacity-70 xl:hidden"> • {formatTimestamp(contact.lastMessage.createdAt)}</span>}
                         </p>
                       </div>
@@ -5945,7 +5945,7 @@ function MobileFirstPrivateChatView({
                   />
                 </div>
                 <div className="xl:hidden px-2 py-4 motion-fade-up">
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center">
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-5 py-8 text-center">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <MessageCircle className="h-5 w-5" />
                     </div>
@@ -5961,13 +5961,13 @@ function MobileFirstPrivateChatView({
 
       <div className={`chat-mobile-thread ${
         hasActiveContact
-          ? 'flex border border-slate-200 bg-white'
+          ? 'flex border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
           : 'hidden'
       } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col sm:rounded-2xl xl:relative xl:z-auto xl:flex xl:rounded-2xl`}>
         {activeContact ? (
           <>
             <div
-              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 py-3 sm:px-5 sm:py-4"
+              className="chat-mobile-thread__header z-10 flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-3 sm:px-5 sm:py-4"
             >
               <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
                 <button
@@ -6007,7 +6007,7 @@ function MobileFirstPrivateChatView({
               <button
                 type="button"
                 onClick={() => onOpenProfile(activeContact.username)}
-                className="hidden rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 sm:inline-flex"
+                className="hidden rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3.5 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:inline-flex"
               >
                 View profile
               </button>
@@ -6015,7 +6015,7 @@ function MobileFirstPrivateChatView({
 
             <div className="chat-mobile-thread__feed relative min-h-0 flex-1 overflow-y-auto px-3 py-4 hide-scrollbar sm:px-5 sm:py-6">
               <div className="relative space-y-4 pb-6">
-                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                <div className="mx-auto w-fit rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
                   {activeContact.displayName || activeContact.username}
                 </div>
 
@@ -6044,7 +6044,7 @@ function MobileFirstPrivateChatView({
                           className={`rounded-2xl px-4 py-3 text-sm sm:px-5 sm:text-[15px] ${
                             isOutgoing
                               ? 'rounded-br-lg bg-blue-600 text-white'
-                              : 'rounded-bl-lg border border-slate-200 bg-white text-slate-900'
+                              : 'rounded-bl-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-900'
                           }`}
                         >
                           <p className="leading-6">{message.text}</p>
@@ -6077,11 +6077,11 @@ function MobileFirstPrivateChatView({
                 setEmojiPickerForUsername('');
                 onSendMessage(activeContact.username);
               }}
-              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:p-5"
+              className="chat-mobile-thread__composer z-10 shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-3 sm:p-5"
             >
               <div className="relative">
                 {isEmojiPickerOpen && (
-                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2 shadow-lg">
                     <div className="flex flex-wrap gap-1.5">
                       {CHAT_QUICK_EMOJIS.map((emoji) => (
                         <button
@@ -6097,7 +6097,7 @@ function MobileFirstPrivateChatView({
                     </div>
                   </div>
                 )}
-                <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white px-2 py-2 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+                <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-2 focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
                   <button
                     type="button"
                     onClick={() => {
@@ -6221,22 +6221,22 @@ function ProfileView({
 
   return (
     <>
-      <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
+      <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
         <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-4 py-4 sm:px-7 sm:py-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+              <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
                 {profileDisplay.role}
               </span>
               <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
                 {profileBeat}
               </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 {Math.max(profileCommunitiesCount, 1)} communities
               </span>
             </div>
 
-            <div className="signal-score w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left sm:w-auto sm:text-right">
+            <div className="signal-score w-full rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3 text-left sm:w-auto sm:text-right">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
               <p className="mt-1 font-display text-2xl font-bold text-slate-950 sm:text-3xl">{profileImpactScore}%</p>
             </div>
@@ -6262,7 +6262,7 @@ function ProfileView({
                   </div>
                 )}
                 {isOwnProfile && (
-                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-950/78 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
+                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
                     Edit photo
                   </span>
                 )}
@@ -6281,15 +6281,15 @@ function ProfileView({
                 <p className="mt-1.5 text-base font-semibold text-slate-500">@{profileDisplay.username}</p>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{profileBio}</p>
                 <div className="mt-4 flex flex-wrap gap-2.5 text-sm text-slate-500">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
                     <MapPin className="h-4 w-4 text-blue-600" />
                     {profileLocation}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
                     <CalendarDays className="h-4 w-4 text-blue-600" />
                     Joined {profileJoinLabel}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
                     <Globe className="h-4 w-4 text-blue-600" />
                     {profileTopLocations[0] || profileLocation}
                   </span>
@@ -6304,7 +6304,7 @@ function ProfileView({
                     <button
                       type="button"
                       onClick={() => onOpenSettings('personal')}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
                     >
                       <SquarePen className="h-4 w-4" />
                       Personal description
@@ -6312,7 +6312,7 @@ function ProfileView({
                     <button
                       type="button"
                       onClick={() => onOpenSettings('personal')}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
                     >
                       <Settings className="h-4 w-4" />
                       Settings
@@ -6333,7 +6333,7 @@ function ProfileView({
                     type="button"
                     onClick={onToggleFollow}
                     className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto sm:justify-start ${isFollowingViewedProfile
-                      ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                       : 'bg-slate-900 text-white hover:bg-slate-800'
                       }`}
                   >
@@ -6343,7 +6343,7 @@ function ProfileView({
                   <button
                     type="button"
                     onClick={onShareProfile}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
                   >
                     <Share2 className="h-4 w-4" />
                     {profileShareFeedback || 'Share profile'}
@@ -6351,7 +6351,7 @@ function ProfileView({
                   <button
                     type="button"
                     onClick={() => onOpenChat(profileDisplay.username)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:justify-start"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
                   >
                     <MessageCircle className="h-4 w-4" />
                     Message
@@ -6360,7 +6360,7 @@ function ProfileView({
                     <button
                       type="button"
                       onClick={onOpenLatestPost}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-auto sm:justify-start"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-auto sm:justify-start"
                     >
                       <ArrowUpRight className="h-4 w-4" />
                       Latest report
@@ -6407,7 +6407,7 @@ function ProfileView({
                   >
                     <span>{tab.label}</span>
                     <span className={`inline-flex min-w-[1.7rem] items-center justify-center rounded-full px-1.5 py-px text-[9px] font-bold sm:text-[10px] ${isActive
-                      ? 'bg-white/15 text-white'
+                      ? 'bg-white dark:bg-slate-900 text-white'
                       : 'bg-white text-slate-600'
                       }`}>
                       {formatCount(tab.count)}
@@ -6491,7 +6491,7 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
     <Container
       {...(onClick ? { type: 'button', onClick } : {})}
       className={`signal-metric group rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.94))] px-4 py-4 text-left shadow-[0_14px_34px_-28px_rgba(15,23,42,0.25)] transition sm:px-5 ${onClick
-        ? 'hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white'
+        ? ' hover:border-blue-200 hover:bg-white'
         : ''
         }`}
     >
@@ -6507,7 +6507,7 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
 
       <div className="mt-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
         <span>{hint || (onClick ? 'Open list' : 'Live stat')}</span>
-        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition group-hover:translate-x-0.5" /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
+        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition " /> : <span className="h-1.5 w-12 rounded-full bg-blue-600" />}
       </div>
     </Container>
   );
@@ -6532,9 +6532,9 @@ function ProfileConnectionsModal({
   const title = type === 'following' ? 'Following' : 'Followers';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900 px-4 py-6 " onClick={onClose}>
       <div
-        className="motion-pop max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
+        className="motion-pop max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
@@ -6611,7 +6611,7 @@ function ProfileConnectionsModal({
                     </button>
 
                     {isOwnItem ? (
-                      <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                      <span className="rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold text-blue-700">
                         You
                       </span>
                     ) : (
@@ -6619,7 +6619,7 @@ function ProfileConnectionsModal({
                         <button
                           type="button"
                           onClick={() => onOpenChat(item.username)}
-                          className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:min-w-[96px] sm:flex-none"
+                          className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 sm:min-w-[96px] sm:flex-none"
                         >
                           Message
                         </button>
@@ -6628,7 +6628,7 @@ function ProfileConnectionsModal({
                           onClick={() => onToggleFollow(item.username)}
                           disabled={isSubmitting}
                           className={`inline-flex flex-1 items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold transition sm:min-w-[108px] sm:flex-none ${item.isFollowing
-                            ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                            ? 'border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-100'
                             : 'bg-slate-900 text-white hover:bg-slate-800'
                             } ${isSubmitting ? 'cursor-not-allowed opacity-70' : ''}`}
                         >
@@ -6660,9 +6660,9 @@ function MobileProfilePhotoActionsSheet({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[96] flex items-end bg-slate-950/55 px-4 py-4 backdrop-blur-sm sm:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[96] flex items-end bg-slate-900 px-4 py-4  sm:hidden" onClick={onClose}>
       <div
-        className="motion-pop w-full rounded-[28px] border border-slate-200 bg-white p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
+        className="motion-pop w-full rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-slate-200" />
@@ -6684,7 +6684,7 @@ function MobileProfilePhotoActionsSheet({
           <button
             type="button"
             onClick={onViewPhoto}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 dark:hover:bg-slate-800"
           >
             <Maximize2 className="h-4 w-4" />
             View profile picture
@@ -6721,15 +6721,15 @@ function ProfilePhotoPreviewModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-900 px-4 py-6 " onClick={onClose}>
       <div
-        className="motion-pop relative w-full max-w-sm rounded-[30px] border border-slate-700/60 bg-slate-950/90 p-4 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.88)] sm:max-w-md"
+        className="motion-pop relative w-full max-w-sm rounded-[30px] border border-slate-700/60 bg-slate-900 p-4 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.88)] sm:max-w-md"
         onClick={(event) => event.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white dark:bg-slate-900 text-white transition hover:bg-white dark:bg-slate-900"
           aria-label="Close profile picture preview"
         >
           <X className="h-4 w-4" />
@@ -6861,7 +6861,7 @@ function ProfileSettingsModal({
           <button
             type="button"
             onClick={onEditPhoto}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
             <ImageIcon className="h-4 w-4" />
             Change photo
@@ -6869,7 +6869,7 @@ function ProfileSettingsModal({
         </div>
 
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Display name</p>
               <p className="mt-1 text-xs text-slate-500">This defaults to your Google or Gmail name and can be edited here.</p>
@@ -6883,7 +6883,7 @@ function ProfileSettingsModal({
             />
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Username</p>
               <p className="mt-1 text-xs text-slate-500">Your `@username` stays separate from the display name.</p>
@@ -6900,14 +6900,14 @@ function ProfileSettingsModal({
 
         <div className="grid gap-3 sm:grid-cols-2">
           {profileRows.map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div key={label} className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
             </div>
           ))}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+        <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Personal description</p>
             <p className="mt-1 text-xs text-slate-500">Write the profile text you want people to see under your username.</p>
@@ -7018,9 +7018,9 @@ function ProfileSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-2 backdrop-blur-sm sm:py-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-900 px-4 py-2  sm:py-4" onClick={onClose}>
       <div
-        className="motion-pop flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:max-h-[calc(100dvh-2rem)]"
+        className="motion-pop flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:max-h-[calc(100dvh-2rem)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
@@ -7101,7 +7101,7 @@ function ProfileActivityCard({ activity, delayMs = 0, onOpenPost }) {
 
       <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-500">
         {activity.chips.map((chip) => (
-          <span key={`${activity.id}-${chip}`} className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600">
+          <span key={`${activity.id}-${chip}`} className="inline-flex items-center rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5 font-semibold text-slate-600">
             {chip}
           </span>
         ))}
@@ -7164,7 +7164,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
           <Building2 className="h-3.5 w-3.5" />
           {post.department}
         </span>
-        <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-500">
+        <span className="inline-flex items-center rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2.5 py-1 text-slate-500">
           Saved to your library
         </span>
       </div>
@@ -7193,7 +7193,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
         <button
           type="button"
           onClick={onOpenPost}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 dark:hover:bg-slate-800"
         >
           Open thread
           <ArrowUpRight className="h-4 w-4" />
@@ -7323,15 +7323,15 @@ function ProfileSolutionCard({ delayMs = 0, solution, onOpenPost }) {
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2 text-sm text-slate-500">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
           <TrendingUp className="h-4 w-4 text-blue-600" />
           Score {formatCount(solution.score)}
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
           <MessageCircle className="h-4 w-4 text-blue-600" />
           Replies {formatCount(solution.replyCount)}
         </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
           <MapPin className="h-4 w-4 text-blue-600" />
           {solution.postLocation}
         </span>
@@ -7636,14 +7636,14 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setIsSettingsOpen((current) => !current); }}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 text-white backdrop-blur"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900 text-white "
           aria-label="Open video settings"
         >
           <Settings className="h-4 w-4" />
         </button>
 
         {isSettingsOpen && (
-          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl pointer-events-auto">
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900 p-2 text-white shadow-xl pointer-events-auto">
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Quality</p>
             {sourceOptions.map((option) => (
               <button
@@ -7693,7 +7693,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); togglePlayPause(); }}
-            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900  sm:flex"
             aria-label={isPlaying ? 'Pause video' : 'Play video'}
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
@@ -7702,7 +7702,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleMute(); }}
-            className="pointer-events-auto flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
+            className="pointer-events-auto flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900 "
             aria-label={isMuted ? 'Unmute video' : 'Mute video'}
           >
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -7720,7 +7720,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
             aria-label="Adjust volume"
           />
 
-          <div className="pointer-events-auto hidden items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur sm:flex">
+          <div className="pointer-events-auto hidden items-center gap-1 rounded-full border border-white/35 bg-slate-900 px-2 py-1  sm:flex">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">Q</span>
             <select
               value={activeQualityOption?.value ?? 'auto'}
@@ -7744,7 +7744,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900  sm:flex"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}

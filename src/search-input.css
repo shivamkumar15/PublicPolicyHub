@@ -36,30 +36,8 @@
   content: '';
   position: absolute;
   inset: 0;
-  padding: var(--search-border-width);
   border-radius: inherit;
-  background:
-    conic-gradient(
-      from 0deg,
-      transparent 0deg,
-      var(--search-border-light) 70deg,
-      var(--search-border-mid) 150deg,
-      var(--search-border-accent) 250deg,
-      transparent 330deg,
-      transparent 360deg
-    );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  filter:
-    saturate(1.2)
-    drop-shadow(0 0 6px var(--search-glow-soft))
-    drop-shadow(0 0 12px var(--search-glow-strong));
+  border: 2px solid #2563eb;
   z-index: 0;
 }
 

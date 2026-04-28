@@ -242,9 +242,9 @@ function AuthPage({
         <section className="auth-page__left">
           <div className="auth-page__story motion-slide-in-left">
             <img src={logo} alt="Public Policy Hub" className="auth-page__story-logo" />
-            <h2 className="auth-page__heading">India is our, we have the power.</h2>
+            <h2 className="auth-page__heading">India is ours, and we have the power to fix it.</h2>
             <h3 className="auth-page__lead">
-              Join us to make India a better place and bring changes according to our comfort.
+              Join the community to report local issues and help make India a better place to live for everyone.
             </h3>
           </div>
         </section>
@@ -254,15 +254,15 @@ function AuthPage({
             <div className="auth-page__panel-head">
               <img src={logo} alt="Public Policy Hub" className="auth-page__panel-logo" />
               <div>
-                <p className="auth-page__panel-kicker">Access your civic profile</p>
+                <p className="auth-page__panel-kicker">Your civic profile</p>
                 <h2 className="auth-page__subheading">
-                  {isSignup ? 'Start with a verified account' : 'Welcome back'}
+                  {isSignup ? "Let's get you set up" : 'Welcome back'}
                 </h2>
               </div>
             </div>
 
             <p className="auth-page__panel-text">
-              Create an account to report issues, support causes, and keep your public activity connected in one place.
+              Sign up to report problems you see, support others, and keep track of everything you've done for your community.
             </p>
 
             <div className="auth-page__actions">
@@ -502,8 +502,8 @@ function AuthFields({ authMethod, formState, handleChange, isSignup }) {
       {authMethod === 'google' && (
         <p className="auth-modal__hint">
           {isSignup
-            ? 'Continue with Google and we will use your Google name while generating a username automatically.'
-            : 'Continue with the Google account linked to your profile.'}
+            ? "We'll use your Google name to pick a username for you automatically."
+            : "Use the Google account you used to sign up."}
         </p>
       )}
 
@@ -539,7 +539,7 @@ function Field({ label, name, onChange, placeholder, type = 'text', value }) {
 
 function ActionButton({ icon = null, onClick, text, variant = 'white' }) {
   return (
-    <button type="button" onClick={onClick} className={`auth-action-btn auth-action-btn--${variant} magnetic-item btn-interactive hover-lift`}>
+    <button type="button" onClick={onClick} className={`auth-action-btn auth-action-btn--${variant} magnetic-item btn-interactive `}>
       {icon}
       {text}
     </button>
