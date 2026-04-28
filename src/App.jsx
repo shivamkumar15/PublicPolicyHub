@@ -3151,7 +3151,7 @@ function App() {
       ),
     };
   const profileBio = isOwnProfile
-    ? (`${userProfile?.personalDescription ?? ''}`.trim() || `Building visible public pressure through ${profileBeat.toLowerCase()} reports, evidence threads, and solution-first follow ups.`)
+    ? (`${userProfile?.personalDescription ?? ''}`.trim() || `Welcome hero`)
     : (`${viewedProfileMeta?.personalDescription ?? ''}`.trim() || `${resolvedProfileUsername} tracks ${profileBeat.toLowerCase()} issues, adds context quickly, and keeps pressure on until the signal is impossible to ignore.`);
   const profileJoinLabel = getProfileJoinLabel(
     isOwnProfile ? userProfile?.memberSince : viewedProfileMeta?.memberSince,
@@ -3253,10 +3253,10 @@ function App() {
             </div>
           ) : (
             <>
-              <div className="absolute inset-0 bg-slate-900" />
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
               <div className="absolute inset-0 bg-[linear-gradient(180deg,_transparent_0%,_rgba(2,6,23,0.62)_100%)]" />
-              <div className="absolute left-3 top-3 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
-              <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white dark:bg-slate-900 text-white">
+              <div className="absolute left-3 top-3 rounded-md bg-slate-950/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
+              <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white">
                 <Play className="ml-1 h-7 w-7 fill-current" />
               </button>
             </>
@@ -3271,7 +3271,7 @@ function App() {
                   scrollMediaByStep(post.id, -1);
                 }}
                 disabled={!canGoPrev}
-                className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900 p-2 text-white  disabled:cursor-not-allowed disabled:opacity-35"
+                className="absolute left-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
@@ -3282,7 +3282,7 @@ function App() {
                   scrollMediaByStep(post.id, 1);
                 }}
                 disabled={!canGoNext}
-                className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900 p-2 text-white  disabled:cursor-not-allowed disabled:opacity-35"
+                className="absolute right-3 top-1/2 z-20 -translate-y-1/2 rounded-full border border-white/35 bg-slate-900/55 p-2 text-white backdrop-blur disabled:cursor-not-allowed disabled:opacity-35"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
@@ -3306,7 +3306,7 @@ function App() {
                       current[post.id] === dotIndex ? current : { ...current, [post.id]: dotIndex }
                     ));
                   }}
-                  className={`h-1.5 rounded-full transition-all ${activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white dark:bg-slate-900 hover:bg-white dark:bg-slate-900'
+                  className={`h-1.5 rounded-full transition-all ${activeSlideIndex === dotIndex ? 'w-4 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/75'
                     }`}
                   aria-label={`Go to media ${dotIndex + 1}`}
                 />
@@ -3338,7 +3338,7 @@ function App() {
         style={indentPx > 0 ? { marginLeft: `${indentPx}px` } : undefined}
       >
         <div className="flex items-start gap-3">
-          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-slate-800 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
+          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
             {getInitials(entry.author || 'Community member')}
           </div>
 
@@ -3542,7 +3542,7 @@ function App() {
   return (
     <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
       <div className="sticky top-0 z-50">
-      <header className="app-header border-b border-slate-200/90 bg-white dark:bg-slate-900 ">
+      <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
         <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
           <div className="flex w-full items-center gap-2 sm:gap-3">
             <button
@@ -3723,7 +3723,7 @@ function App() {
       </header>
 
       {isSearchOpen && (
-        <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white dark:bg-slate-900 px-4 py-3  md:hidden">
+        <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
           <div ref={mobileSearchPanelRef} className="mx-auto max-w-[1580px]">
             <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
@@ -4029,7 +4029,7 @@ function App() {
 
                             {isAuthorHoverOpen && (
                               <div
-                                className="motion-pop absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] "
+                                className="motion-pop absolute left-0 top-full z-30 mt-3 w-[280px] max-w-[calc(100vw-3rem)] rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/95 p-4 shadow-[0_24px_70px_-30px_rgba(15,23,42,0.55)] backdrop-blur"
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <div className="flex items-start gap-3">
@@ -4188,7 +4188,7 @@ function App() {
                           </div>
                         </div>
                         <div>
-                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-slate-900 dark:text-slate-100 hover:gradient-text-animate transition-all">{post.title}</h3>
+                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
                           <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
                           {isTruncated && (
                             <button
@@ -4220,7 +4220,7 @@ function App() {
                                 handleSupport(post.id);
                               }}
                               className={`btn-interactive  flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 '
+                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 animate-glow'
                                 : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-blue-300'
                                 }`}
                             >
@@ -4933,7 +4933,7 @@ function App() {
                               <span className="line-clamp-2 text-[10px] font-semibold leading-3 text-slate-600">{file.name}</span>
                             </div>
                           )}
-                          <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition ">
+                          <button type="button" onClick={() => removeFile(idx)} className="absolute top-1 right-1 h-5 w-5 bg-slate-900/60 rounded-full flex items-center justify-center text-white hover:bg-red-500 transition backdrop-blur-sm">
                             <X className="h-3 w-3" />
                           </button>
                         </div>
@@ -5334,7 +5334,7 @@ function App() {
         value={genderPromptValue}
       />
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900  lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900/95 backdrop-blur-md lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="mx-auto flex max-w-xl items-center justify-around gap-1 px-2 py-1.5">
           {navItems.map((item) => {
             const Icon = item.Icon;
@@ -5382,7 +5382,7 @@ function GenderPromptModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900 px-4 ">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 px-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-6 shadow-[0_32px_80px_-40px_rgba(15,23,42,0.55)]">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -5480,7 +5480,7 @@ function PrivateChatView({
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)] motion-fade-up">
       {/* Sidebar: Contacts List */}
       <div className="glass-panel flex h-full min-h-0 flex-col overflow-hidden">
-        <div className="flex flex-col border-b border-slate-200/60 bg-white dark:bg-slate-900 px-4 pt-5 pb-4  sm:px-5 sm:pt-6 sm:pb-5">
+        <div className="flex flex-col border-b border-slate-200/60 bg-white/40 px-4 pt-5 pb-4 backdrop-blur-xl sm:px-5 sm:pt-6 sm:pb-5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">Messages</p>
@@ -5504,7 +5504,7 @@ function PrivateChatView({
         <div className="flex-1 overflow-y-auto px-2.5 py-3 hide-scrollbar sm:px-3 sm:py-4">
           <div className="space-y-1.5">
             {isThreadsLoading && contacts.length === 0 && (
-              <div className="motion-pulse rounded-2xl bg-white dark:bg-slate-900 p-5 text-center text-sm font-medium text-slate-500">
+              <div className="motion-pulse rounded-2xl bg-white/40 p-5 text-center text-sm font-medium text-slate-500">
                 Syncing securely...
               </div>
             )}
@@ -5519,15 +5519,15 @@ function PrivateChatView({
                   style={{ animationDelay: `${idx * 40}ms` }}
                   className={`group relative flex w-full items-center gap-3 rounded-[1.25rem] p-2.5 text-left transition-all duration-300 motion-fade-up sm:gap-4 sm:rounded-2xl sm:p-3 ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'hover:bg-white dark:bg-slate-900 hover:shadow-sm'
+                      ? 'bg-gradient-to-br from-blue-600 to-teal-500 text-white shadow-md'
+                      : 'hover:bg-white/70 hover:shadow-sm'
                   }`}
                 >
                   <div className="relative shrink-0">
                     {contact.profilePhotoUrl ? (
                       <img src={contact.profilePhotoUrl} alt={contact.username} className={`h-11 w-11 rounded-full object-cover shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 ${isActive ? 'ring-2 ring-white/50' : 'ring-1 ring-slate-200'}`} />
                     ) : (
-                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white dark:bg-slate-900 text-white ring-2 ring-white/50' : 'bg-slate-900 text-white'}`}>
+                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white/20 text-white ring-2 ring-white/50' : 'bg-gradient-to-br from-slate-800 to-slate-950 text-white'}`}>
                         {getInitials(contact.username)}
                       </div>
                     )}
@@ -5590,7 +5590,7 @@ function PrivateChatView({
         {activeContact ? (
           <>
             {/* Chat Header */}
-            <div className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white dark:bg-slate-900 px-4 py-3.5  sm:gap-4 sm:px-5 sm:py-4">
+            <div className="z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 bg-white/70 px-4 py-3.5 backdrop-blur-xl sm:gap-4 sm:px-5 sm:py-4">
               <button
                 type="button"
                 onClick={() => onOpenProfile(activeContact.username)}
@@ -5628,7 +5628,7 @@ function PrivateChatView({
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.03)_0%,_transparent_100%)] pointer-events-none" />
               
               {activeMessagesStatus === 'loading' && activeMessages.length === 0 && (
-                <div className="mx-auto max-w-sm rounded-[20px] bg-white dark:bg-slate-900 p-4 text-center text-sm font-medium text-slate-500 shadow-sm  ring-1 ring-slate-200/50 motion-fade-up">
+                <div className="mx-auto max-w-sm rounded-[20px] bg-white/70 p-4 text-center text-sm font-medium text-slate-500 shadow-sm backdrop-blur-md ring-1 ring-slate-200/50 motion-fade-up">
                   <span className="flex items-center justify-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse" />
                     Syncing conversation...
@@ -5637,7 +5637,7 @@ function PrivateChatView({
               )}
               
               {activeMessagesStatus === 'error' && (
-                <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50 dark:bg-red-900/20 p-4 text-center text-sm font-medium text-red-700 shadow-sm  motion-pop">
+                <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50/90 p-4 text-center text-sm font-medium text-red-700 shadow-sm backdrop-blur-md motion-pop">
                   {activeError || 'Unable to load this conversation right now.'}
                 </div>
               )}
@@ -5654,7 +5654,7 @@ function PrivateChatView({
                       <div 
                         className={`relative rounded-[1.5rem] px-4 py-3 shadow-sm transition-all hover:shadow-md sm:rounded-3xl sm:px-5 sm:py-3.5 ${
                           isOutgoing
-                            ? 'bg-slate-900 text-white rounded-br-md'
+                            ? 'bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-br-md'
                             : 'bg-white text-slate-900 border border-slate-200/60 rounded-bl-md'
                         }`}
                       >
@@ -5688,7 +5688,7 @@ function PrivateChatView({
                 setEmojiPickerForUsername('');
                 onSendMessage(activeContact.username);
               }}
-              className="z-10 shrink-0 border-t border-slate-200/60 bg-white dark:bg-slate-900 p-3 sm:p-5 "
+              className="z-10 shrink-0 border-t border-slate-200/60 bg-white/80 p-3 sm:p-5 backdrop-blur-xl"
             >
               <div className="relative">
                 {isEmojiPickerOpen && (
@@ -5744,7 +5744,7 @@ function PrivateChatView({
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
                   aria-label="Send message"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-all  hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-md transition-all  hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -6262,7 +6262,7 @@ function ProfileView({
                   </div>
                 )}
                 {isOwnProfile && (
-                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
+                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-950/78 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
                     Edit photo
                   </span>
                 )}
@@ -6407,7 +6407,7 @@ function ProfileView({
                   >
                     <span>{tab.label}</span>
                     <span className={`inline-flex min-w-[1.7rem] items-center justify-center rounded-full px-1.5 py-px text-[9px] font-bold sm:text-[10px] ${isActive
-                      ? 'bg-white dark:bg-slate-900 text-white'
+                      ? 'bg-white/15 text-white'
                       : 'bg-white text-slate-600'
                       }`}>
                       {formatCount(tab.count)}
@@ -6507,7 +6507,7 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
 
       <div className="mt-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
         <span>{hint || (onClick ? 'Open list' : 'Live stat')}</span>
-        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition " /> : <span className="h-1.5 w-12 rounded-full bg-blue-600" />}
+        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition " /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
       </div>
     </Container>
   );
@@ -6532,7 +6532,7 @@ function ProfileConnectionsModal({
   const title = type === 'following' ? 'Following' : 'Followers';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900 px-4 py-6 " onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
       <div
         className="motion-pop max-h-[82vh] w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
@@ -6660,7 +6660,7 @@ function MobileProfilePhotoActionsSheet({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[96] flex items-end bg-slate-900 px-4 py-4  sm:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[96] flex items-end bg-slate-950/55 px-4 py-4 backdrop-blur-sm sm:hidden" onClick={onClose}>
       <div
         className="motion-pop w-full rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
@@ -6721,15 +6721,15 @@ function ProfilePhotoPreviewModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-900 px-4 py-6 " onClick={onClose}>
+    <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="motion-pop relative w-full max-w-sm rounded-[30px] border border-slate-700/60 bg-slate-900 p-4 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.88)] sm:max-w-md"
+        className="motion-pop relative w-full max-w-sm rounded-[30px] border border-slate-700/60 bg-slate-950/90 p-4 text-white shadow-[0_32px_90px_-42px_rgba(15,23,42,0.88)] sm:max-w-md"
         onClick={(event) => event.stopPropagation()}
       >
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white dark:bg-slate-900 text-white transition hover:bg-white dark:bg-slate-900"
+          className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
           aria-label="Close profile picture preview"
         >
           <X className="h-4 w-4" />
@@ -7018,7 +7018,7 @@ function ProfileSettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-900 px-4 py-2  sm:py-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-2 backdrop-blur-sm sm:py-4" onClick={onClose}>
       <div
         className="motion-pop flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:max-h-[calc(100dvh-2rem)]"
         onClick={(event) => event.stopPropagation()}
@@ -7636,14 +7636,14 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setIsSettingsOpen((current) => !current); }}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900 text-white "
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 text-white backdrop-blur"
           aria-label="Open video settings"
         >
           <Settings className="h-4 w-4" />
         </button>
 
         {isSettingsOpen && (
-          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900 p-2 text-white shadow-xl pointer-events-auto">
+          <div className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-700 bg-slate-900/95 p-2 text-white shadow-xl pointer-events-auto">
             <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">Quality</p>
             {sourceOptions.map((option) => (
               <button
@@ -7693,7 +7693,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); togglePlayPause(); }}
-            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900  sm:flex"
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
             aria-label={isPlaying ? 'Pause video' : 'Play video'}
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
@@ -7702,7 +7702,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleMute(); }}
-            className="pointer-events-auto flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900 "
+            className="pointer-events-auto flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur"
             aria-label={isMuted ? 'Unmute video' : 'Mute video'}
           >
             {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
@@ -7720,7 +7720,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
             aria-label="Adjust volume"
           />
 
-          <div className="pointer-events-auto hidden items-center gap-1 rounded-full border border-white/35 bg-slate-900 px-2 py-1  sm:flex">
+          <div className="pointer-events-auto hidden items-center gap-1 rounded-full border border-white/35 bg-slate-900/55 px-2 py-1 backdrop-blur sm:flex">
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-300">Q</span>
             <select
               value={activeQualityOption?.value ?? 'auto'}
@@ -7744,7 +7744,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900  sm:flex"
+            className="pointer-events-auto hidden h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border border-white/35 bg-slate-900/55 backdrop-blur sm:flex"
             aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
