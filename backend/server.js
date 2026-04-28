@@ -9,7 +9,23 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
+import admin from 'firebase-admin';
 import { seed } from './seed.js';
+
+// Initialize Firebase Admin
+const firebaseAdminConfig = {
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+};
+
+if (firebaseAdminConfig.projectId && firebaseAdminConfig.clientEmail && firebaseAdminConfig.privateKey) {
+  admin.initializeApp({
+    credential: admin.credential.cert(firebaseAdminConfig),
+  });
+} else {
+  console.warn('Firebase Admin SDK not initialized. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -657,31 +673,16 @@ const authenticateToken = async (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = await admin.auth().verifyIdToken(token);
 
-    let user = null;
-    if (decoded?.sub) {
-      const { data } = await supabase.from('users').select('*').eq('id', decoded.sub).single();
-      user = data;
-      if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
-    }
+    let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
 
-    if (!user && decoded?.uid) {
-      const { data } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
-      user = data;
-    }
-
-    if (!user && decoded?.email) {
+    if (!user && decoded.email) {
       const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
       user = data;
     }
 
-    if (!user && decoded?.username) {
-      const { data } = await supabase.from('users').select('*').eq('username', decoded.username).single();
-      user = data;
-    }
-
-    if (!user) return res.status(401).json({ error: 'Account not found. Please login again.' });
+    if (!user) return res.status(401).json({ error: 'Account not found. Please sync your account.' });
 
     req.user = {
       id: user.id.toString(),
@@ -691,7 +692,8 @@ const authenticateToken = async (req, res, next) => {
       email: user.email || '',
     };
     next();
-  } catch {
+  } catch (error) {
+    console.error('Auth verification error:', error.message);
     return res.status(403).json({ error: 'Invalid or expired token.' });
   }
 };
@@ -707,23 +709,12 @@ const attachOptionalUser = async (req, _res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = await admin.auth().verifyIdToken(token);
 
-    let user = null;
-    if (decoded?.sub) {
-      const { data } = await supabase.from('users').select('*').eq('id', decoded.sub).single();
-      user = data;
-    }
-    if (!user && decoded?.uid) {
-      const { data } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
-      user = data;
-    }
-    if (!user && decoded?.email) {
+    let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
+
+    if (!user && decoded.email) {
       const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
-      user = data;
-    }
-    if (!user && decoded?.username) {
-      const { data } = await supabase.from('users').select('*').eq('username', decoded.username).single();
       user = data;
     }
 
@@ -1177,40 +1168,31 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/firebaseLogin', async (req, res) => {
-  const { uid, email, gender, phoneNumber, username, displayName, mode } = req.body;
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
   
-  if (!uid) return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
+  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
 
   try {
-    const normalizedUid = `${uid}`.trim();
-    const normalizedEmail = normalizeEmail(email);
-    const normalizedDisplayName = normalizeDisplayName(displayName);
+    const decoded = await admin.auth().verifyIdToken(token);
+    const normalizedUid = decoded.uid;
+    
+    const { gender, username, mode, displayName, email, phoneNumber } = req.body;
+    
+    const finalEmail = normalizeEmail(email || decoded.email);
+    const finalDisplayName = normalizeDisplayName(displayName || decoded.name || decoded.display_name);
+    const finalPhoneNumber = normalizePhoneNumber(phoneNumber || decoded.phone_number);
     const normalizedGender = normalizeGender(gender);
-    const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
     const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
     const requestedUsername = normalizeUsernameCandidate(username);
     const { normalizedUsername, error: usernameError } = requestedUsername
       ? validateRequestedUsername(username)
       : { normalizedUsername: '', error: '' };
-    const hasGender = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'gender');
-    const hasPhoneNumber = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'phoneNumber');
-    const hasEmail = !!normalizedEmail;
-    const hasValidEmail = normalizedEmail.includes('@');
-    const hasPhone = !!normalizedPhoneNumber;
-    const usernameSeed = normalizedDisplayName || normalizedEmail.split('@')[0] || normalizedPhoneNumber || normalizedUid;
+    
+    const hasValidEmail = finalEmail && finalEmail.includes('@');
+    const hasPhone = !!finalPhoneNumber;
+    const usernameSeed = finalDisplayName || (hasValidEmail ? finalEmail.split('@')[0] : '') || finalPhoneNumber || normalizedUid;
 
-    if (!normalizedUid || (!hasValidEmail && !hasPhone)) {
-      return res.status(400).json({ error: 'Firebase Authentication payload invalid.' });
-    }
-    if (hasEmail && !hasValidEmail) {
-      return res.status(400).json({ error: 'Email is invalid.' });
-    }
-    if (hasGender && gender && !normalizedGender) {
-      return res.status(400).json({ error: 'Gender value is invalid.' });
-    }
-    if (hasPhoneNumber && phoneNumber && normalizedPhoneNumber.replace(/\D/g, '').length < 7) {
-      return res.status(400).json({ error: 'Phone number is invalid.' });
-    }
     if (normalizedMode === 'signup' && requestedUsername && usernameError) {
       return res.status(400).json({ error: usernameError });
     }
@@ -1218,12 +1200,12 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
     let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', normalizedUid).single();
     
     if (!user && hasValidEmail) {
-      const { data } = await supabase.from('users').select('*').eq('email', normalizedEmail).single();
+      const { data } = await supabase.from('users').select('*').eq('email', finalEmail).single();
       user = data;
     }
 
     if (!user && hasPhone) {
-      const { data } = await supabase.from('users').select('*').eq('phone_number', normalizedPhoneNumber).single();
+      const { data } = await supabase.from('users').select('*').eq('phone_number', finalPhoneNumber).single();
       user = data;
     }
 
@@ -1245,11 +1227,11 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
       const { data: newUser, error } = await supabase.from('users').insert({
         username: resolvedUsername,
-        display_name: normalizedDisplayName,
+        display_name: finalDisplayName,
         firebase_uid: normalizedUid,
-        email: hasValidEmail ? normalizedEmail : null,
+        email: hasValidEmail ? finalEmail : null,
         gender: normalizedGender,
-        phone_number: hasPhone ? normalizedPhoneNumber : null,
+        phone_number: hasPhone ? finalPhoneNumber : null,
         role: 'CitizenReporter',
         password_hash: 'firebase_oauth'
       }).select().single();
@@ -1264,24 +1246,18 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
       const updateData = {};
       if (!user.firebase_uid) updateData.firebase_uid = normalizedUid;
 
-      const canUpdateEmail = !hasValidEmail || !user.email || user.email === normalizedEmail;
-      if (!canUpdateEmail) {
-        const { data: emailOwner } = await supabase.from('users').select('*').eq('email', normalizedEmail).neq('id', user.id).single();
-        if (emailOwner) {
-          return res.status(409).json({ error: 'Email already belongs to another account.' });
-        }
+      if (hasValidEmail && (!user.email || user.email !== finalEmail)) {
+        const { data: emailOwner } = await supabase.from('users').select('*').eq('email', finalEmail).neq('id', user.id).single();
+        if (!emailOwner) updateData.email = finalEmail;
       }
 
-      if (hasValidEmail) updateData.email = normalizedEmail;
-      if (hasPhone && (user.phone_number || user.phoneNumber) && (user.phone_number || user.phoneNumber) !== normalizedPhoneNumber) {
-        const { data: phoneOwner } = await supabase.from('users').select('*').eq('phone_number', normalizedPhoneNumber).neq('id', user.id).single();
-        if (phoneOwner) {
-          return res.status(409).json({ error: 'Phone number already belongs to another account.' });
-        }
+      if (hasPhone && (user.phone_number || user.phoneNumber) !== finalPhoneNumber) {
+        const { data: phoneOwner } = await supabase.from('users').select('*').eq('phone_number', finalPhoneNumber).neq('id', user.id).single();
+        if (!phoneOwner) updateData.phone_number = finalPhoneNumber;
       }
-      if (hasPhone) updateData.phone_number = normalizedPhoneNumber;
-      if (hasGender && normalizedGender) updateData.gender = normalizedGender;
-      if (!(user.display_name || user.displayName) && normalizedDisplayName) updateData.display_name = normalizedDisplayName;
+      
+      if (normalizedGender && !user.gender) updateData.gender = normalizedGender;
+      if (finalDisplayName && !(user.display_name || user.displayName)) updateData.display_name = finalDisplayName;
 
       if (Object.keys(updateData).length > 0) {
         const { data: updatedUser, error } = await supabase.from('users').update(updateData).eq('id', user.id).select().single();
@@ -1291,7 +1267,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
     }
     
     res.json({
-      token: issueAuthToken(user),
+      token: token, // Return the same token or just user info
       username: user.username,
       role: user.role,
       uid: user.firebase_uid || '',
