@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import EmojiPicker from 'emoji-picker-react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
 import ArrowUp from 'lucide-react/dist/esm/icons/arrow-up.js';
@@ -10,17 +11,21 @@ import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
+import CircleHelp from 'lucide-react/dist/esm/icons/circle-help.js';
 import Flag from 'lucide-react/dist/esm/icons/flag.js';
 import Globe from 'lucide-react/dist/esm/icons/globe.js';
 import House from 'lucide-react/dist/esm/icons/house.js';
 import ImageIcon from 'lucide-react/dist/esm/icons/image.js';
+import Link2 from 'lucide-react/dist/esm/icons/link-2.js';
 import Lightbulb from 'lucide-react/dist/esm/icons/lightbulb.js';
 import LogOut from 'lucide-react/dist/esm/icons/log-out.js';
+import Mail from 'lucide-react/dist/esm/icons/mail.js';
 import MapPin from 'lucide-react/dist/esm/icons/map-pin.js';
 import Maximize2 from 'lucide-react/dist/esm/icons/maximize-2.js';
 import MessageCircle from 'lucide-react/dist/esm/icons/message-circle.js';
 import MoreHorizontal from 'lucide-react/dist/esm/icons/more-horizontal.js';
 import Minimize2 from 'lucide-react/dist/esm/icons/minimize-2.js';
+import Moon from 'lucide-react/dist/esm/icons/moon.js';
 import Pause from 'lucide-react/dist/esm/icons/pause.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
@@ -32,6 +37,7 @@ import Smile from 'lucide-react/dist/esm/icons/smile.js';
 import SquarePen from 'lucide-react/dist/esm/icons/square-pen.js';
 import Trash2 from 'lucide-react/dist/esm/icons/trash-2.js';
 import TrendingUp from 'lucide-react/dist/esm/icons/trending-up.js';
+import User from 'lucide-react/dist/esm/icons/user.js';
 import UserCheck from 'lucide-react/dist/esm/icons/user-check.js';
 import UserPlus from 'lucide-react/dist/esm/icons/user-plus.js';
 import Users from 'lucide-react/dist/esm/icons/users.js';
@@ -59,12 +65,12 @@ const Logo = new URL('../Logo.svg', import.meta.url).href;
 const API_BASE_URL = '';
 
 const navItems = [
-  { id: 'home', label: 'Home', Icon: (props) => <House {...props} /> },
-  { id: 'debate', label: 'Debate', Icon: (props) => <MessageCircle {...props} /> },
+  { id: 'home', label: 'Home Feed', Icon: (props) => <FileText {...props} /> },
+  { id: 'create', label: 'Civic Reporting', Icon: (props) => <Flag {...props} />, requiresAuth: true },
   { id: 'chat', label: 'Chat', Icon: (props) => <MessageCircle {...props} />, requiresAuth: true },
-  { id: 'create', label: 'Report', Icon: (props) => <SquarePen {...props} />, requiresAuth: true },
-  { id: 'bookmarks', label: 'Bookmarks', Icon: (props) => <Bookmark {...props} />, requiresAuth: true },
-  { id: 'alerts', label: 'Alerts', Icon: (props) => <Bell {...props} /> },
+  { id: 'profile', label: 'Profile Dashboard', Icon: (props) => <Activity {...props} />, requiresAuth: true },
+  { id: 'alerts', label: 'Notifications', Icon: (props) => <Bell {...props} />, requiresAuth: true },
+  { id: 'bookmarks', label: 'Saved Library', Icon: (props) => <Bookmark {...props} />, requiresAuth: true },
 ];
 
 const defaultPosts = [];
@@ -115,7 +121,7 @@ function buildAppHash({
   profileUsername = '',
   profileTab = 'reports',
   profileModal = '',
-  profileSettingsSection = 'personal',
+  profileSettingsSection = 'overview',
   connectionType = 'followers',
 } = {}) {
   if (view === 'post' && postId) return `#/post/${encodeURIComponent(postId)}`;
@@ -127,7 +133,7 @@ function buildAppHash({
 
     if (profileModal === 'settings') {
       params.set('modal', 'settings');
-      params.set('section', profileSettingsSection || 'personal');
+      params.set('section', profileSettingsSection || 'overview');
     }
 
     if (profileModal === 'connections') {
@@ -156,7 +162,7 @@ function parseAppHash(hashValue) {
     profileUsername: '',
     profileTab: 'reports',
     profileModal: '',
-    profileSettingsSection: 'personal',
+    profileSettingsSection: 'overview',
     connectionType: 'followers',
   };
 
@@ -201,9 +207,9 @@ function parseAppHash(hashValue) {
     const nextModal = params.get('modal') === 'settings' || params.get('modal') === 'connections'
       ? params.get('modal')
       : '';
-    const nextSection = ['personal', 'change-password', 'switch-account', 'logout'].includes(params.get('section') || '')
+    const nextSection = ['overview', 'personal', 'change-password', 'switch-account', 'logout'].includes(params.get('section') || '')
       ? params.get('section')
-      : 'personal';
+      : 'overview';
     const nextConnectionType = params.get('type') === 'following' ? 'following' : 'followers';
 
     return {
@@ -399,7 +405,7 @@ function App() {
   );
   const [isMobileProfilePhotoActionsOpen, setIsMobileProfilePhotoActionsOpen] = useState(false);
   const [isProfilePhotoPreviewOpen, setIsProfilePhotoPreviewOpen] = useState(false);
-  const [profileSettingsSection, setProfileSettingsSection] = useState(initialRouteState.profileSettingsSection || 'personal');
+  const [profileSettingsSection, setProfileSettingsSection] = useState(initialRouteState.profileSettingsSection || 'overview');
   const [profileSettingsStatus, setProfileSettingsStatus] = useState({ type: '', message: '' });
   const [isProfileSettingsSubmitting, setIsProfileSettingsSubmitting] = useState(false);
   const [profileNameDraft, setProfileNameDraft] = useState('');
@@ -1636,6 +1642,7 @@ function App() {
   }) => {
     const fallbackIdentity = firebaseUser.email || firebaseUser.phoneNumber || 'citizen';
     const displayName = preferredDisplayName || firebaseUser.displayName || fallbackIdentity.split('@')[0];
+    const token = await firebaseUser.getIdToken(true);
 
     const createPayload = (resolvedMode) => ({
       mode: resolvedMode,
@@ -1653,7 +1660,10 @@ function App() {
 
     let res = await fetch(`${API_BASE_URL}/api/auth/firebaseLogin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(createPayload(mode)),
     });
     let data = await res.json();
@@ -1727,32 +1737,24 @@ function App() {
     setIsAuthSubmitting(true);
 
     try {
-      const endpoint = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
-      const payload = mode === 'signup'
-        ? {
-          username,
-          displayName,
-          email,
-          password,
-        }
-        : {
-          email,
-          password,
-        };
-
-      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || 'Unable to continue with email.');
+      if (mode === 'signup') {
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(result.user, { displayName });
+        await finalizeFirebaseAuth({
+          firebaseUser: result.user,
+          mode: 'signup',
+          preferredDisplayName: displayName,
+          signupProfile: { username },
+        });
+      } else {
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        await finalizeFirebaseAuth({
+          firebaseUser: result.user,
+          mode: 'login',
+        });
       }
-
-      await completeAuthenticatedSession(data.token);
     } catch (err) {
-      setAuthError(err.message);
+      setAuthError(err.message || 'Authentication failed');
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -2538,7 +2540,7 @@ function App() {
     profilePhotoInputRef.current?.click();
   };
 
-  const openProfileSettings = (section = 'personal') => {
+  const openProfileSettings = (section = 'overview') => {
     closeProfileConnections();
     closeMobileProfilePhotoActions();
     closeProfilePhotoPreview();
@@ -3508,7 +3510,7 @@ function App() {
                     <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
                     <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                      {post.tag && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{post.tag}</span>}
+                      {post.tag && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-900">{post.tag}</span>}
                       <span>{post.department}</span>
                       <span>{post.author}</span>
                     </div>
@@ -3645,7 +3647,7 @@ function App() {
                                   <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
                                   <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
                                   <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                    {post.tag && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{post.tag}</span>}
+                                    {post.tag && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-900">{post.tag}</span>}
                                     <span>{post.department}</span>
                                     <span>{post.author}</span>
                                   </div>
@@ -3674,7 +3676,7 @@ function App() {
                 ref={mobileSearchToggleRef}
                 type="button"
                 onClick={() => setIsSearchOpen((current) => !current)}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 md:hidden ${isSearchOpen ? 'border-blue-200 text-blue-600 ring-2 ring-blue-100' : ''}`}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 md:hidden ${isSearchOpen ? 'border-slate-300 text-black ring-2 ring-blue-100' : ''}`}
                 aria-label={isSearchOpen ? 'Close search' : 'Open search'}
                 aria-expanded={isSearchOpen}
                 aria-controls="mobile-search-panel"
@@ -3683,7 +3685,7 @@ function App() {
               </button>
               {userProfile ? (
                 <>
-                  <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 sm:inline-flex">
+                  <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900 sm:inline-flex">
                     Report Issue
                   </button>
                   <input
@@ -3772,15 +3774,15 @@ function App() {
                     aria-label={item.label}
                     onClick={() => handleNavClick(item.id)}
                     className={`nav-pill chat-nav-pill relative flex h-12 w-12 items-center justify-center rounded-2xl border text-base font-semibold transition ${isActive
-                      ? 'nav-pill--active border-blue-200 bg-blue-600 text-white shadow-[0_18px_30px_-20px_rgba(37,99,235,0.8)]'
+                      ? 'nav-pill--active border-slate-300 bg-black text-white shadow-sm'
                       : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
                     <Icon className="nav-pill__icon h-5 w-5" />
                     {badgeCount > 0 && (
                       <span className={`absolute right-0.5 top-0.5 z-10 inline-flex min-w-[1.3rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none shadow-sm ${isActive
-                        ? 'bg-white text-blue-700'
-                        : 'bg-blue-600 text-white'
+                        ? 'bg-white text-slate-900'
+                        : 'bg-black text-white'
                         }`}>
                         {badgeCount > 99 ? '99+' : badgeCount}
                       </span>
@@ -3807,15 +3809,15 @@ function App() {
                         <button
                           key={item.id}
                           onClick={() => handleNavClick(item.id)}
-                          className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                          className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-black text-white' : 'text-slate-600 hover:bg-slate-100'
                             }`}
                         >
                           <Icon className="nav-pill__icon h-5 w-5" />
                           <span className="flex-1">{item.label}</span>
                           {badgeCount > 0 && (
                             <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${activeView === item.id
-                              ? 'bg-white text-blue-700'
-                              : 'bg-blue-600 text-white'
+                              ? 'bg-white text-slate-900'
+                              : 'bg-black text-white'
                               }`}>
                               {badgeCount > 99 ? '99+' : badgeCount}
                             </span>
@@ -3833,7 +3835,7 @@ function App() {
                     <button
                       type="button"
                       onClick={clearDepartmentFilter}
-                      className="text-xs font-semibold text-blue-700 transition hover:text-blue-800"
+                      className="text-xs font-semibold text-slate-900 transition hover:text-black"
                     >
                       Clear
                     </button>
@@ -3846,12 +3848,12 @@ function App() {
                       key={`${department}-${count}`}
                       onClick={() => handleDepartmentFilterSelect(department)}
                       className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
-                        ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                        ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
                         : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white'
                         }`}
                     >
                       <div className="min-w-0">
-                        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-blue-700' : 'text-slate-500'
+                        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-slate-900' : 'text-slate-500'
                           }`}
                         >
                           {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
@@ -3890,7 +3892,7 @@ function App() {
                         }}
                         className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
                       >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
                           #{index + 1} In this area
                         </p>
                         <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
@@ -4020,7 +4022,7 @@ function App() {
                                 }}
                                 onFocus={() => showAuthorHoverCard(post.author)}
                                 onBlur={hideAuthorHoverCard}
-                                className="truncate text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                                className="truncate text-sm font-semibold text-slate-900 transition hover:text-slate-900"
                               >
                                 {post.author}
                               </button>
@@ -4051,7 +4053,7 @@ function App() {
                                         event.stopPropagation();
                                         openAuthorProfile(post.author);
                                       }}
-                                      className="truncate text-left text-base font-bold text-slate-950 transition hover:text-blue-700"
+                                      className="truncate text-left text-base font-bold text-slate-950 transition hover:text-slate-900"
                                     >
                                       {post.author}
                                     </button>
@@ -4099,7 +4101,7 @@ function App() {
                                 }}
                                 className={`inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${isFollowingAuthor
                                   ? 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                  : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-blue-700 hover:bg-blue-100'
+                                  : 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 text-slate-900 hover:bg-slate-200'
                                   }`}
                               >
                                 {isFollowingAuthor ? <UserCheck className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
@@ -4188,7 +4190,7 @@ function App() {
                           </div>
                         </div>
                         <div>
-                          <h3 className="font-display text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
+                          <h3 className="font-serif text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
                           <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
                           {isTruncated && (
                             <button
@@ -4197,7 +4199,7 @@ function App() {
                                 event.stopPropagation();
                                 setExpandedDescriptionByPost((current) => ({ ...current, [post.id]: !isDescriptionExpanded }))
                               }}
-                              className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
+                              className="mt-1 text-sm font-semibold text-slate-900 hover:text-black"
                             >
                               {isDescriptionExpanded ? 'Read less' : 'Read more'}
                             </button>
@@ -4207,7 +4209,7 @@ function App() {
 
                         <div className="order-2 space-y-3">
                           <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-blue-700"><MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.location}</span>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-slate-900"><MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.location}</span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-slate-600"><Building2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />{post.department}</span>
                             {post.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-700"><BadgeCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5" />Verified</span>}
                           </div>
@@ -4220,7 +4222,7 @@ function App() {
                                 handleSupport(post.id);
                               }}
                               className={`btn-interactive  flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700 animate-glow'
+                                ? 'border-blue-700 bg-black text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-black/60 hover:bg-slate-900 animate-glow'
                                 : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:border-blue-300'
                                 }`}
                             >
@@ -4280,7 +4282,7 @@ function App() {
                       <Bookmark className="h-3.5 w-3.5 fill-current" />
                       Personal Library
                     </span>
-                    <h2 className="mt-4 font-display text-[24px] font-bold text-slate-950 sm:text-[30px]">Saved posts</h2>
+                    <h2 className="mt-4 font-serif text-[24px] font-bold text-slate-950 sm:text-[30px]">Saved posts</h2>
                     <p className="mt-2 text-base text-slate-500">
                       A clean place to revisit the reports you want to track, share, or come back to later.
                     </p>
@@ -4289,11 +4291,11 @@ function App() {
                   <div className="grid w-full gap-3 sm:max-w-[460px] sm:grid-cols-3">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Saved posts</p>
-                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(bookmarkedPosts.length)}</p>
+                      <p className="mt-2 font-serif text-2xl font-bold text-slate-950">{formatCount(bookmarkedPosts.length)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Departments</p>
-                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(bookmarkedDepartmentsCount)}</p>
+                      <p className="mt-2 font-serif text-2xl font-bold text-slate-950">{formatCount(bookmarkedDepartmentsCount)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Top category</p>
@@ -4346,11 +4348,11 @@ function App() {
               <div className="soft-card signal-hero p-5 sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div className="max-w-2xl">
-                    <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-900">
                       <MessageCircle className="h-3.5 w-3.5" />
                       Debate Hub
                     </span>
-                    <h2 className="mt-4 font-display text-[24px] font-bold text-slate-950 sm:text-[30px]">Where the strongest public arguments are taking shape</h2>
+                    <h2 className="mt-4 font-serif text-[24px] font-bold text-slate-950 sm:text-[30px]">Where the strongest public arguments are taking shape</h2>
                     <p className="mt-2 text-base text-slate-500">
                       Follow the reports drawing the most community pushback, solution threads, and public scrutiny right now.
                     </p>
@@ -4359,15 +4361,15 @@ function App() {
                   <div className="grid w-full gap-3 sm:max-w-[460px] sm:grid-cols-3">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Live debates</p>
-                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debatePosts.length)}</p>
+                      <p className="mt-2 font-serif text-2xl font-bold text-slate-950">{formatCount(debatePosts.length)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Comments</p>
-                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debateCommentsCount)}</p>
+                      <p className="mt-2 font-serif text-2xl font-bold text-slate-950">{formatCount(debateCommentsCount)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Solutions</p>
-                      <p className="mt-2 font-display text-2xl font-bold text-slate-950">{formatCount(debateSolutionsCount)}</p>
+                      <p className="mt-2 font-serif text-2xl font-bold text-slate-950">{formatCount(debateSolutionsCount)}</p>
                     </div>
                   </div>
                 </div>
@@ -4389,10 +4391,10 @@ function App() {
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="min-w-0 flex-1">
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-900">
                               Debate #{index + 1}
                             </p>
-                            <h3 className="mt-2 font-display text-xl font-bold leading-tight text-slate-950">{post.title}</h3>
+                            <h3 className="mt-2 font-serif text-xl font-bold leading-tight text-slate-950">{post.title}</h3>
                             <p className="mt-2 text-sm leading-6 text-slate-500">
                               {getDescriptionPreview(post.description, false, 170).previewText}
                             </p>
@@ -4404,7 +4406,7 @@ function App() {
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-900">
                             <MapPin className="h-3.5 w-3.5" />
                             {post.location}
                           </span>
@@ -4578,7 +4580,7 @@ function App() {
                                   event.stopPropagation();
                                   openAuthorProfile(activePost.author);
                                 }}
-                                className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                                className="text-sm font-semibold text-slate-900 transition hover:text-slate-900"
                               >
                                 {activePost.author}
                               </button>
@@ -4603,7 +4605,7 @@ function App() {
                         </div>
 
                         <div>
-                          <h3 className="font-display text-2xl font-bold leading-tight text-slate-950">{activePost.title}</h3>
+                          <h3 className="font-serif text-2xl font-bold leading-tight text-slate-950">{activePost.title}</h3>
                           <p className="mt-2 text-sm leading-7 text-slate-600">{activeDescriptionPreview}</p>
                           {isActiveDescriptionTruncated && (
                             <button
@@ -4611,7 +4613,7 @@ function App() {
                               onClick={() =>
                                 setExpandedDescriptionByPost((current) => ({ ...current, [activePost.id]: !isDescriptionExpanded }))
                               }
-                              className="mt-1 text-sm font-semibold text-blue-700 hover:text-blue-800"
+                              className="mt-1 text-sm font-semibold text-slate-900 hover:text-black"
                             >
                               {isDescriptionExpanded ? 'Read less' : 'Read more'}
                             </button>
@@ -4622,7 +4624,7 @@ function App() {
 
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700"><MapPin className="h-3.5 w-3.5" />{activePost.location}</span>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-900"><MapPin className="h-3.5 w-3.5" />{activePost.location}</span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-600"><Building2 className="h-3.5 w-3.5" />{activePost.department}</span>
                             {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                           </div>
@@ -4633,7 +4635,7 @@ function App() {
                               disabled={isSubmittingAction}
                               onClick={() => handleSupport(activePost.id)}
                               className={`flex items-center justify-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold transition sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60 ${isSupportedByUser
-                                ? 'border-blue-700 bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-blue-500/60 hover:bg-blue-700'
+                                ? 'border-blue-700 bg-black text-white shadow-[0_6px_16px_-8px_rgba(29,78,216,0.9)] ring-1 ring-black/60 hover:bg-slate-900'
                                 : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                                 }`}
                             >
@@ -4644,7 +4646,7 @@ function App() {
                               type="button"
                               disabled={isSubmittingAction}
                               onClick={() => focusCommentInput(activePost.id)}
-                              className="flex items-center justify-center gap-1 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                              className="flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-900 transition hover:bg-slate-200 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               <MessageCircle className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Comment {formatCount(activePost.comments)}</span>
@@ -4801,7 +4803,7 @@ function App() {
                                     <button
                                       type="button"
                                       onClick={() => openAuthorProfile(comment.author)}
-                                      className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+                                      className="text-sm font-semibold text-slate-900 transition hover:text-slate-900"
                                     >
                                       {comment.author}
                                     </button>
@@ -4847,7 +4849,7 @@ function App() {
                             }}
                             className="signal-tile w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:bg-white"
                           >
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">#{index + 1} Trending</p>
                             <p className="mt-1.5 text-base font-semibold leading-6 text-slate-950">{post.title}</p>
                             <p className="mt-2 text-sm text-slate-500">
                               {formatCount(post.support)} supports • {post.department}
@@ -4870,7 +4872,7 @@ function App() {
           {activeView === 'create' && (
             <div className="soft-card signal-hero p-5 sm:p-6">
               <p className="text-xs font-semibold text-slate-500">Create New Issue</p>
-              <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Simple, mobile-friendly reporting.</h2>
+              <h2 className="mt-1.5 font-serif text-[24px] font-bold text-slate-950 sm:text-[28px]">Simple, mobile-friendly reporting.</h2>
               <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
                 <section className="posting-guidelines-card rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.13em] text-amber-800">Important: Read Before Posting</p>
@@ -4892,7 +4894,7 @@ function App() {
                   <label className="posting-guidelines-consent mt-4 flex items-start gap-2.5 rounded-xl border border-amber-300/70 bg-white px-3 py-2.5 text-sm font-medium text-slate-800">
                     <input
                       type="checkbox"
-                      className="mt-[2px] h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="mt-[2px] h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
                       checked={hasAcceptedPostingRules}
                       onChange={(event) => {
                         setHasAcceptedPostingRules(event.target.checked);
@@ -4910,7 +4912,7 @@ function App() {
                     <div className="upload-zone__inner flex flex-col items-center justify-center pt-5 pb-6">
                       <div className="upload-zone__icons mb-2 flex gap-2">
                         <ImageIcon className="h-6 w-6 text-orange-500" />
-                        <VideoIcon className="h-6 w-6 text-blue-600" />
+                        <VideoIcon className="h-6 w-6 text-black" />
                         <FileText className="h-6 w-6 text-emerald-600" />
                       </div>
                       <p className="text-sm font-semibold text-slate-600">Click or drag files to upload</p>
@@ -4970,7 +4972,7 @@ function App() {
                         type="button"
                         onClick={() => setPostForm({ ...postForm, department })}
                         className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${postForm.department === department
-                          ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-blue-700'
+                          ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 text-slate-900'
                           : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-600 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                           }`}
                       >
@@ -5022,7 +5024,7 @@ function App() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold text-slate-500">Notifications</p>
-                  <h2 className="mt-1.5 font-display text-[24px] font-bold text-slate-950 sm:text-[28px]">Updates related to your reports</h2>
+                  <h2 className="mt-1.5 font-serif text-[24px] font-bold text-slate-950 sm:text-[28px]">Updates related to your reports</h2>
                   {userProfile && (
                     <p className="mt-2 text-sm text-slate-500">
                       {unreadAlertsCount > 0
@@ -5072,14 +5074,14 @@ function App() {
                       key={item.id}
                       className={`alert-card rounded-xl border p-4 pl-5 transition ${item.read
                         ? 'border-slate-200 bg-slate-50'
-                        : 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20/70 shadow-[0_20px_45px_-34px_rgba(37,99,235,0.45)]'
+                        : 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20/70 shadow-[0_20px_45px_-34px_rgba(37,99,235,0.45)]'
                         }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            {!item.read && <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">
+                            {!item.read && <span className="h-2.5 w-2.5 rounded-full bg-black" />}
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
                               {getNotificationTypeLabel(item.type)}
                             </p>
                           </div>
@@ -5215,13 +5217,19 @@ function App() {
                 profile={userProfile}
                 profilePhotoUrl={profilePhotoUrl}
                 profileJoinLabel={profileJoinLabel}
+                theme={theme}
                 nameDraft={profileNameDraft}
                 usernameDraft={profileUsernameDraft}
                 personalDescriptionDraft={profilePersonalDescriptionDraft}
                 passwordDraft={profilePasswordDraft}
                 onClose={closeProfileSettings}
                 onSectionChange={handleProfileSettingsSectionChange}
+                onOpenNotifications={() => {
+                  closeProfileSettings();
+                  setActiveView('alerts');
+                }}
                 onEditPhoto={() => profilePhotoInputRef.current?.click()}
+                onThemeToggle={handleThemeToggle}
                 onNameDraftChange={setProfileNameDraft}
                 onUsernameDraftChange={setProfileUsernameDraft}
                 onPersonalDescriptionDraftChange={setProfilePersonalDescriptionDraft}
@@ -5240,7 +5248,7 @@ function App() {
                   )}
                   <div className="flex-1">
                     <p className="text-xs font-semibold text-slate-500">{profileDisplay.role}</p>
-                    <h2 className="mt-1.5 font-display text-[28px] font-bold text-slate-950">{profileDisplay.displayName || profileDisplay.username}</h2>
+                    <h2 className="mt-1.5 font-serif text-[28px] font-bold text-slate-950">{profileDisplay.displayName || profileDisplay.username}</h2>
                     <p className="mt-2 text-sm text-slate-500">Posts: {profileDisplay.postsCount} • Solutions Proposed: {profileDisplay.solutionsProposed}</p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-3">
                       <MetricBox label="Reputation" value={profileDisplay.reputation} dark={false} />
@@ -5277,7 +5285,7 @@ function App() {
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Common solution</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-900">Common solution</p>
                     <p className="mt-2 text-sm leading-6 text-slate-700">
                       {activePostAiStatus === 'loading' && 'Combining the most common ideas...'}
                       {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
@@ -5305,7 +5313,7 @@ function App() {
                     }}
                     className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
                   >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">#{index + 1} Trending</p>
                     <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
                     <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
                   </button>
@@ -5349,17 +5357,17 @@ function App() {
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
                 className={`mobile-nav-pill relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl px-2 py-2.5 text-[11px] font-semibold transition-all ${isActive ? 'mobile-nav-pill--active ' : ''
-                  }${isActive ? 'text-blue-700' : 'text-slate-400 '
+                  }${isActive ? 'text-slate-900' : 'text-slate-400 '
                   }`}
               >
                 <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
                 {badgeCount > 0 && (
-                  <span className="absolute right-3 top-2 inline-flex min-w-[1.3rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                  <span className="absolute right-3 top-2 inline-flex min-w-[1.3rem] items-center justify-center rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
                     {badgeCount > 99 ? '99+' : badgeCount}
                   </span>
                 )}
                 <span>{item.label}</span>
-                {isActive && <span className="mt-0.5 h-1 w-1 rounded-full bg-blue-600" />}
+                {isActive && <span className="mt-0.5 h-1 w-1 rounded-full bg-black" />}
               </button>
             );
           })}
@@ -5386,8 +5394,8 @@ function GenderPromptModal({
       <div className="w-full max-w-md rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-6 shadow-[0_32px_80px_-40px_rgba(15,23,42,0.55)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Profile setup</p>
-            <h2 className="mt-2 font-display text-2xl font-bold text-slate-950">One quick detail</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-900">Profile setup</p>
+            <h2 className="mt-2 font-serif text-2xl font-bold text-slate-950">One quick detail</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {`You're in, ${username}. Choose your gender now that your content is visible.`}
             </p>
@@ -5484,7 +5492,7 @@ function PrivateChatView({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-teal-600">Messages</p>
-              <h2 className="mt-1 font-display text-2xl font-extrabold text-slate-950 sm:text-[26px]">Inbox</h2>
+              <h2 className="mt-1 font-serif text-2xl font-extrabold text-slate-950 sm:text-[26px]">Inbox</h2>
             </div>
             <span className="flex h-7 items-center justify-center rounded-full bg-slate-900 px-3.5 text-xs font-bold text-white shadow-sm">
               {formatCount(contacts.length)} <span className="ml-1 hidden font-normal text-white/70 sm:inline">chats</span>
@@ -5539,7 +5547,7 @@ function PrivateChatView({
                   <div className="min-w-0 flex-1 self-stretch">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm font-bold sm:text-[15px] ${isActive ? 'text-white' : 'text-slate-900 group-hover:text-blue-600 transition-colors'}`}>
+                        <p className={`truncate text-sm font-bold sm:text-[15px] ${isActive ? 'text-white' : 'text-slate-900 group-hover:text-black transition-colors'}`}>
                           {contact.displayName || contact.username}
                         </p>
                         <p className={`mt-0.5 truncate text-[11px] font-semibold sm:text-xs ${isActive ? 'text-white/80' : 'text-slate-500'}` }>
@@ -5556,7 +5564,7 @@ function PrivateChatView({
                           </span>
                         )}
                         {contact.unreadCount > 0 && !isActive && (
-                          <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                          <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
                             {contact.unreadCount > 99 ? '99+' : contact.unreadCount}
                           </span>
                         )}
@@ -5605,7 +5613,7 @@ function PrivateChatView({
                 )}
 
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-slate-950 transition-colors group-hover:text-blue-600 sm:text-[15px]">
+                  <p className="truncate text-sm font-bold text-slate-950 transition-colors group-hover:text-black sm:text-[15px]">
                     {activeContact.displayName || activeContact.username}
                   </p>
                   <p className="truncate text-xs font-medium text-slate-500">
@@ -5670,10 +5678,10 @@ function PrivateChatView({
 
               {activeMessages.length === 0 && activeMessagesStatus !== 'loading' && (
                 <div className="flex h-full flex-col items-center justify-center motion-fade-up px-4 text-center">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-500 ring-8 ring-blue-50/50">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-800 ring-8 ring-blue-50/50">
                     <MessageCircle className="h-7 w-7" />
                   </div>
-                  <h3 className="font-display text-xl font-bold text-slate-900">Start the conversation</h3>
+                  <h3 className="font-serif text-xl font-bold text-slate-900">Start the conversation</h3>
                   <p className="mt-2 max-w-[280px] text-sm text-slate-500 leading-relaxed">
                     Say hello to @{activeContact.username}. This conversation is secured.
                   </p>
@@ -5692,20 +5700,15 @@ function PrivateChatView({
             >
               <div className="relative">
                 {isEmojiPickerOpen && (
-                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2 shadow-lg">
-                    <div className="flex flex-wrap gap-1.5">
-                      {CHAT_QUICK_EMOJIS.map((emoji) => (
-                        <button
-                          key={`desktop-chat-emoji-${emoji}`}
-                          type="button"
-                          onClick={() => handleEmojiInsert(emoji)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:bg-slate-100"
-                          aria-label={`Insert ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="absolute bottom-full left-0 z-20 mb-2 shadow-lg">
+                    <EmojiPicker 
+                      onEmojiClick={(emojiData) => handleEmojiInsert(emojiData.emoji)}
+                      autoFocusSearch={false}
+                      searchDisabled={true}
+                      skinTonesDisabled={true}
+                      width={300}
+                      height={350}
+                    />
                   </div>
                 )}
                 <div className="relative flex items-center gap-2.5 rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 transition-shadow focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-500/30 focus-within:shadow-md sm:gap-3 sm:rounded-3xl">
@@ -5762,7 +5765,7 @@ function PrivateChatView({
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100/80 text-slate-400 shadow-sm ring-1 ring-slate-200/50">
               <MessageCircle className="h-9 w-9" />
             </div>
-            <h3 className="font-display text-2xl font-bold text-slate-900">Your Messages</h3>
+            <h3 className="font-serif text-2xl font-bold text-slate-900">Your Messages</h3>
             <p className="mt-2 max-w-[280px] text-sm text-slate-500 leading-relaxed">
               Select a conversation from the sidebar or start a new tight-knit dialogue from a user's profile.
             </p>
@@ -5807,8 +5810,8 @@ function MobileFirstPrivateChatView({
         <div className="chat-mobile-inbox__header sticky top-0 z-10 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4 xl:hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
-              <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950">Inbox</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-900">Messages</p>
+              <h2 className="mt-1 font-serif text-[24px] font-extrabold leading-none text-slate-950">Inbox</h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">
                 {currentUsername ? `Signed in as @${currentUsername}` : 'Private conversations'}
               </p>
@@ -5831,8 +5834,8 @@ function MobileFirstPrivateChatView({
         <div className="hidden xl:block chat-mobile-inbox__header-desktop border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4 xl:px-5 xl:pt-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-blue-700">Messages</p>
-              <h2 className="mt-1 font-display text-[24px] font-extrabold leading-none text-slate-950 xl:text-[28px]">Inbox</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-slate-900">Messages</p>
+              <h2 className="mt-1 font-serif text-[24px] font-extrabold leading-none text-slate-950 xl:text-[28px]">Inbox</h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">Open a conversation or jump back into the people you message most.</p>
             </div>
             <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
@@ -5869,7 +5872,7 @@ function MobileFirstPrivateChatView({
                   style={{ animationDelay: `${idx * 35}ms` }}
                   className={`group relative flex w-full items-center gap-3 rounded-xl border px-3.5 py-3.5 text-left transition sm:gap-4 sm:px-4 xl:px-3.5 xl:py-3.5 ${
                     isActive
-                      ? 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 text-slate-950'
+                      ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 text-slate-950'
                       : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
                   }`}
                 >
@@ -5882,7 +5885,7 @@ function MobileFirstPrivateChatView({
                       />
                     ) : (
                       <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xs font-bold uppercase sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${
-                        isActive ? 'bg-blue-600 text-white ring-1 ring-blue-200' : 'bg-slate-700 text-white'
+                        isActive ? 'bg-black text-white ring-1 ring-blue-200' : 'bg-slate-700 text-white'
                       }`}>
                         {getInitials(contact.username)}
                       </div>
@@ -5897,7 +5900,7 @@ function MobileFirstPrivateChatView({
                             {contact.displayName || contact.username}
                           </p>
                           {contact.unreadCount > 0 && (
-                            <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
+                            <span className="inline-flex min-w-[1.35rem] items-center justify-center rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
                               {contact.unreadCount > 99 ? '99+' : contact.unreadCount}
                             </span>
                           )}
@@ -5913,7 +5916,7 @@ function MobileFirstPrivateChatView({
                       <div className="flex shrink-0 items-center justify-end">
 
                           {contact.unreadCount > 0 ? (
-                          <div className="h-2.5 w-2.5 rounded-full bg-blue-500 xl:inline-flex xl:min-w-[1.4rem] xl:h-auto xl:w-auto xl:items-center xl:justify-center xl:rounded-full xl:bg-blue-600 xl:px-1.5 xl:py-0.5 xl:text-[10px] xl:font-bold xl:leading-none xl:text-white">
+                          <div className="h-2.5 w-2.5 rounded-full bg-slate-800 xl:inline-flex xl:min-w-[1.4rem] xl:h-auto xl:w-auto xl:items-center xl:justify-center xl:rounded-full xl:bg-black xl:px-1.5 xl:py-0.5 xl:text-[10px] xl:font-bold xl:leading-none xl:text-white">
                             <span className="hidden xl:inline">{contact.unreadCount > 99 ? '99+' : contact.unreadCount}</span>
                           </div>
                         ) : (
@@ -5924,7 +5927,7 @@ function MobileFirstPrivateChatView({
                           </div>
                         )}
                         {contact.lastMessage?.createdAt && (
-                          <span className={`hidden xl:inline ml-2 text-[10px] font-semibold ${isActive ? 'text-blue-700' : 'text-slate-400'}`}>
+                          <span className={`hidden xl:inline ml-2 text-[10px] font-semibold ${isActive ? 'text-slate-900' : 'text-slate-400'}`}>
                             {formatTimestamp(contact.lastMessage.createdAt)}
                           </span>
                         )}
@@ -5994,7 +5997,7 @@ function MobileFirstPrivateChatView({
                   )}
 
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-950 group-hover:text-blue-600 sm:text-[15px]">
+                    <p className="truncate text-sm font-semibold text-slate-950 group-hover:text-black sm:text-[15px]">
                       {activeContact.displayName || activeContact.username}
                     </p>
                     <p className="truncate text-xs font-medium text-slate-500">
@@ -6043,7 +6046,7 @@ function MobileFirstPrivateChatView({
                         <div
                           className={`rounded-2xl px-4 py-3 text-sm sm:px-5 sm:text-[15px] ${
                             isOutgoing
-                              ? 'rounded-br-lg bg-blue-600 text-white'
+                              ? 'rounded-br-lg bg-black text-white'
                               : 'rounded-bl-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-900'
                           }`}
                         >
@@ -6062,7 +6065,7 @@ function MobileFirstPrivateChatView({
                     <div className="mb-4 flex h-18 w-18 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                       <MessageCircle className="h-7 w-7" />
                     </div>
-                    <h3 className="font-display text-xl font-bold text-slate-900">Start the conversation</h3>
+                    <h3 className="font-serif text-xl font-bold text-slate-900">Start the conversation</h3>
                     <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-slate-500">
                       Say hello to @{activeContact.username}. Your messages stay private here.
                     </p>
@@ -6081,23 +6084,16 @@ function MobileFirstPrivateChatView({
             >
               <div className="relative">
                 {isEmojiPickerOpen && (
-                  <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-2 shadow-lg">
-                    <div className="flex flex-wrap gap-1.5">
-                      {CHAT_QUICK_EMOJIS.map((emoji) => (
-                        <button
-                          key={`mobile-chat-emoji-${emoji}`}
-                          type="button"
-                          onClick={() => handleEmojiInsert(emoji)}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-lg transition hover:bg-slate-100"
-                          aria-label={`Insert ${emoji}`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+                  <div className="absolute bottom-full left-0 z-20 mb-2 shadow-lg">
+                    <EmojiPicker 
+                      onEmojiClick={(emojiData) => handleEmojiInsert(emojiData.emoji)}
+                      autoFocusSearch={false}
+                      width="100%"
+                      height={350}
+                    />
                   </div>
                 )}
-                <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-2 focus-within:border-blue-300 dark:focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
+                <div className="flex items-end gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-2 focus-within:border-blue-300 dark:focus-within:border-black focus-within:ring-2 focus-within:ring-blue-100">
                   <button
                     type="button"
                     onClick={() => {
@@ -6133,7 +6129,7 @@ function MobileFirstPrivateChatView({
                   type="submit"
                   disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
                   aria-label="Send message"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
                 >
                   {isSending ? (
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -6150,7 +6146,7 @@ function MobileFirstPrivateChatView({
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-slate-100/80 text-slate-400 shadow-sm ring-1 ring-slate-200/50">
               <MessageCircle className="h-9 w-9" />
             </div>
-            <h3 className="font-display text-2xl font-bold text-slate-900">Your Messages</h3>
+            <h3 className="font-serif text-2xl font-bold text-slate-900">Your Messages</h3>
             <p className="mt-2 max-w-[280px] text-sm leading-relaxed text-slate-500">
               Select a conversation from the inbox or start a new private dialogue from a user profile.
             </p>
@@ -6228,7 +6224,7 @@ function ProfileView({
               <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
                 {profileDisplay.role}
               </span>
-              <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+              <span className="rounded-full border border-blue-100 bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-900">
                 {profileBeat}
               </span>
               <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -6238,7 +6234,7 @@ function ProfileView({
 
             <div className="signal-score w-full rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3 text-left sm:w-auto sm:text-right">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
-              <p className="mt-1 font-display text-2xl font-bold text-slate-950 sm:text-3xl">{profileImpactScore}%</p>
+              <p className="mt-1 font-serif text-2xl font-bold text-slate-950 sm:text-3xl">{profileImpactScore}%</p>
             </div>
           </div>
 
@@ -6270,9 +6266,9 @@ function ProfileView({
 
               <div className="max-w-2xl">
                 <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="font-display text-[32px] font-bold leading-tight text-slate-950 sm:text-[40px]">{profileDisplay.displayName}</h2>
+                  <h2 className="font-serif text-[32px] font-bold leading-tight text-slate-950 sm:text-[40px]">{profileDisplay.displayName}</h2>
                   {profileDisplay.reputation >= 600 && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-100/50 px-3 py-1 text-xs font-bold text-blue-700 shadow-sm transition hover:bg-blue-100 sm:px-3.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-200/50 px-3 py-1 text-xs font-bold text-slate-900 shadow-sm transition hover:bg-slate-200 sm:px-3.5">
                       <BadgeCheck className="h-4 w-4" />
                       Verified
                     </span>
@@ -6282,15 +6278,15 @@ function ProfileView({
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{profileBio}</p>
                 <div className="mt-4 flex flex-wrap gap-2.5 text-sm text-slate-500">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <MapPin className="h-4 w-4 text-blue-600" />
+                    <MapPin className="h-4 w-4 text-black" />
                     {profileLocation}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <CalendarDays className="h-4 w-4 text-blue-600" />
+                    <CalendarDays className="h-4 w-4 text-black" />
                     Joined {profileJoinLabel}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <Globe className="h-4 w-4 text-blue-600" />
+                    <Globe className="h-4 w-4 text-black" />
                     {profileTopLocations[0] || profileLocation}
                   </span>
                 </div>
@@ -6360,7 +6356,7 @@ function ProfileView({
                     <button
                       type="button"
                       onClick={onOpenLatestPost}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 sm:w-auto sm:justify-start"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-200 sm:w-auto sm:justify-start"
                     >
                       <ArrowUpRight className="h-4 w-4" />
                       Latest report
@@ -6491,23 +6487,23 @@ function ProfileStatPill({ icon, label, value, hint, onClick }) {
     <Container
       {...(onClick ? { type: 'button', onClick } : {})}
       className={`signal-metric group rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.94))] px-4 py-4 text-left shadow-[0_14px_34px_-28px_rgba(15,23,42,0.25)] transition sm:px-5 ${onClick
-        ? ' hover:border-blue-200 hover:bg-white'
+        ? ' hover:border-slate-300 hover:bg-white'
         : ''
         }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-          <p className="mt-3 font-display text-[28px] font-bold leading-none text-slate-950">{value}</p>
+          <p className="mt-3 font-serif text-[28px] font-bold leading-none text-slate-950">{value}</p>
         </div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white text-blue-600 shadow-[0_14px_30px_-22px_rgba(37,99,235,0.9)]">
+        <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white text-black shadow-[0_14px_30px_-22px_rgba(37,99,235,0.9)]">
           {icon}
         </span>
       </div>
 
       <div className="mt-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
         <span>{hint || (onClick ? 'Open list' : 'Live stat')}</span>
-        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-blue-600 transition " /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
+        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-black transition " /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
       </div>
     </Container>
   );
@@ -6539,8 +6535,8 @@ function ProfileConnectionsModal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">{title}</p>
-            <h3 className="mt-1 font-display text-2xl font-bold text-slate-950">@{profileUsername}</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-900">{title}</p>
+            <h3 className="mt-1 font-serif text-2xl font-bold text-slate-950">@{profileUsername}</h3>
           </div>
           <button
             type="button"
@@ -6611,7 +6607,7 @@ function ProfileConnectionsModal({
                     </button>
 
                     {isOwnItem ? (
-                      <span className="rounded-full border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold text-blue-700">
+                      <span className="rounded-full border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-3 py-1 text-xs font-semibold text-slate-900">
                         You
                       </span>
                     ) : (
@@ -6759,40 +6755,6 @@ function ProfilePhotoPreviewModal({
   );
 }
 
-function ThemeSwitch({ checked, onChange, label = 'Theme', compact = false }) {
-  const switchId = useId();
-  const wrapperClassName = compact ? 'theme-switch theme-switch--compact' : 'theme-switch';
-
-  return (
-    <div className={wrapperClassName}>
-      {!compact && <span className="theme-switch__label">{label}</span>}
-      <div className="theme-switch__toggle-wrap">
-        <input
-          id={switchId}
-          className="theme-switch__input"
-          type="checkbox"
-          checked={checked}
-          onChange={onChange}
-          aria-label={checked ? 'Switch to light theme' : 'Switch to dark theme'}
-        />
-        <label className="theme-switch__toggle" htmlFor={switchId}>
-          <span className="theme-switch__handler">
-            <span className="theme-switch__crater theme-switch__crater--1" />
-            <span className="theme-switch__crater theme-switch__crater--2" />
-            <span className="theme-switch__crater theme-switch__crater--3" />
-          </span>
-          <span className="theme-switch__star theme-switch__star--1" />
-          <span className="theme-switch__star theme-switch__star--2" />
-          <span className="theme-switch__star theme-switch__star--3" />
-          <span className="theme-switch__star theme-switch__star--4" />
-          <span className="theme-switch__star theme-switch__star--5" />
-          <span className="theme-switch__star theme-switch__star--6" />
-        </label>
-      </div>
-    </div>
-  );
-}
-
 function ProfileSettingsModal({
   isOpen,
   activeSection,
@@ -6801,13 +6763,16 @@ function ProfileSettingsModal({
   profile,
   profilePhotoUrl,
   profileJoinLabel,
+  theme,
   nameDraft,
   usernameDraft,
   personalDescriptionDraft,
   passwordDraft,
   onClose,
   onSectionChange,
+  onOpenNotifications,
   onEditPhoto,
+  onThemeToggle,
   onNameDraftChange,
   onUsernameDraftChange,
   onPersonalDescriptionDraftChange,
@@ -6818,13 +6783,6 @@ function ProfileSettingsModal({
   onSwitchAccount,
 }) {
   if (!isOpen || !profile) return null;
-
-  const sections = [
-    { id: 'personal', label: 'Personal details', Icon: Users },
-    { id: 'change-password', label: 'Change password', Icon: ShieldCheck },
-    { id: 'switch-account', label: 'Switch account', Icon: UserPlus },
-    { id: 'logout', label: 'Logout', Icon: LogOut },
-  ];
 
   const profileRows = [
     ['Email', profile.email || 'Not added'],
@@ -6838,100 +6796,126 @@ function ProfileSettingsModal({
     || `${usernameDraft ?? ''}`.trim() !== `${profile.username ?? ''}`.trim()
     || `${personalDescriptionDraft ?? ''}`.trim() !== `${profile.personalDescription ?? ''}`.trim()
   );
+  const settingsGroups = [
+    {
+      title: 'Account settings',
+      items: [
+        { id: 'personal', label: 'Profile Information', Icon: User, action: () => onSectionChange('personal') },
+        { id: 'change-password', label: 'Security & Password', Icon: ShieldCheck, action: () => onSectionChange('change-password') },
+        { id: 'switch-account', label: 'Linked Accounts', Icon: Link2, action: () => onSectionChange('switch-account'), badge: '1 active' },
+      ],
+    },
+    {
+      title: 'Preferences',
+      items: [
+        { id: 'language', label: 'Language', Icon: Globe, value: 'English (US)', disabled: true },
+        { id: 'theme', label: 'Dark Mode', Icon: Moon, toggle: true },
+        { id: 'notifications', label: 'Notifications', Icon: Bell, action: onOpenNotifications },
+      ],
+    },
+    {
+      title: 'Support',
+      items: [
+        { id: 'help', label: 'Help Center', Icon: CircleHelp, action: () => window.open('https://support.google.com/', '_blank', 'noopener,noreferrer'), external: true },
+        { id: 'contact', label: 'Contact Us', Icon: Mail, action: () => window.open('mailto:support@publicpolicyhub.app', '_self') },
+        { id: 'privacy', label: 'Privacy Policy', Icon: ShieldCheck, action: () => window.open('https://policies.google.com/privacy', '_blank', 'noopener,noreferrer'), external: true },
+      ],
+    },
+  ];
+
+  const displayName = getDisplayNameLabel(profile.displayName, profile.username);
+  const profileSubtitle = `${profile.role || 'Civic member'}${profileJoinLabel ? ` • Joined ${profileJoinLabel}` : ''}`;
+  const isOverviewSection = activeSection === 'overview';
 
   let sectionContent = null;
 
   if (activeSection === 'personal') {
     sectionContent = (
-      <form className="space-y-4" onSubmit={onSavePersonalDetails}>
-        <div className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <form className="space-y-5" onSubmit={onSavePersonalDetails}>
+        <div className="rounded-2xl border border-slate-200 bg-[#f9fafc] p-4">
           <div className="flex items-center gap-3">
             {profilePhotoUrl ? (
-              <img src={profilePhotoUrl} alt={profile.username} className="h-16 w-16 rounded-2xl object-cover" />
+              <img src={profilePhotoUrl} alt={profile.username} className="h-16 w-16 rounded-xl border border-slate-200 object-cover" />
             ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-lg font-bold uppercase text-white">
+              <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold uppercase text-white">
                 {getInitials(profile.username)}
               </div>
             )}
-            <div>
-              <p className="text-base font-bold text-slate-950">{getDisplayNameLabel(profile.displayName, profile.username)}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.username}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[1.05rem] font-medium text-slate-950">{getDisplayNameLabel(profile.displayName, profile.username)}</p>
+              <p className="mt-0.5 text-sm text-slate-500">@{profile.username}</p>
             </div>
+            <button
+              type="button"
+              onClick={onEditPhoto}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-200"
+            >
+              <SquarePen className="h-[1.2rem] w-[1.2rem]" strokeWidth={2} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onEditPhoto}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            <ImageIcon className="h-4 w-4" />
-            Change photo
-          </button>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Display name</p>
-              <p className="mt-1 text-xs text-slate-500">This defaults to your Google or Gmail name and can be edited here.</p>
-            </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+            <p className="text-[0.84rem] font-bold uppercase tracking-[0.1em] text-slate-500">Profile Information</p>
+          </div>
+          <label className="block border-b border-slate-200 px-4 py-4 sm:px-5">
+            <span className="block text-[0.92rem] font-medium text-slate-500">Display Name</span>
             <input
               value={nameDraft}
               onChange={(event) => onNameDraftChange(event.target.value)}
-              className="form-input mt-3"
+              className="mt-1 w-full border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
               placeholder="Your public name"
               disabled={isSubmitting}
             />
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Username</p>
-              <p className="mt-1 text-xs text-slate-500">Your `@username` stays separate from the display name.</p>
-            </div>
+          </label>
+          <label className="block px-4 py-4 sm:px-5">
+            <span className="block text-[0.92rem] font-medium text-slate-500">Username</span>
             <input
               value={usernameDraft}
               onChange={(event) => onUsernameDraftChange(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-              className="form-input mt-3"
+              className="mt-1 w-full border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
               placeholder="choose_username"
               disabled={isSubmitting}
             />
-          </div>
+          </label>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          {profileRows.map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+        <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          {profileRows.map(([label, value], index) => (
+            <div key={label} className={`px-4 py-4 sm:px-5 ${index > 0 ? 'border-t border-slate-200' : ''}`}>
+              <p className="text-[0.92rem] font-medium text-slate-500">{label}</p>
+              <p className="mt-1 text-[1.02rem] text-slate-950">{value}</p>
             </div>
           ))}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Personal description</p>
-            <p className="mt-1 text-xs text-slate-500">Write the profile text you want people to see under your username.</p>
+        <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+            <p className="text-[0.92rem] font-medium text-slate-500">Personal Description</p>
           </div>
+          <div className="px-4 py-4 sm:px-5">
           <textarea
             rows={4}
             maxLength={180}
             value={personalDescriptionDraft}
             onChange={(event) => onPersonalDescriptionDraftChange(event.target.value.slice(0, 180))}
-            className="mt-3 min-h-[88px] w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 sm:min-h-[96px]"
+            className="min-h-[110px] w-full resize-none rounded-none border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
             placeholder="Tell people what you care about, what you report on, or how you contribute."
             disabled={isSubmitting}
           />
-          <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
-            <span>This appears in your public profile header.</span>
+          <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-400">
+            <span>Shown on your public profile.</span>
             <span>{`${personalDescriptionDraft.length}/180`}</span>
           </div>
         </div>
+        </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-1">
           <button
             type="submit"
             disabled={isSubmitting || !isPersonalDetailsDirty}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <SquarePen className="h-4 w-4" />
             {isSubmitting ? 'Saving...' : 'Save changes'}
@@ -6944,46 +6928,53 @@ function ProfileSettingsModal({
 
   if (activeSection === 'change-password') {
     sectionContent = profile.canChangePassword ? (
-      <form className="space-y-4" onSubmit={onSavePassword}>
-        <label className="block">
-          <span className="mb-2 block text-sm font-semibold text-slate-700">Current password</span>
-          <input
-            type="password"
-            value={passwordDraft.currentPassword}
-            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, currentPassword: event.target.value }))}
-            className="form-input"
-            placeholder="Current password"
-            disabled={isSubmitting}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-sm font-semibold text-slate-700">New password</span>
-          <input
-            type="password"
-            value={passwordDraft.newPassword}
-            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, newPassword: event.target.value }))}
-            className="form-input"
-            placeholder="New password"
-            disabled={isSubmitting}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-2 block text-sm font-semibold text-slate-700">Confirm new password</span>
-          <input
-            type="password"
-            value={passwordDraft.confirmPassword}
-            onChange={(event) => onPasswordDraftChange((current) => ({ ...current, confirmPassword: event.target.value }))}
-            className="form-input"
-            placeholder="Confirm new password"
-            disabled={isSubmitting}
-          />
-        </label>
-        <button type="submit" disabled={isSubmitting} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
-          {isSubmitting ? 'Updating...' : 'Update password'}
-        </button>
+      <form className="space-y-5" onSubmit={onSavePassword}>
+        <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+          <div className="border-b border-slate-200 px-4 py-4 sm:px-5">
+            <p className="text-[0.84rem] font-bold uppercase tracking-[0.1em] text-slate-500">Security & Password</p>
+          </div>
+          <label className="block border-b border-slate-200 px-4 py-4 sm:px-5">
+            <span className="block text-[0.92rem] font-medium text-slate-500">Current Password</span>
+            <input
+              type="password"
+              value={passwordDraft.currentPassword}
+              onChange={(event) => onPasswordDraftChange((current) => ({ ...current, currentPassword: event.target.value }))}
+              className="mt-1 w-full border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
+              placeholder="Current password"
+              disabled={isSubmitting}
+            />
+          </label>
+          <label className="block border-b border-slate-200 px-4 py-4 sm:px-5">
+            <span className="block text-[0.92rem] font-medium text-slate-500">New Password</span>
+            <input
+              type="password"
+              value={passwordDraft.newPassword}
+              onChange={(event) => onPasswordDraftChange((current) => ({ ...current, newPassword: event.target.value }))}
+              className="mt-1 w-full border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
+              placeholder="New password"
+              disabled={isSubmitting}
+            />
+          </label>
+          <label className="block px-4 py-4 sm:px-5">
+            <span className="block text-[0.92rem] font-medium text-slate-500">Confirm Password</span>
+            <input
+              type="password"
+              value={passwordDraft.confirmPassword}
+              onChange={(event) => onPasswordDraftChange((current) => ({ ...current, confirmPassword: event.target.value }))}
+              className="mt-1 w-full border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
+              placeholder="Confirm new password"
+              disabled={isSubmitting}
+            />
+          </label>
+        </div>
+        <div className="flex justify-end pt-1">
+          <button type="submit" disabled={isSubmitting} className="rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">
+            {isSubmitting ? 'Updating...' : 'Update password'}
+          </button>
+        </div>
       </form>
     ) : (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+      <div className="rounded-2xl border border-slate-200 bg-[#f9fafc] px-4 py-4 text-[0.98rem] text-slate-600">
         Password changes are only available for accounts created with email and password.
       </div>
     );
@@ -7017,57 +7008,166 @@ function ProfileSettingsModal({
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-2 backdrop-blur-sm sm:py-4" onClick={onClose}>
-      <div
-        className="motion-pop flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:max-h-[calc(100dvh-2rem)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">Profile settings</p>
-            <h3 className="mt-1 font-display text-2xl font-bold text-slate-950">@{profile.username}</h3>
+  const renderSettingsRow = (item) => {
+    const isSelected = ['personal', 'change-password', 'switch-account', 'logout'].includes(item.id) && activeSection === item.id;
+
+    if (item.toggle) {
+      return (
+        <div key={item.id} className="flex items-center gap-4 px-5 py-4 sm:px-6">
+          <div className="flex h-9 w-9 items-center justify-center text-slate-700">
+            <item.Icon className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[1.02rem] font-medium text-slate-950">{item.label}</p>
           </div>
           <button
             type="button"
-            onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-            aria-label="Close settings"
+            onClick={onThemeToggle}
+            className={`relative inline-flex h-9 w-16 items-center rounded-full transition ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-200'}`}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-pressed={theme === 'dark'}
           >
-            <X className="h-4 w-4" />
+            <span
+              className={`inline-block h-7 w-7 rounded-full bg-white shadow-sm transition ${theme === 'dark' ? 'translate-x-8' : 'translate-x-1'}`}
+            />
           </button>
         </div>
+      );
+    }
 
-        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="profile-settings-scroll min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/80 p-3 lg:border-b-0 lg:border-r">
-            <div className="grid gap-2">
-              {sections.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => onSectionChange(section.id)}
-                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${activeSection === section.id
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white text-slate-700 hover:bg-slate-100'
-                    }`}
-                >
-                  <section.Icon className="h-4 w-4" />
-                  {section.label}
-                </button>
-              ))}
-            </div>
-          </aside>
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={item.action}
+        disabled={item.disabled}
+        className={`flex w-full items-center gap-4 px-5 py-4 text-left transition sm:px-6 ${item.disabled ? 'cursor-default' : 'hover:bg-slate-50'} ${isSelected ? 'bg-slate-50' : 'bg-white'}`}
+      >
+        <div className="flex h-9 w-9 items-center justify-center text-slate-700">
+          <item.Icon className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[1.02rem] font-medium text-slate-950">{item.label}</p>
+        </div>
+        {item.badge && (
+          <span className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-white">
+            {item.badge}
+          </span>
+        )}
+        {item.value && <span className="text-[0.98rem] font-medium text-slate-500">{item.value}</span>}
+        {item.external ? <ArrowUpRight className="h-5 w-5 text-slate-400" /> : !item.toggle && <ChevronRight className="h-5 w-5 text-slate-400" />}
+      </button>
+    );
+  };
 
-          <div className="profile-settings-scroll min-h-0 overflow-y-auto px-5 py-5 sm:px-6">
-            {status?.message && (
-              <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm ${status.type === 'error'
-                ? 'border-red-200 bg-red-50 text-red-700'
-                : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                }`}>
-                {status.message}
+  return (
+    <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-slate-950/55 px-0 py-0 backdrop-blur-sm sm:px-4 sm:py-4" onClick={onClose}>
+      <div
+        className="motion-pop flex min-h-dvh w-full max-w-2xl flex-col overflow-hidden bg-[#f7f8fb] shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:border sm:border-slate-200"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-[#f9fafc] px-5 py-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => {
+              if (isOverviewSection || isSubmitting) {
+                onClose();
+                return;
+              }
+              onSectionChange('overview');
+            }}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100"
+            aria-label="Close settings"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <h3 className="text-[1.95rem] font-semibold text-slate-950">Settings</h3>
+        </div>
+
+        <div className="profile-settings-scroll min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+          <div className="rounded-[22px] border border-slate-200 bg-white px-4 py-4 sm:px-5">
+            <div className="flex items-center gap-4">
+              {profilePhotoUrl ? (
+                <img src={profilePhotoUrl} alt={profile.username} className="h-[4.6rem] w-[4.6rem] rounded-xl border border-slate-200 object-cover" />
+              ) : (
+                <div className="flex h-[4.6rem] w-[4.6rem] items-center justify-center rounded-xl bg-slate-900 text-lg font-bold uppercase text-white">
+                  {getInitials(profile.username)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <h4 className="truncate text-[1.75rem] font-medium leading-tight text-slate-950 sm:text-[1.9rem]">{displayName}</h4>
+                <p className="mt-1 text-[1rem] text-slate-500">{profileSubtitle}</p>
               </div>
+              <button
+                type="button"
+                onClick={onEditPhoto}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-100"
+                aria-label="Edit profile photo"
+              >
+                <SquarePen className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+
+          {status?.message && (
+            <div className={`mt-4 rounded-2xl border px-4 py-3 text-sm ${status.type === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              }`}>
+              {status.message}
+            </div>
+          )}
+
+          <div className="mt-6 space-y-5">
+            {isOverviewSection && settingsGroups.map((group) => (
+              <section key={group.title}>
+                <p className="mb-3 text-[0.84rem] font-bold uppercase tracking-[0.1em] text-slate-500">{group.title}</p>
+                <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+                  {group.items.map((item, index) => (
+                    <div key={item.id} className={index > 0 ? 'border-t border-slate-200' : ''}>
+                      {renderSettingsRow(item)}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+
+            {isOverviewSection && (
+              <section>
+                <button
+                  type="button"
+                  onClick={() => onSectionChange('logout')}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-red-300 bg-white px-5 py-4 text-lg font-medium text-red-600 transition hover:bg-red-50"
+                >
+                  <LogOut className="h-5 w-5" />
+                  Logout
+                </button>
+              </section>
             )}
-            {sectionContent}
+
+            {!isOverviewSection && sectionContent && activeSection !== 'logout' && (
+              <section>
+                <p className="mb-3 text-[0.84rem] font-bold uppercase tracking-[0.1em] text-slate-500">
+                  {activeSection === 'personal' ? 'Profile Information' : activeSection === 'change-password' ? 'Security & Password' : 'Linked Accounts'}
+                </p>
+                <div className="rounded-2xl border border-slate-300 bg-white p-4 sm:p-5">
+                  {sectionContent}
+                </div>
+              </section>
+            )}
+
+            {activeSection === 'logout' && (
+              <section>
+                <div className="rounded-2xl border border-red-200 bg-white p-4 sm:p-5">
+                  {sectionContent}
+                </div>
+              </section>
+            )}
+
+            <div className="pb-6 pt-2 text-center leading-7 text-slate-400">
+              <p className="text-[0.9rem]">App Version 4.2.0-stable</p>
+              <p className="text-[0.9rem]">© 2026 Public Policy Hub</p>
+            </div>
           </div>
         </div>
       </div>
@@ -7082,10 +7182,10 @@ function ProfileActivityCard({ activity, delayMs = 0, onOpenPost }) {
     <article className="soft-card signal-card overflow-hidden p-4 sm:p-5" style={{ '--motion-delay': `${delayMs}ms` }}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-2xl">
-          <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isReport ? 'text-blue-700' : 'text-amber-700'}`}>
+          <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${isReport ? 'text-slate-900' : 'text-amber-700'}`}>
             {activity.eyebrow}
           </p>
-          <h3 className="mt-2 font-display text-[22px] font-bold leading-tight text-slate-950 sm:text-[26px]">{activity.title}</h3>
+          <h3 className="mt-2 font-serif text-[22px] font-bold leading-tight text-slate-950 sm:text-[26px]">{activity.title}</h3>
           <p className="mt-2 text-sm leading-7 text-slate-600">{activity.preview}</p>
         </div>
 
@@ -7137,7 +7237,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
             <button
               type="button"
               onClick={onOpenAuthor}
-              className="text-sm font-semibold text-slate-900 transition hover:text-blue-700"
+              className="text-sm font-semibold text-slate-900 transition hover:text-slate-900"
             >
               {post.author}
             </button>
@@ -7156,7 +7256,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-900">
           <MapPin className="h-3.5 w-3.5" />
           {post.location}
         </span>
@@ -7170,7 +7270,7 @@ function BookmarkedPostCard({ delayMs = 0, post, onOpenPost, onOpenAuthor, onTog
       </div>
 
       <div className="mt-4">
-        <h3 className="font-display text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
+        <h3 className="font-serif text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
         <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
       </div>
 
@@ -7224,7 +7324,7 @@ function LocationTrendSection({ title, posts, emptyLabel, onOpenPost }) {
             onClick={() => onOpenPost(post.id)}
             className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
           >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-700">#{index + 1} Trending</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">#{index + 1} Trending</p>
             <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
             <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
           </button>
@@ -7248,7 +7348,7 @@ function ProfileReportCard({ delayMs = 0, post, onOpenPost }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-            <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2.5 py-1 text-blue-700">
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-slate-900">
               <MapPin className="h-3.5 w-3.5" />
               {post.location}
             </span>
@@ -7263,7 +7363,7 @@ function ProfileReportCard({ delayMs = 0, post, onOpenPost }) {
               </span>
             )}
           </div>
-          <h3 className="mt-3 font-display text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
+          <h3 className="mt-3 font-serif text-[26px] font-bold leading-tight text-slate-950">{post.title}</h3>
           <p className="mt-2 text-sm leading-7 text-slate-600">{previewText}</p>
           <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{formatPostTimestamp(post)}</p>
         </div>
@@ -7306,7 +7406,7 @@ function ProfileSolutionCard({ delayMs = 0, solution, onOpenPost }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Solution on {solution.postDepartment}</p>
-          <h3 className="mt-2 font-display text-2xl font-bold text-slate-950">{solution.postTitle}</h3>
+          <h3 className="mt-2 font-serif text-2xl font-bold text-slate-950">{solution.postTitle}</h3>
           <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
             {solution.text}
           </p>
@@ -7324,15 +7424,15 @@ function ProfileSolutionCard({ delayMs = 0, solution, onOpenPost }) {
 
       <div className="mt-5 flex flex-wrap gap-2 text-sm text-slate-500">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-          <TrendingUp className="h-4 w-4 text-blue-600" />
+          <TrendingUp className="h-4 w-4 text-black" />
           Score {formatCount(solution.score)}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-          <MessageCircle className="h-4 w-4 text-blue-600" />
+          <MessageCircle className="h-4 w-4 text-black" />
           Replies {formatCount(solution.replyCount)}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-          <MapPin className="h-4 w-4 text-blue-600" />
+          <MapPin className="h-4 w-4 text-black" />
           {solution.postLocation}
         </span>
       </div>
@@ -7343,10 +7443,10 @@ function ProfileSolutionCard({ delayMs = 0, solution, onOpenPost }) {
 function EmptyProfilePanel({ icon, title, description }) {
   return (
     <div className="soft-card signal-card p-8 text-center">
-      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-900">
         {icon}
       </span>
-      <h3 className="mt-4 font-display text-2xl font-bold text-slate-950">{title}</h3>
+      <h3 className="mt-4 font-serif text-2xl font-bold text-slate-950">{title}</h3>
       <p className="mt-2 text-sm leading-7 text-slate-600">{description}</p>
     </div>
   );
@@ -7356,7 +7456,7 @@ function MetricBox({ label, value, dark = true }) {
   return (
     <div className={`${dark ? 'glass-panel text-white' : 'rounded-xl border border-slate-200 bg-slate-50 text-slate-900'} px-4 py-4`}>
       <p className={`text-xs font-semibold ${dark ? 'text-white/70' : 'text-slate-500'}`}>{label}</p>
-      <p className="mt-1.5 font-display text-3xl font-bold">{value}</p>
+      <p className="mt-1.5 font-serif text-3xl font-bold">{value}</p>
     </div>
   );
 }
@@ -7650,7 +7750,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
                 key={`${option.value}-${option.label}`}
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onChangeQuality(option.value); }}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${selectedQuality === option.value ? 'bg-blue-600 text-white' : 'text-slate-200 hover:bg-slate-800'
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm ${selectedQuality === option.value ? 'bg-black text-white' : 'text-slate-200 hover:bg-slate-800'
                   }`}
               >
                 <span>{option.label}</span>
@@ -7665,7 +7765,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
                   key={`${speed}x`}
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onChangePlaybackRate(speed); }}
-                  className={`rounded-md px-1 py-1 text-xs font-semibold ${playbackRate === speed ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                  className={`rounded-md px-1 py-1 text-xs font-semibold ${playbackRate === speed ? 'bg-black text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                     }`}
                 >
                   {speed}x
