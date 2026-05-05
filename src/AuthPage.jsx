@@ -243,27 +243,23 @@ function AuthPage({
           <div className="auth-page__story motion-slide-in-left">
             <img src={logo} alt="Public Policy Hub" className="auth-page__story-logo" />
             <h2 className="auth-page__heading">India is ours, and we have the power to fix it.</h2>
-            <h3 className="auth-page__lead">
-              Join the community to report local issues and help make India a better place to live for everyone.
-            </h3>
+
           </div>
         </section>
 
         <section className="auth-page__right">
           <div className="auth-page__right-inner auth-page__auth-card motion-slide-in-right" style={{ '--motion-delay': '120ms' }}>
             <div className="auth-page__panel-head">
-              <img src={logo} alt="Public Policy Hub" className="auth-page__panel-logo" />
+              {/* <img src={logo} alt="Public Policy Hub" className="auth-page__panel-logo" /> */}
               <div>
-                <p className="auth-page__panel-kicker">Your civic profile</p>
+
                 <h2 className="auth-page__subheading">
-                  {isSignup ? "Let's get you set up" : 'Welcome back'}
+                  {isSignup ? "Join us Today" : 'Welcome back'}
                 </h2>
               </div>
             </div>
 
-            <p className="auth-page__panel-text">
-              Sign up to report problems you see, support others, and keep track of everything you've done for your community.
-            </p>
+
 
             <div className="auth-page__actions">
               <ActionButton
@@ -474,7 +470,7 @@ function AuthFields({ authMethod, formState, handleChange, isSignup }) {
             label="Email"
             name="email"
             type="email"
-            placeholder="name@example.com"
+            placeholder="Email Address"
             value={formState.email}
             onChange={handleChange}
           />

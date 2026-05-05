@@ -9,6 +9,7 @@ import Bell from 'lucide-react/dist/esm/icons/bell.js';
 import Bookmark from 'lucide-react/dist/esm/icons/bookmark.js';
 import Building2 from 'lucide-react/dist/esm/icons/building-2.js';
 import CalendarDays from 'lucide-react/dist/esm/icons/calendar-days.js';
+import Camera from 'lucide-react/dist/esm/icons/camera.js';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left.js';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.js';
 import CircleHelp from 'lucide-react/dist/esm/icons/circle-help.js';
@@ -29,6 +30,7 @@ import Moon from 'lucide-react/dist/esm/icons/moon.js';
 import Pause from 'lucide-react/dist/esm/icons/pause.js';
 import Play from 'lucide-react/dist/esm/icons/play.js';
 import FileText from 'lucide-react/dist/esm/icons/file-text.js';
+import Plus from 'lucide-react/dist/esm/icons/plus.js';
 import Search from 'lucide-react/dist/esm/icons/search.js';
 import Settings from 'lucide-react/dist/esm/icons/settings.js';
 import Share2 from 'lucide-react/dist/esm/icons/share-2.js';
@@ -84,33 +86,37 @@ const MAX_POST_FILES = 10;
 const CHAT_QUICK_EMOJIS = ['😀', '😂', '😍', '🤝', '🙏', '👍', '🔥', '🎉', '💯', '🙌', '✅', '🚀'];
 const POSTING_GUIDELINES = [
   {
-    title: 'Evidence is required',
-    detail: 'You must upload clear proof (image, video, or document). Posts without evidence may be removed or given low visibility.',
+    title: 'You must upload clear proof (image, video, or document). Posts without evidence may be removed or given low visibility.',
   },
   {
-    title: 'No personal accusations',
-    detail: 'Do not name or target individuals. Describe the issue, not the person.',
-    example: 'Unusual behavior observed at traffic checkpoint.',
+    title: 'Do not name or target individuals. Describe the issue, not the person.',
+    detail: '',
+
   },
   {
-    title: 'No fake or misleading content',
-    detail: 'Posting false, edited, or old content as new is strictly prohibited. Verified false reports may lead to account suspension.',
+    title: 'Posting false, edited, or old content as new is strictly prohibited. Verified false reports may lead to account suspension.',
+    detail: '',
   },
   {
-    title: 'No NSFW or inappropriate content',
-    detail: 'No nudity, sexual content, or disturbing visuals. Such content can be removed immediately and may lead to a ban.',
+    title: 'No nudity, sexual content, or disturbing visuals. Such content can be removed immediately and may lead to a ban.',
+    detail: '',
   },
   {
-    title: 'Provide accurate details',
-    detail: 'Include correct location, date, and description. Vague or misleading posts may be rejected.',
+    title: 'Include correct location, date, and description. Vague or misleading posts may be rejected.',
+    detail: '',
   },
   {
-    title: 'Legal responsibility',
-    detail: 'You are fully responsible for the content you post. This platform may share data with authorities if required by law.',
+    title: 'You are fully responsible for the content you post. This platform may share data with authorities if required by law.',
+    detail: '',
   },
   {
-    title: 'Community respect',
-    detail: 'No hate speech, abuse, or targeting any group or community.',
+    title: 'No hate speech, abuse, or targeting any group or community.',
+    detail: '',
+  },
+  {
+    title: 'Liability Notice: The website owner and administrators are not responsible for user-posted content. You are solely responsible for the legality and accuracy of your submissions.',
+    detail: '',
+    isWarning: true,
   },
 ];
 
@@ -377,6 +383,7 @@ function App() {
   const [authorPreviewByUsername, setAuthorPreviewByUsername] = useState({});
   const [isFollowSubmittingByUsername, setIsFollowSubmittingByUsername] = useState({});
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [profileViewUsername, setProfileViewUsername] = useState(initialRouteState.profileUsername || null);
   const [viewedProfileMeta, setViewedProfileMeta] = useState(null);
   const [aiSummaryByPost, setAiSummaryByPost] = useState({});
@@ -425,6 +432,7 @@ function App() {
   const mobileSearchToggleRef = useRef(null);
   const mobileSearchInputRef = useRef(null);
   const profilePhotoInputRef = useRef(null);
+  const bannerInputRef = useRef(null);
   const commentInputRefs = useRef({});
   const solutionInputRefs = useRef({});
   const solutionReplyInputRefs = useRef({});
@@ -759,6 +767,7 @@ function App() {
       .then((data) => {
         setUserProfile(data);
         setProfilePhotoUrl(data?.profilePhotoUrl || '');
+        setBannerUrl(data?.bannerUrl || '');
       })
       .catch(() => handleLogout());
   };
@@ -777,6 +786,7 @@ function App() {
           displayName: `${profileData?.displayName ?? ''}`.trim(),
           role: `${profileData?.role ?? 'CitizenReporter'}`.trim() || 'CitizenReporter',
           profilePhotoUrl: `${profileData?.profilePhotoUrl ?? ''}`.trim(),
+          bannerUrl: `${profileData?.bannerUrl ?? ''}`.trim(),
           followerCount: toCount(profileData?.followerCount),
           followingCount: toCount(profileData?.followingCount),
         },
@@ -1116,7 +1126,8 @@ function App() {
 
   useEffect(() => {
     setProfilePhotoUrl(userProfile?.profilePhotoUrl || '');
-  }, [userProfile?.profilePhotoUrl]);
+    setBannerUrl(userProfile?.bannerUrl || '');
+  }, [userProfile?.profilePhotoUrl, userProfile?.bannerUrl]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -1660,7 +1671,7 @@ function App() {
 
     let res = await fetch(`${API_BASE_URL}/api/auth/firebaseLogin`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
@@ -1919,6 +1930,41 @@ function App() {
     }
   };
 
+  const handleBannerUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !userProfile?.username) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('banner', file);
+
+      const res = await fetch(`${API_BASE_URL}/api/users/profile/banner`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to upload banner');
+
+      setBannerUrl(data.bannerUrl || '');
+      setUserProfile((currentProfile) => (
+        currentProfile ? { ...currentProfile, bannerUrl: data.bannerUrl || '' } : currentProfile
+      ));
+      setViewedProfileMeta((currentProfile) => (
+        currentProfile?.username === userProfile.username
+          ? { ...currentProfile, bannerUrl: data.bannerUrl || '' }
+          : currentProfile
+      ));
+      setProfileSettingsStatus({ type: 'success', message: 'Profile banner updated.' });
+      event.target.value = '';
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   const uploadPostWithProgress = (formData) => new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', `${API_BASE_URL}/api/posts`);
@@ -1970,7 +2016,7 @@ function App() {
     }
     if (!hasAcceptedPostingRules) {
       setPostUploadStatus('error');
-      setPostUploadFeedback('Please agree to the reporting rules before submitting.');
+      setPostUploadFeedback('Please check the box to agree to the reporting rules before submitting.');
       return;
     }
 
@@ -3255,8 +3301,8 @@ function App() {
             </div>
           ) : (
             <>
-              <div className="absolute inset-0 bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900" />
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,_transparent_0%,_rgba(2,6,23,0.62)_100%)]" />
+              <div className="absolute inset-0 bg-slate-900" />
+              <div className="absolute inset-0 bg-transparent" />
               <div className="absolute left-3 top-3 rounded-md bg-slate-950/55 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white">{post.media}</div>
               <button className="pulse-ring absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/20 text-white">
                 <Play className="ml-1 h-7 w-7 fill-current" />
@@ -3340,7 +3386,7 @@ function App() {
         style={indentPx > 0 ? { marginLeft: `${indentPx}px` } : undefined}
       >
         <div className="flex items-start gap-3">
-          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-gradient-to-br from-slate-900 via-slate-700 to-slate-500 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
+          <div className={`flex shrink-0 items-center justify-center rounded-full ${depth === 0 ? 'h-9 w-9 bg-slate-900 text-[11px] text-white' : 'h-8 w-8 bg-slate-200 text-[10px] text-slate-700'} font-bold uppercase`}>
             {getInitials(entry.author || 'Community member')}
           </div>
 
@@ -3542,37 +3588,202 @@ function App() {
   const isChatView = activeView === 'chat';
 
   return (
-    <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
+    <div className="app-shell flex flex-col min-h-screen bg-slate-50 text-slate-900">
       <div className="sticky top-0 z-50">
-      <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
-        <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
-          <div className="flex w-full items-center gap-2 sm:gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setActivePostId(null);
-                setProfileViewUsername(null);
-                setActiveView('home');
-              }}
-              className="flex shrink-0 items-center gap-1.5 md:gap-2.5"
-            >
-              <span className="flex h-11 items-center overflow-hidden bg-transparent sm:h-[90px] sm:overflow-visible">
-                <img
-                  src={Logo}
-                  alt="Public Policy Hub Logo"
-                  className="h-[4.5rem] w-auto max-w-none -my-2 object-contain bg-transparent sm:h-[112px] sm:-my-4"
-                />
-              </span>
-              <div className="hidden sm:block">
-                <p className="font-display text-xs uppercase tracking-[0.2em] text-slate-500">Public Policy Hub</p>
-                <p className="text-sm text-slate-600">Nation is our, We have the Power</p>
-              </div>
-            </button>
+        <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
+          <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
+            <div className="flex w-full items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActivePostId(null);
+                  setProfileViewUsername(null);
+                  setActiveView('home');
+                }}
+                className="flex shrink-0 items-center gap-1.5 md:gap-2.5"
+              >
+                <span className="flex h-11 items-center overflow-hidden bg-transparent sm:h-[90px] sm:overflow-visible">
+                  <img
+                    src={Logo}
+                    alt="Public Policy Hub Logo"
+                    className="h-[4.5rem] w-auto max-w-none -my-2 object-contain bg-transparent sm:h-[112px] sm:-my-4"
+                  />
+                </span>
+                <div className="hidden sm:block">
+                  <p className="font-display text-xs uppercase tracking-[0.2em] text-slate-500">Public Policy Hub</p>
+                  <p className="text-sm text-slate-600">Nation is our, We have the Power</p>
+                </div>
+              </button>
 
-            <div ref={searchPanelRef} className="ml-auto hidden min-w-0 flex-1 md:block">
-              <form onSubmit={handleSearchSubmit} className="mx-auto flex max-w-[52rem] items-center gap-3 px-4">
+              <div ref={searchPanelRef} className="ml-auto hidden min-w-0 flex-1 md:block">
+                <form onSubmit={handleSearchSubmit} className="mx-auto flex max-w-[52rem] items-center gap-3 px-4">
+                  <div className="relative min-w-0 flex-1">
+                    <SearchInput
+                      value={searchQuery}
+                      onChange={(event) => {
+                        setSearchQuery(event.target.value);
+                        setIsSearchOpen(true);
+                      }}
+                      onFocus={() => {
+                        if (searchQuery.trim()) setIsSearchOpen(true);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') setIsSearchOpen(false);
+                      }}
+                      onClear={clearSearch}
+                      placeholder="Search.."
+                      showClear={!!searchQuery.trim()}
+                    />
+
+                    {isSearchOpen && normalizedSearchQuery && (
+                      <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)]">
+                        <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {totalSearchResultCount > 0
+                              ? `${formatCount(totalSearchResultCount)} matches across posts and people for "${searchQuery.trim()}".`
+                              : `No matches found for "${searchQuery.trim()}".`}
+                          </p>
+                        </div>
+
+                        {searchAccountResults.length > 0 && (
+                          <div className="border-b border-slate-200 px-3 py-3">
+                            <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">People</p>
+                            <div className="space-y-1">
+                              {searchAccountResults.map((account) => (
+                                <button
+                                  key={`search-account-${account.username}`}
+                                  type="button"
+                                  onClick={() => handleSearchProfileOpen(account.username)}
+                                  className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                  {account.profilePhotoUrl ? (
+                                    <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
+                                  ) : (
+                                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold uppercase text-white">
+                                      {getInitials(account.username)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold text-slate-950">{account.displayName || account.username}</p>
+                                    <p className="truncate text-xs text-slate-500">@{account.username} • {account.role}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-bold text-slate-950">{formatCount(account.postsCount)}</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">posts</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="px-3 py-3">
+                          <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Posts</p>
+                          {searchPostResults.length > 0 ? (
+                            <div className="space-y-1">
+                              {searchPostResults.map((post) => (
+                                <button
+                                  key={`search-post-${post.id}`}
+                                  type="button"
+                                  onClick={() => handleSearchPostOpen(post.id)}
+                                  className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
+                                    <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                                      {post.tag && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-900">{post.tag}</span>}
+                                      <span>{post.department}</span>
+                                      <span>{post.author}</span>
+                                    </div>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-bold text-slate-950">{formatCount(post.support)}</p>
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">supports</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                              No posts matched this keyword, tag, or category yet.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
+                <button
+                  ref={mobileSearchToggleRef}
+                  type="button"
+                  onClick={() => setIsSearchOpen((current) => !current)}
+                  className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 md:hidden ${isSearchOpen ? 'border-slate-300 text-black ring-2 ring-blue-100' : ''}`}
+                  aria-label={isSearchOpen ? 'Close search' : 'Open search'}
+                  aria-expanded={isSearchOpen}
+                  aria-controls="mobile-search-panel"
+                >
+                  <Search className="h-5 w-5" />
+                </button>
+                {userProfile ? (
+                  <>
+                    <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900 sm:inline-flex">
+                      Report Issue
+                    </button>
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleProfilePhotoUpload}
+                    />
+                    <input
+                      ref={bannerInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleBannerUpload}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={openOwnProfile}
+                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-1.5 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:gap-3 sm:rounded-2xl sm:px-2.5"
+                    >
+                      {profilePhotoUrl ? (
+                        <img src={profilePhotoUrl} alt="Profile" className="h-9 w-9 rounded-xl object-cover sm:h-10 sm:w-10 sm:rounded-2xl" />
+                      ) : (
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-xs font-bold text-white uppercase sm:h-10 sm:w-10 sm:rounded-2xl">
+                          {accountInitials}
+                        </span>
+                      )}
+                      <span className="hidden text-left sm:block">
+                        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Profile</span>
+                        <span className="block text-sm font-bold text-slate-900">{accountUsername}</span>
+                      </span>
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={openAuthPage} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 sm:px-4 sm:text-sm">
+                    Sign In
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {isSearchOpen && (
+          <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
+            <div ref={mobileSearchPanelRef} className="mx-auto max-w-[1580px]">
+              <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
                 <div className="relative min-w-0 flex-1">
                   <SearchInput
+                    inputRef={mobileSearchInputRef}
                     value={searchQuery}
                     onChange={(event) => {
                       setSearchQuery(event.target.value);
@@ -3585,173 +3796,15 @@ function App() {
                       if (event.key === 'Escape') setIsSearchOpen(false);
                     }}
                     onClear={clearSearch}
-                    placeholder="Search.."
+                    placeholder="Search posts and people"
                     showClear={!!searchQuery.trim()}
                   />
-
-                  {isSearchOpen && normalizedSearchQuery && (
-                    <div className="motion-pop absolute left-0 right-0 top-[calc(100%+0.75rem)] z-50 overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_24px_60px_-28px_rgba(15,23,42,0.42)]">
-                      <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search Results</p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {totalSearchResultCount > 0
-                            ? `${formatCount(totalSearchResultCount)} matches across posts and people for "${searchQuery.trim()}".`
-                            : `No matches found for "${searchQuery.trim()}".`}
-                        </p>
-                      </div>
-
-                      {searchAccountResults.length > 0 && (
-                        <div className="border-b border-slate-200 px-3 py-3">
-                          <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">People</p>
-                          <div className="space-y-1">
-                            {searchAccountResults.map((account) => (
-                              <button
-                                key={`search-account-${account.username}`}
-                                type="button"
-                                onClick={() => handleSearchProfileOpen(account.username)}
-                                className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
-                              >
-                                {account.profilePhotoUrl ? (
-                                  <img src={account.profilePhotoUrl} alt={account.username} className="h-11 w-11 rounded-2xl object-cover" />
-                                ) : (
-                                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-xs font-bold uppercase text-white">
-                                    {getInitials(account.username)}
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-semibold text-slate-950">{account.displayName || account.username}</p>
-                                  <p className="truncate text-xs text-slate-500">@{account.username} • {account.role}</p>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-sm font-bold text-slate-950">{formatCount(account.postsCount)}</p>
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">posts</p>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="px-3 py-3">
-                        <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Posts</p>
-                        {searchPostResults.length > 0 ? (
-                          <div className="space-y-1">
-                            {searchPostResults.map((post) => (
-                              <button
-                                key={`search-post-${post.id}`}
-                                type="button"
-                                onClick={() => handleSearchPostOpen(post.id)}
-                                className="flex w-full items-start justify-between gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-semibold text-slate-950">{post.title}</p>
-                                  <p className="mt-1 text-xs leading-5 text-slate-500">{getDescriptionPreview(post.description, false, 96).previewText}</p>
-                                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                                    {post.tag && <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-900">{post.tag}</span>}
-                                    <span>{post.department}</span>
-                                    <span>{post.author}</span>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <p className="text-sm font-bold text-slate-950">{formatCount(post.support)}</p>
-                                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">supports</p>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                            No posts matched this keyword, tag, or category yet.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  {renderSearchResultsDropdown()}
                 </div>
               </form>
             </div>
-
-            <div className="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
-              <button
-                ref={mobileSearchToggleRef}
-                type="button"
-                onClick={() => setIsSearchOpen((current) => !current)}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 md:hidden ${isSearchOpen ? 'border-slate-300 text-black ring-2 ring-blue-100' : ''}`}
-                aria-label={isSearchOpen ? 'Close search' : 'Open search'}
-                aria-expanded={isSearchOpen}
-                aria-controls="mobile-search-panel"
-              >
-                <Search className="h-5 w-5" />
-              </button>
-              {userProfile ? (
-                <>
-                  <button onClick={() => handleNavClick('create')} className="hidden rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-900 sm:inline-flex">
-                    Report Issue
-                  </button>
-                  <input
-                    ref={profilePhotoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleProfilePhotoUpload}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={openOwnProfile}
-                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-2 py-1.5 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:gap-3 sm:rounded-2xl sm:px-2.5"
-                  >
-                    {profilePhotoUrl ? (
-                      <img src={profilePhotoUrl} alt="Profile" className="h-9 w-9 rounded-xl object-cover sm:h-10 sm:w-10 sm:rounded-2xl" />
-                    ) : (
-                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-xs font-bold text-white uppercase sm:h-10 sm:w-10 sm:rounded-2xl">
-                        {accountInitials}
-                      </span>
-                    )}
-                    <span className="hidden text-left sm:block">
-                      <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Profile</span>
-                      <span className="block text-sm font-bold text-slate-900">{accountUsername}</span>
-                    </span>
-                  </button>
-                </>
-              ) : (
-                <button onClick={openAuthPage} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 sm:px-4 sm:text-sm">
-                  Sign In
-                </button>
-              )}
-            </div>
           </div>
-        </div>
-      </header>
-
-      {isSearchOpen && (
-        <div id="mobile-search-panel" className="border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
-          <div ref={mobileSearchPanelRef} className="mx-auto max-w-[1580px]">
-            <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-              <div className="relative min-w-0 flex-1">
-                <SearchInput
-                  inputRef={mobileSearchInputRef}
-                  value={searchQuery}
-                  onChange={(event) => {
-                    setSearchQuery(event.target.value);
-                    setIsSearchOpen(true);
-                  }}
-                  onFocus={() => {
-                    if (searchQuery.trim()) setIsSearchOpen(true);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') setIsSearchOpen(false);
-                  }}
-                  onClear={clearSearch}
-                  placeholder="Search posts and people"
-                  showClear={!!searchQuery.trim()}
-                />
-                {renderSearchResultsDropdown()}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        )}
       </div>
 
       <main className={`app-main mx-auto grid w-full max-w-[1580px] gap-4 px-3 sm:gap-5 sm:px-4 lg:px-6 ${isChatView ? 'app-main--chat pt-2 sm:pt-2 lg:pt-0 lg:grid-cols-[84px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[84px_minmax(0,1fr)]' : 'mobile-safe pb-24 pt-4 sm:pt-5 lg:pt-0 lg:grid-cols-[270px_minmax(0,1fr)_290px] lg:gap-7'}`}>
@@ -3828,127 +3881,122 @@ function App() {
                   </div>
                 </div>
 
-              <div className="soft-card p-4">
-                <div className="flex items-center justify-between gap-3 px-2">
-                  <p className="text-sm font-semibold text-slate-500">Most Cases</p>
-                  {selectedDepartmentFilter && (
-                    <button
-                      type="button"
-                      onClick={clearDepartmentFilter}
-                      className="text-xs font-semibold text-slate-900 transition hover:text-black"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <div className="mt-3 space-y-2">
-                  {topCaseCategories.map(([department, count], index) => (
-                    <button
-                      type="button"
-                      key={`${department}-${count}`}
-                      onClick={() => handleDepartmentFilterSelect(department)}
-                      className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
-                        ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
-                        : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white'
-                        }`}
-                    >
-                      <div className="min-w-0">
-                        <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-slate-900' : 'text-slate-500'
-                          }`}
-                        >
-                          {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
-                        </p>
-                        <p className="mt-1 truncate text-sm font-semibold text-slate-900">{department}</p>
-                      </div>
-                      <div className="ml-3 text-right">
-                        <p className="text-lg font-bold text-slate-950">{formatCount(count)}</p>
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">cases</p>
-                      </div>
-                    </button>
-                  ))}
-
-                  {topCaseCategories.length === 0 && (
-                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                      No category data yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {activeView === 'post' && activePost && (
                 <div className="soft-card p-4">
-                  <div className="px-2">
-                    <p className="text-sm font-semibold text-slate-500">Trending In {activePost.location}</p>
-                    <p className="mt-1 text-xs text-slate-400">Other issues gaining attention in the same location.</p>
+                  <div className="flex items-center justify-between gap-3 px-2">
+                    <p className="text-sm font-semibold text-slate-500">Most Cases</p>
+                    {selectedDepartmentFilter && (
+                      <button
+                        type="button"
+                        onClick={clearDepartmentFilter}
+                        className="text-xs font-semibold text-slate-900 transition hover:text-black"
+                      >
+                        Clear
+                      </button>
+                    )}
                   </div>
                   <div className="mt-3 space-y-2">
-                    {locationTrendingPosts.map((post, index) => (
+                    {topCaseCategories.map(([department, count], index) => (
                       <button
-                        key={`${post.id}-location-trend`}
                         type="button"
-                        onClick={() => {
-                          setActivePostId(post.id);
-                          setActiveView('post');
-                        }}
-                        className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+                        key={`${department}-${count}`}
+                        onClick={() => handleDepartmentFilterSelect(department)}
+                        className={`signal-tile flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left transition ${selectedDepartmentFilter === department
+                          ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 shadow-[0_14px_30px_-24px_rgba(37,99,235,0.75)]'
+                          : 'border-slate-200 bg-slate-50 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white'
+                          }`}
                       >
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
-                          #{index + 1} In this area
-                        </p>
-                        <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
-                        <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
+                        <div className="min-w-0">
+                          <p className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${selectedDepartmentFilter === department ? 'text-slate-900' : 'text-slate-500'
+                            }`}
+                          >
+                            {selectedDepartmentFilter === department ? 'Active filter' : `#${index + 1} Category`}
+                          </p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900">{department}</p>
+                        </div>
+                        <div className="ml-3 text-right">
+                          <p className="text-lg font-bold text-slate-950">{formatCount(count)}</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">cases</p>
+                        </div>
                       </button>
                     ))}
 
-                    {locationTrendingPosts.length === 0 && (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                        No other trending issues found for this location yet.
-                      </div>
+                    {topCaseCategories.length === 0 && (
+                      <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                        No category data yet.
+                      </p>
                     )}
                   </div>
                 </div>
-              )}
 
-              {activeView === 'home' && (
-                <div className="soft-card p-4">
-                  <div className="px-2">
-                    <p className="text-sm font-semibold text-slate-500">Trending Around You</p>
-                    <p className="mt-1 text-xs text-slate-400">
-                      Based on {userLocationContext.locationLabel || 'community location signals'}.
-                    </p>
-                  </div>
+                {activeView === 'post' && activePost && (
+                  <div className="soft-card p-4">
+                    <div className="px-2">
+                      <p className="text-sm font-semibold text-slate-500">Trending In {activePost.location}</p>
+                      <p className="mt-1 text-xs text-slate-400">Other issues gaining attention in the same location.</p>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {locationTrendingPosts.map((post, index) => (
+                        <button
+                          key={`${post.id}-location-trend`}
+                          type="button"
+                          onClick={() => {
+                            setActivePostId(post.id);
+                            setActiveView('post');
+                          }}
+                          className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-white"
+                        >
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">
+                            #{index + 1} In this area
+                          </p>
+                          <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">{post.title}</p>
+                          <p className="mt-2 text-xs text-slate-500">{formatCount(post.support)} supports</p>
+                        </button>
+                      ))}
 
-                  <div className="mt-4 space-y-4">
-                    <LocationTrendSection
-                      title={userLocationContext.locationLabel ? `In ${userLocationContext.locationLabel}` : 'In your area'}
-                      posts={exactLocationTrending}
-                      emptyLabel="No exact-location trends yet."
-                      onOpenPost={(postId) => {
-                        setActivePostId(postId);
-                        setActiveView('post');
-                      }}
-                    />
-                    <LocationTrendSection
-                      title={userLocationContext.city ? `In ${userLocationContext.city}` : 'In your city'}
-                      posts={cityTrending}
-                      emptyLabel="No broader city trends yet."
-                      onOpenPost={(postId) => {
-                        setActivePostId(postId);
-                        setActiveView('post');
-                      }}
-                    />
-                    <LocationTrendSection
-                      title={userLocationContext.state ? `In ${userLocationContext.state}` : 'In your state'}
-                      posts={stateTrending}
-                      emptyLabel="No broader state trends yet."
-                      onOpenPost={(postId) => {
-                        setActivePostId(postId);
-                        setActiveView('post');
-                      }}
-                    />
+                      {locationTrendingPosts.length === 0 && (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                          No other trending issues found for this location yet.
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+
+                {activeView === 'home' && (
+                  <div className="soft-card p-4">
+
+
+                    <div className="mt-4 space-y-4">
+                      <LocationTrendSection
+                        title={userLocationContext.locationLabel ? `In ${userLocationContext.locationLabel}` : 'In your area'}
+                        posts={exactLocationTrending}
+                        emptyLabel="No exact-location trends yet."
+                        onOpenPost={(postId) => {
+                          setActivePostId(postId);
+                          setActiveView('post');
+                        }}
+                      />
+                      <LocationTrendSection
+                        title={userLocationContext.city ? `In ${userLocationContext.city}` : 'In your city'}
+                        posts={cityTrending}
+                        emptyLabel="No broader city trends yet."
+                        onOpenPost={(postId) => {
+                          setActivePostId(postId);
+                          setActiveView('post');
+                        }}
+                      />
+                      <LocationTrendSection
+                        title={userLocationContext.state ? `In ${userLocationContext.state}` : 'In your state'}
+                        posts={stateTrending}
+                        emptyLabel="No broader state trends yet."
+                        onOpenPost={(postId) => {
+                          setActivePostId(postId);
+                          setActiveView('post');
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -4190,7 +4238,7 @@ function App() {
                           </div>
                         </div>
                         <div>
-                          <h3 className="font-serif text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-950 to-slate-700 hover:gradient-text-animate transition-all">{post.title}</h3>
+                          <h3 className="font-serif text-xl sm:text-2xl font-bold leading-tight text-transparent bg-clip-text bg-slate-950  transition-all">{post.title}</h3>
                           <p className="mt-1.5 sm:mt-2 text-sm leading-relaxed text-slate-600">{previewText}</p>
                           {isTruncated && (
                             <button
@@ -4871,41 +4919,49 @@ function App() {
 
           {activeView === 'create' && (
             <div className="soft-card signal-hero p-5 sm:p-6">
-              <p className="text-xs font-semibold text-slate-500">Create New Issue</p>
-              <h2 className="mt-1.5 font-serif text-[24px] font-bold text-slate-950 sm:text-[28px]">Simple, mobile-friendly reporting.</h2>
+              <h2 className="mt-1.5 font-serif text-[24px] font-bold text-slate-950 sm:text-[28px]">Please read the guidelines before posting</h2>
               <form onSubmit={handlePostSubmit} className="mt-6 space-y-5">
-                <section className="posting-guidelines-card rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.13em] text-amber-800">Important: Read Before Posting</p>
-                  <p className="mt-2 text-sm text-amber-900">
-                    This platform is for responsible reporting of public issues. By submitting a post, you agree to the following rules:
-                  </p>
-                  <ol className="posting-guidelines-list mt-4 space-y-3">
-                    {POSTING_GUIDELINES.map((rule, index) => (
-                      <li key={`posting-guideline-${rule.title}`} className="posting-guidelines-item">
-                        <p className="text-sm font-semibold text-slate-900">{index + 1}. {rule.title}</p>
-                        <p className="mt-1 text-sm text-slate-700">{rule.detail}</p>
-                        {rule.example && <p className="mt-1 text-sm text-slate-700">Example: "{rule.example}"</p>}
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800">
-                    Goal: Report real issues with proof. Not allowed: rumors, personal attacks, or viral misinformation.
+                <section className="guidelines-formal">
+
+                  <div className="guidelines-formal__content">
+
+                    <ul className="guidelines-formal__list">
+                      {POSTING_GUIDELINES.map((rule, index) => (
+                        <li key={`posting-guideline-${rule.title}`} className={`guidelines-formal__item ${rule.isWarning ? 'guidelines-formal__item--warning' : ''}`}>
+                          <div className="guidelines-formal__number">{index + 1}</div>
+                          <div className="guidelines-formal__item-content">
+                            <p className="guidelines-formal__item-title">{rule.title}</p>
+                            <p className="guidelines-formal__item-detail">{rule.detail}</p>
+                            {rule.example && (
+                              <p className="mt-1 text-xs italic text-slate-400">Example: "{rule.example}"</p>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="guidelines-formal__footer">
+                      <div className="guidelines-formal__goal">
+                        <strong>Official Objective:</strong> To facilitate the reporting of verifiable public issues while preventing the spread of misinformation or personal harassment.
+                      </div>
+                      <label className="guidelines-formal__consent mt-4">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-[#0b3266] focus:ring-[#0b3266]"
+                          checked={hasAcceptedPostingRules}
+                          onChange={(event) => {
+                            setHasAcceptedPostingRules(event.target.checked);
+                            if (postUploadStatus === "error") {
+                              setPostUploadStatus("idle");
+                              setPostUploadFeedback("");
+                            }
+                          }}
+                        />
+                        <span className="text-sm font-semibold text-slate-700">
+                          I hereby agree to the community guidelines and accept full legal responsibility for this submission.
+                        </span>
+                      </label>
+                    </div>
                   </div>
-                  <label className="posting-guidelines-consent mt-4 flex items-start gap-2.5 rounded-xl border border-amber-300/70 bg-white px-3 py-2.5 text-sm font-medium text-slate-800">
-                    <input
-                      type="checkbox"
-                      className="mt-[2px] h-4 w-4 rounded border-slate-300 text-black focus:ring-black"
-                      checked={hasAcceptedPostingRules}
-                      onChange={(event) => {
-                        setHasAcceptedPostingRules(event.target.checked);
-                        if (postUploadStatus === 'error') {
-                          setPostUploadStatus('idle');
-                          setPostUploadFeedback('');
-                        }
-                      }}
-                    />
-                    <span>I agree to these reporting rules and legal responsibilities.</span>
-                  </label>
                 </section>
                 <div className="space-y-4">
                   <label className="upload-zone flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 transition">
@@ -4961,7 +5017,6 @@ function App() {
                         <option key={`category-option-${department}`} value={department} />
                       ))}
                     </datalist>
-                    <p className="px-1 text-xs text-slate-500">People can create new categories. Popular ones appear as suggestions.</p>
                   </div>
                 </div>
                 {topCaseCategories.length > 0 && (
@@ -4985,7 +5040,7 @@ function App() {
                 <div className="space-y-2">
                   <button
                     type="submit"
-                    disabled={isPostSubmitting || mediaFiles.length === 0 || !hasAcceptedPostingRules}
+                    disabled={isPostSubmitting}
                     className={`upload-progress-btn ${isPostSubmitting ? 'upload-progress-btn--busy' : ''} ${postUploadStatus === 'success' ? 'upload-progress-btn--success' : ''}`}
                     style={{ '--upload-progress': `${postUploadProgress}%` }}
                   >
@@ -5156,6 +5211,7 @@ function App() {
                 profileTab={profileTab}
                 profileShareFeedback={profileShareFeedback}
                 viewedProfilePhotoUrl={viewedProfilePhotoUrl}
+                bannerUrl={isOwnProfile ? bannerUrl : (viewedProfileMeta?.bannerUrl || '')}
                 isFollowingViewedProfile={isFollowingViewedProfile}
                 latestProfilePost={latestProfilePost}
                 profileTopLocations={profileTopLocations}
@@ -5163,6 +5219,7 @@ function App() {
                 onOpenConnections={handleOpenProfileConnections}
                 onCreateReport={() => handleNavClick('create')}
                 onOpenPhotoActions={openMobileProfilePhotoActions}
+                onEditBanner={() => bannerInputRef.current?.click()}
                 onOpenSettings={openProfileSettings}
                 onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleProfileFollow}
@@ -5229,6 +5286,7 @@ function App() {
                   setActiveView('alerts');
                 }}
                 onEditPhoto={() => profilePhotoInputRef.current?.click()}
+                onEditBanner={() => bannerInputRef.current?.click()}
                 onThemeToggle={handleThemeToggle}
                 onNameDraftChange={setProfileNameDraft}
                 onUsernameDraftChange={setProfileUsernameDraft}
@@ -5269,67 +5327,86 @@ function App() {
         </section>
 
         {!isChatView && (
-        <aside className="hidden lg:sticky lg:top-32 lg:block lg:h-fit lg:self-start lg:border-l lg:border-slate-200 lg:pl-4">
-          {activeView === 'post' && (
-            <div className="soft-card overflow-hidden p-4">
-              <div className="rounded-[26px] border border-blue-100 bg-[radial-gradient(circle_at_top_left,_rgba(191,219,254,0.45),_rgba(255,255,255,0.96)_58%)] p-4">
-                <div className="space-y-3">
-                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Most agreed</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-700">
-                      {activePostAiStatus === 'loading' && 'Generating summary...'}
-                      {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
-                      {activePostAiStatus === 'success' && (activePostConsensus?.most_agreed || 'No strong solution has emerged yet.')}
-                      {activePostAiStatus === 'idle' && 'Generating summary...'}
-                    </p>
-                  </div>
+          <aside className="hidden lg:sticky lg:top-32 lg:block lg:h-fit lg:self-start lg:border-l lg:border-slate-200 lg:pl-4">
+            {activeView === 'post' && (
+              <div className="soft-card overflow-hidden p-4">
+                <div className="rounded-[26px] border border-blue-100 bg-white p-4">
+                  <div className="space-y-3">
+                    <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Most agreed</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        {activePostAiStatus === 'loading' && 'Generating summary...'}
+                        {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
+                        {activePostAiStatus === 'success' && (activePostConsensus?.most_agreed || 'No strong solution has emerged yet.')}
+                        {activePostAiStatus === 'idle' && 'Generating summary...'}
+                      </p>
+                    </div>
 
-                  <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-900">Common solution</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-700">
-                      {activePostAiStatus === 'loading' && 'Combining the most common ideas...'}
-                      {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
-                      {activePostAiStatus === 'success' && (activePostConsensus?.common_solution || 'Common solution is still forming.')}
-                      {activePostAiStatus === 'idle' && 'Combining the most common ideas...'}
-                    </p>
+                    <div className="rounded-3xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-900">Common solution</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        {activePostAiStatus === 'loading' && 'Combining the most common ideas...'}
+                        {activePostAiStatus === 'error' && 'AI summary is unavailable right now.'}
+                        {activePostAiStatus === 'success' && (activePostConsensus?.common_solution || 'Common solution is still forming.')}
+                        {activePostAiStatus === 'idle' && 'Combining the most common ideas...'}
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeView !== 'post' && (
-            <div className="soft-card p-4">
-              <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{preferredTrendingHeading}</p>
-              <p className="mt-1 px-2 text-xs text-slate-400">{preferredTrendingDescription}</p>
-              <div className="mt-3 space-y-2">
-                {preferredTrendingPosts.map((post, index) => (
-                  <button
-                    key={`${post.id}-trend-rail`}
-                    type="button"
-                    onClick={() => {
-                      setActivePostId(post.id);
-                      setActiveView('post');
-                    }}
-                    className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">#{index + 1} Trending</p>
-                    <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
-                    <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
-                  </button>
-                ))}
-                {preferredTrendingPosts.length === 0 && (
-                  <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
-                    {preferredTrendingEmptyLabel}
-                  </p>
-                )}
+            {activeView !== 'post' && (
+              <div className="soft-card p-4">
+                <p className="px-2 text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{preferredTrendingHeading}</p>
+                <div className="mt-3 space-y-2">
+                  {preferredTrendingPosts.map((post, index) => (
+                    <button
+                      key={`${post.id}-trend-rail`}
+                      type="button"
+                      onClick={() => {
+                        setActivePostId(post.id);
+                        setActiveView('post');
+                      }}
+                      className="signal-tile w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition hover:bg-slate-100"
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-900">#{index + 1} Trending</p>
+                      <p className="mt-1 text-[15px] font-semibold leading-5 text-slate-900">{post.title}</p>
+                      <p className="mt-1.5 text-sm text-slate-500">{formatCount(post.support)} supports</p>
+                    </button>
+                  ))}
+                  {preferredTrendingPosts.length === 0 && (
+                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm text-slate-500">
+                      {preferredTrendingEmptyLabel}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </aside>
+            )}
+          </aside>
         )}
 
       </main>
+
+      <footer className="mt-auto border-t border-slate-200 bg-white/50 px-4 py-16 text-center backdrop-blur-sm sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-4xl">
+          <div className="rounded-[2.5rem] border border-slate-200 bg-white p-8 shadow-sm transition-all hover:shadow-md sm:p-12">
+            <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-blue-600">Legal Disclaimer & Liability Notice</p>
+            <div className="mx-auto mt-6 max-w-2xl text-[15px] leading-relaxed text-slate-600">
+              <p>
+                Public Policy Hub serves as a neutral infrastructure for civic reporting.
+              </p>
+              <p className="mt-4 font-bold text-slate-900">
+                The website owner and administrators are not responsible for user-posted content, accuracy, or legality.
+                Users are solely liable for their contributions and any legal consequences thereof.
+              </p>
+            </div>
+          </div>
+          <p className="mt-10 text-[11px] font-medium text-slate-400">
+            © {new Date().getFullYear()} Public Policy Hub. Nation is our, We have the Power.
+          </p>
+        </div>
+      </footer>
 
       <GenderPromptModal
         error={genderPromptError}
@@ -5516,7 +5593,7 @@ function PrivateChatView({
                 Syncing securely...
               </div>
             )}
-            
+
             {contacts.map((contact, idx) => {
               const isActive = getChatUsernameKey(activeContact?.username) === getChatUsernameKey(contact.username);
               return (
@@ -5525,17 +5602,16 @@ function PrivateChatView({
                   type="button"
                   onClick={() => onSelectContact(contact.username)}
                   style={{ animationDelay: `${idx * 40}ms` }}
-                  className={`group relative flex w-full items-center gap-3 rounded-[1.25rem] p-2.5 text-left transition-all duration-300 motion-fade-up sm:gap-4 sm:rounded-2xl sm:p-3 ${
-                    isActive
-                      ? 'bg-gradient-to-br from-blue-600 to-teal-500 text-white shadow-md'
-                      : 'hover:bg-white/70 hover:shadow-sm'
-                  }`}
+                  className={`group relative flex w-full items-center gap-3 rounded-[1.25rem] p-2.5 text-left transition-all duration-300 motion-fade-up sm:gap-4 sm:rounded-2xl sm:p-3 ${isActive
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'hover:bg-white/70 hover:shadow-sm'
+                    }`}
                 >
                   <div className="relative shrink-0">
                     {contact.profilePhotoUrl ? (
                       <img src={contact.profilePhotoUrl} alt={contact.username} className={`h-11 w-11 rounded-full object-cover shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 ${isActive ? 'ring-2 ring-white/50' : 'ring-1 ring-slate-200'}`} />
                     ) : (
-                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white/20 text-white ring-2 ring-white/50' : 'bg-gradient-to-br from-slate-800 to-slate-950 text-white'}`}>
+                      <div className={`flex h-11 w-11 items-center justify-center rounded-full text-[11px] font-bold uppercase tracking-wider shadow-sm transition-transform duration-300 group- sm:h-12 sm:w-12 sm:text-xs ${isActive ? 'bg-white/20 text-white ring-2 ring-white/50' : 'bg-slate-950 text-white'}`}>
                         {getInitials(contact.username)}
                       </div>
                     )}
@@ -5550,10 +5626,10 @@ function PrivateChatView({
                         <p className={`truncate text-sm font-bold sm:text-[15px] ${isActive ? 'text-white' : 'text-slate-900 group-hover:text-black transition-colors'}`}>
                           {contact.displayName || contact.username}
                         </p>
-                        <p className={`mt-0.5 truncate text-[11px] font-semibold sm:text-xs ${isActive ? 'text-white/80' : 'text-slate-500'}` }>
+                        <p className={`mt-0.5 truncate text-[11px] font-semibold sm:text-xs ${isActive ? 'text-white/80' : 'text-slate-500'}`}>
                           @{contact.username}
                         </p>
-                        <p className={`mt-0.5 truncate text-xs sm:text-[13px] ${isActive ? 'text-white/90 font-medium' : contact.unreadCount > 0 ? 'font-semibold text-slate-700' : 'text-slate-500'}` }>
+                        <p className={`mt-0.5 truncate text-xs sm:text-[13px] ${isActive ? 'text-white/90 font-medium' : contact.unreadCount > 0 ? 'font-semibold text-slate-700' : 'text-slate-500'}`}>
                           {contact.lastMessage?.text || 'Start a private conversation'}
                         </p>
                       </div>
@@ -5577,7 +5653,7 @@ function PrivateChatView({
 
             {contacts.length === 0 && !isThreadsLoading && (
               <>
-              <div className="px-2 py-8 motion-fade-up hidden xl:block">
+                <div className="px-2 py-8 motion-fade-up hidden xl:block">
                   <EmptyProfilePanel
                     icon={<MessageCircle className="h-6 w-6 text-teal-500" />}
                     title="No chats yet"
@@ -5633,8 +5709,8 @@ function PrivateChatView({
 
             {/* Messages Feed */}
             <div className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4 hide-scrollbar sm:space-y-5 sm:px-5 sm:py-6">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(59,130,246,0.03)_0%,_transparent_100%)] pointer-events-none" />
-              
+              <div className="absolute inset-0 bg-transparent pointer-events-none" />
+
               {activeMessagesStatus === 'loading' && activeMessages.length === 0 && (
                 <div className="mx-auto max-w-sm rounded-[20px] bg-white/70 p-4 text-center text-sm font-medium text-slate-500 shadow-sm backdrop-blur-md ring-1 ring-slate-200/50 motion-fade-up">
                   <span className="flex items-center justify-center gap-2">
@@ -5643,7 +5719,7 @@ function PrivateChatView({
                   </span>
                 </div>
               )}
-              
+
               {activeMessagesStatus === 'error' && (
                 <div className="mx-auto max-w-md rounded-[20px] border border-red-200 bg-red-50/90 p-4 text-center text-sm font-medium text-red-700 shadow-sm backdrop-blur-md motion-pop">
                   {activeError || 'Unable to load this conversation right now.'}
@@ -5659,12 +5735,11 @@ function PrivateChatView({
                     className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} motion-fade-up`}
                   >
                     <div className="flex max-w-[92%] flex-col gap-1.5 sm:max-w-[85%] md:max-w-[75%]">
-                      <div 
-                        className={`relative rounded-[1.5rem] px-4 py-3 shadow-sm transition-all hover:shadow-md sm:rounded-3xl sm:px-5 sm:py-3.5 ${
-                          isOutgoing
-                            ? 'bg-gradient-to-br from-slate-800 to-slate-950 text-white rounded-br-md'
-                            : 'bg-white text-slate-900 border border-slate-200/60 rounded-bl-md'
-                        }`}
+                      <div
+                        className={`relative rounded-[1.5rem] px-4 py-3 shadow-sm transition-all hover:shadow-md sm:rounded-3xl sm:px-5 sm:py-3.5 ${isOutgoing
+                          ? 'bg-slate-950 text-white rounded-br-md'
+                          : 'bg-white text-slate-900 border border-slate-200/60 rounded-bl-md'
+                          }`}
                       >
                         <p className="text-sm leading-[1.55] tracking-tight sm:text-[15px] sm:leading-[1.6]">{message.text}</p>
                       </div>
@@ -5701,7 +5776,7 @@ function PrivateChatView({
               <div className="relative">
                 {isEmojiPickerOpen && (
                   <div className="absolute bottom-full left-0 z-20 mb-2 shadow-lg">
-                    <EmojiPicker 
+                    <EmojiPicker
                       onEmojiClick={(emojiData) => handleEmojiInsert(emojiData.emoji)}
                       autoFocusSearch={false}
                       searchDisabled={true}
@@ -5719,42 +5794,41 @@ function PrivateChatView({
                         current === activeContactUsername ? '' : activeContactUsername
                       ));
                     }}
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition sm:h-11 sm:w-11 ${
-                      isEmojiPickerOpen
-                        ? 'bg-slate-200 text-slate-800'
-                        : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-800'
-                    }`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition sm:h-11 sm:w-11 ${isEmojiPickerOpen
+                      ? 'bg-slate-200 text-slate-800'
+                      : 'text-slate-500 hover:bg-slate-200/70 hover:text-slate-800'
+                      }`}
                     aria-label={isEmojiPickerOpen ? 'Hide emoji options' : 'Show emoji options'}
                     aria-expanded={isEmojiPickerOpen}
                   >
                     <Smile className="h-5 w-5" />
                   </button>
-                <textarea
-                  rows={1}
-                  value={activeDraft}
-                  onChange={(event) => onDraftChange(activeContact.username, event.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                       e.preventDefault();
-                       if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
-                    }
-                  }}
-                  placeholder={`Reply to ${activeContact.displayName || activeContact.username}...`}
-                  className="w-full resize-none bg-transparent px-3 py-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400/80 max-h-[120px] sm:px-4 sm:py-3.5 sm:text-[15px]"
-                  style={{ minHeight: '48px' }}
-                />
-                <button
-                  type="submit"
-                  disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
-                  aria-label="Send message"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-md transition-all  hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
-                >
-                  {isSending ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  ) : (
-                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
-                  )}
-                </button>
+                  <textarea
+                    rows={1}
+                    value={activeDraft}
+                    onChange={(event) => onDraftChange(activeContact.username, event.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
+                      }
+                    }}
+                    placeholder={`Reply to ${activeContact.displayName || activeContact.username}...`}
+                    className="w-full resize-none bg-transparent px-3 py-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400/80 max-h-[120px] sm:px-4 sm:py-3.5 sm:text-[15px]"
+                    style={{ minHeight: '48px' }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
+                    aria-label="Send message"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-all  hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md sm:h-11 sm:w-11"
+                  >
+                    {isSending ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    ) : (
+                      <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -5870,11 +5944,10 @@ function MobileFirstPrivateChatView({
                   type="button"
                   onClick={() => onSelectContact(contact.username)}
                   style={{ animationDelay: `${idx * 35}ms` }}
-                  className={`group relative flex w-full items-center gap-3 rounded-xl border px-3.5 py-3.5 text-left transition sm:gap-4 sm:px-4 xl:px-3.5 xl:py-3.5 ${
-                    isActive
-                      ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 text-slate-950'
-                      : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
+                  className={`group relative flex w-full items-center gap-3 rounded-xl border px-3.5 py-3.5 text-left transition sm:gap-4 sm:px-4 xl:px-3.5 xl:py-3.5 ${isActive
+                    ? 'border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 text-slate-950'
+                    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
                 >
                   <div className="relative shrink-0">
                     {contact.profilePhotoUrl ? (
@@ -5884,9 +5957,8 @@ function MobileFirstPrivateChatView({
                         className={`h-12 w-12 rounded-full object-cover ring-1 sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${isActive ? 'ring-blue-200' : 'ring-slate-200'}`}
                       />
                     ) : (
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xs font-bold uppercase sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${
-                        isActive ? 'bg-black text-white ring-1 ring-blue-200' : 'bg-slate-700 text-white'
-                      }`}>
+                      <div className={`flex h-12 w-12 items-center justify-center rounded-full text-xs font-bold uppercase sm:h-[54px] sm:w-[54px] xl:h-12 xl:w-12 ${isActive ? 'bg-black text-white ring-1 ring-blue-200' : 'bg-slate-700 text-white'
+                        }`}>
                         {getInitials(contact.username)}
                       </div>
                     )}
@@ -5915,14 +5987,14 @@ function MobileFirstPrivateChatView({
 
                       <div className="flex shrink-0 items-center justify-end">
 
-                          {contact.unreadCount > 0 ? (
+                        {contact.unreadCount > 0 ? (
                           <div className="h-2.5 w-2.5 rounded-full bg-slate-800 xl:inline-flex xl:min-w-[1.4rem] xl:h-auto xl:w-auto xl:items-center xl:justify-center xl:rounded-full xl:bg-black xl:px-1.5 xl:py-0.5 xl:text-[10px] xl:font-bold xl:leading-none xl:text-white">
                             <span className="hidden xl:inline">{contact.unreadCount > 99 ? '99+' : contact.unreadCount}</span>
                           </div>
                         ) : (
                           <div className="xl:hidden opacity-30 flex items-center justify-center">
                             <svg className="h-[20px] w-[20px] text-[#a3a3a3]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </div>
                         )}
@@ -5931,7 +6003,7 @@ function MobileFirstPrivateChatView({
                             {formatTimestamp(contact.lastMessage.createdAt)}
                           </span>
                         )}
-                       </div>
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -5962,11 +6034,10 @@ function MobileFirstPrivateChatView({
         </div>
       </div>
 
-      <div className={`chat-mobile-thread ${
-        hasActiveContact
-          ? 'flex border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
-          : 'hidden'
-      } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col sm:rounded-2xl xl:relative xl:z-auto xl:flex xl:rounded-2xl`}>
+      <div className={`chat-mobile-thread ${hasActiveContact
+        ? 'flex border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+        : 'hidden'
+        } ${hasActiveContact ? 'chat-mobile-thread--open' : ''} min-h-0 overflow-hidden flex-col sm:rounded-2xl xl:relative xl:z-auto xl:flex xl:rounded-2xl`}>
         {activeContact ? (
           <>
             <div
@@ -6044,11 +6115,10 @@ function MobileFirstPrivateChatView({
                     >
                       <div className={`flex max-w-[86%] flex-col gap-1.5 sm:max-w-[72%] ${isOutgoing ? 'items-end' : 'items-start'}`}>
                         <div
-                          className={`rounded-2xl px-4 py-3 text-sm sm:px-5 sm:text-[15px] ${
-                            isOutgoing
-                              ? 'rounded-br-lg bg-black text-white'
-                              : 'rounded-bl-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-900'
-                          }`}
+                          className={`rounded-2xl px-4 py-3 text-sm sm:px-5 sm:text-[15px] ${isOutgoing
+                            ? 'rounded-br-lg bg-black text-white'
+                            : 'rounded-bl-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-900'
+                            }`}
                         >
                           <p className="leading-6">{message.text}</p>
                         </div>
@@ -6085,7 +6155,7 @@ function MobileFirstPrivateChatView({
               <div className="relative">
                 {isEmojiPickerOpen && (
                   <div className="absolute bottom-full left-0 z-20 mb-2 shadow-lg">
-                    <EmojiPicker 
+                    <EmojiPicker
                       onEmojiClick={(emojiData) => handleEmojiInsert(emojiData.emoji)}
                       autoFocusSearch={false}
                       width="100%"
@@ -6101,42 +6171,41 @@ function MobileFirstPrivateChatView({
                         current === activeContactUsername ? '' : activeContactUsername
                       ));
                     }}
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
-                      isEmojiPickerOpen
-                        ? 'bg-slate-200 text-slate-800'
-                        : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
-                    }`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${isEmojiPickerOpen
+                      ? 'bg-slate-200 text-slate-800'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                      }`}
                     aria-label={isEmojiPickerOpen ? 'Hide emoji options' : 'Show emoji options'}
                     aria-expanded={isEmojiPickerOpen}
                   >
                     <Smile className="h-5 w-5" />
                   </button>
-                <textarea
-                  rows={1}
-                  value={activeDraft}
-                  onChange={(event) => onDraftChange(activeContact.username, event.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
-                    }
-                  }}
-                  placeholder={`Message ${activeContact.displayName || activeContact.username}...`}
-                  className="max-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
-                  style={{ minHeight: '46px' }}
-                />
-                <button
-                  type="submit"
-                  disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
-                  aria-label="Send message"
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
-                >
-                  {isSending ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  ) : (
-                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
-                  )}
-                </button>
+                  <textarea
+                    rows={1}
+                    value={activeDraft}
+                    onChange={(event) => onDraftChange(activeContact.username, event.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (activeDraft.trim() && !isSending && activeMessagesStatus !== 'error') onSendMessage(activeContact.username);
+                      }
+                    }}
+                    placeholder={`Message ${activeContact.displayName || activeContact.username}...`}
+                    className="max-h-[132px] w-full resize-none bg-transparent px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 sm:px-4 sm:text-[15px]"
+                    style={{ minHeight: '46px' }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!activeDraft.trim() || isSending || activeMessagesStatus === 'error'}
+                    aria-label="Send message"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black text-white shadow-sm transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50 sm:h-11 sm:w-11"
+                  >
+                    {isSending ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    ) : (
+                      <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
+                    )}
+                  </button>
                 </div>
               </div>
             </form>
@@ -6176,6 +6245,7 @@ function ProfileView({
   profileTab,
   profileShareFeedback,
   viewedProfilePhotoUrl,
+  bannerUrl,
   isFollowingViewedProfile,
   latestProfilePost,
   profileTopLocations,
@@ -6183,6 +6253,7 @@ function ProfileView({
   onOpenConnections,
   onCreateReport,
   onOpenPhotoActions,
+  onEditBanner,
   onOpenSettings,
   onOpenChat,
   onToggleFollow,
@@ -6218,109 +6289,84 @@ function ProfileView({
   return (
     <>
       <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
-        <div className="border-b border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,0.98),_rgba(239,246,255,0.94))] px-4 py-4 sm:px-7 sm:py-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                {profileDisplay.role}
-              </span>
-              <span className="rounded-full border border-blue-100 bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-900">
-                {profileBeat}
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                {Math.max(profileCommunitiesCount, 1)} communities
-              </span>
-            </div>
+        {/* Banner Section */}
+        <div className="relative h-44 w-full bg-slate-100 sm:h-64">
+          {bannerUrl ? (
+            <img src={bannerUrl} alt="Profile Banner" className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-slate-100 to-slate-200" />
+          )}
+          {isOwnProfile && (
+            <button
+              type="button"
+              onClick={onEditBanner}
+              className="absolute bottom-4 right-4 flex h-10 items-center gap-2 rounded-xl bg-black/60 px-4 text-[13px] font-semibold text-white backdrop-blur-md transition hover:bg-black/80"
+            >
+              <Camera className="h-4 w-4" />
+              Change banner
+            </button>
+          )}
+        </div>
 
-            <div className="signal-score w-full rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3 text-left sm:w-auto sm:text-right">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Signal score</p>
-              <p className="mt-1 font-serif text-2xl font-bold text-slate-950 sm:text-3xl">{profileImpactScore}%</p>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div className="relative px-4 pb-6 sm:px-8 sm:pb-8">
+          {/* Profile Header Overlapping Banner */}
+          <div className="relative -mt-12 flex flex-col items-start gap-5 sm:-mt-16 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+            <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-end sm:gap-6">
               <button
                 type="button"
                 onClick={onOpenPhotoActions}
-                className={`group relative w-fit rounded-full ${isOwnProfile ? 'cursor-pointer sm:cursor-default' : 'cursor-default'}`}
-                aria-label={isOwnProfile ? 'Open profile photo options' : `${profileDisplay.username} profile photo`}
+                className="group relative h-24 w-24 rounded-[32px] border-4 border-white bg-white shadow-xl sm:h-32 sm:w-32 sm:rounded-[40px] sm:border-[6px]"
               >
                 {viewedProfilePhotoUrl ? (
                   <img
                     src={viewedProfilePhotoUrl}
                     alt={`${profileDisplay.username} profile`}
-                    className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24"
+                    className="h-full w-full rounded-[24px] object-cover sm:rounded-[32px]"
                   />
                 ) : (
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white bg-slate-900 text-3xl font-bold uppercase text-white shadow-[0_16px_34px_-26px_rgba(15,23,42,0.32)] sm:h-24 sm:w-24 sm:text-4xl">
+                  <div className="flex h-full w-full items-center justify-center rounded-[24px] bg-slate-900 text-3xl font-bold uppercase text-white sm:rounded-[32px] sm:text-4xl">
                     {profileInitials}
                   </div>
                 )}
                 {isOwnProfile && (
-                  <span className="absolute inset-x-1 bottom-0.5 inline-flex items-center justify-center rounded-full bg-slate-950/78 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white shadow-sm sm:hidden">
-                    Edit photo
-                  </span>
+                  <div className="absolute inset-0 flex items-center justify-center rounded-[24px] bg-black/40 opacity-0 transition group-hover:opacity-100 sm:rounded-[32px]">
+                    <Camera className="h-6 w-6 text-white" />
+                  </div>
                 )}
               </button>
 
-              <div className="max-w-2xl">
-                <div className="flex flex-wrap items-center gap-3">
-                  <h2 className="font-serif text-[32px] font-bold leading-tight text-slate-950 sm:text-[40px]">{profileDisplay.displayName}</h2>
+              <div className="pb-1">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h2 className="font-serif text-[28px] font-bold leading-tight text-slate-950 sm:text-[34px]">{profileDisplay.displayName}</h2>
                   {profileDisplay.reputation >= 600 && (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-200/50 px-3 py-1 text-xs font-bold text-slate-900 shadow-sm transition hover:bg-slate-200 sm:px-3.5">
-                      <BadgeCheck className="h-4 w-4" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-600">
+                      <BadgeCheck className="h-3.5 w-3.5" />
                       Verified
                     </span>
                   )}
                 </div>
-                <p className="mt-1.5 text-base font-semibold text-slate-500">@{profileDisplay.username}</p>
-                <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{profileBio}</p>
-                <div className="mt-4 flex flex-wrap gap-2.5 text-sm text-slate-500">
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <MapPin className="h-4 w-4 text-black" />
-                    {profileLocation}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <CalendarDays className="h-4 w-4 text-black" />
-                    Joined {profileJoinLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-3 py-1.5">
-                    <Globe className="h-4 w-4 text-black" />
-                    {profileTopLocations[0] || profileLocation}
-                  </span>
-                </div>
+                <p className="mt-0.5 text-base font-semibold text-slate-500">@{profileDisplay.username}</p>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
+            <div className="flex w-full flex-wrap gap-2.5 sm:w-auto">
               {isOwnProfile ? (
                 <>
-                  <div className="flex w-full flex-col gap-2 sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => onOpenSettings('personal')}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
-                    >
-                      <SquarePen className="h-4 w-4" />
-                      Personal description
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onOpenSettings('personal')}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
-                    >
-                      <Settings className="h-4 w-4" />
-                      Settings
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onOpenSettings('personal')}
+                    className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-[13px] font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Settings
+                  </button>
                   <button
                     type="button"
                     onClick={onCreateReport}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 sm:w-auto sm:justify-start"
-                    >
-                      <SquarePen className="h-4 w-4" />
-                      New report
+                    className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-900 px-6 text-[13px] font-bold text-white transition hover:bg-slate-800"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New report
                   </button>
                 </>
               ) : (
@@ -6328,60 +6374,98 @@ function ProfileView({
                   <button
                     type="button"
                     onClick={onToggleFollow}
-                    className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:w-auto sm:justify-start ${isFollowingViewedProfile
-                      ? 'border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    className={`inline-flex h-11 items-center gap-2 rounded-xl px-6 text-[13px] font-bold transition ${isFollowingViewedProfile
+                      ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                       : 'bg-slate-900 text-white hover:bg-slate-800'
                       }`}
                   >
-                    {isFollowingViewedProfile ? <UserCheck className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                     {isFollowingViewedProfile ? 'Following' : 'Follow'}
                   </button>
                   <button
                     type="button"
-                    onClick={onShareProfile}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
+                    onClick={() => onOpenChat(profileDisplay.username)}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-slate-700 transition hover:bg-slate-50"
                   >
-                    <Share2 className="h-4 w-4" />
-                    {profileShareFeedback || 'Share profile'}
+                    <MessageCircle className="h-5 w-5" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => onOpenChat(profileDisplay.username)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 sm:w-auto sm:justify-start"
+                    onClick={onShareProfile}
+                    className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-slate-700 transition hover:bg-slate-50"
                   >
-                    <MessageCircle className="h-4 w-4" />
-                    Message
+                    <Share2 className="h-5 w-5" />
                   </button>
-                  {latestProfilePost && (
-                    <button
-                      type="button"
-                      onClick={onOpenLatestPost}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-200 sm:w-auto sm:justify-start"
-                    >
-                      <ArrowUpRight className="h-4 w-4" />
-                      Latest report
-                    </button>
-                  )}
                 </>
               )}
             </div>
           </div>
-        </div>
 
-        <div className="mx-auto grid w-full max-w-[54rem] grid-cols-2 gap-3 px-4 py-4 sm:px-7 sm:py-5 lg:grid-cols-3">
-          <ProfileStatPill
-            icon={<Users className="h-4 w-4" />}
-            label="Followers"
-            value={formatCount(profileFollowersCount)}
-            onClick={() => onOpenConnections('followers')}
-          />
-          <ProfileStatPill
-            icon={<UserPlus className="h-4 w-4" />}
-            label="Following"
-            value={formatCount(profileFollowingCount)}
-            onClick={() => onOpenConnections('following')}
-          />
-          <ProfileStatPill icon={<Zap className="h-4 w-4" />} label="Reputation" value={formatCount(profileDisplay.reputation)} />
+          {/* Bio and Horizontal Stats Bar */}
+          <div className="mt-8 space-y-8">
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-2xl">
+                <p className="text-base leading-7 text-slate-600">{profileBio || 'No personal description yet.'}</p>
+
+                <div className="mt-4 flex flex-wrap gap-4 text-[13px] font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    {profileLocation}
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-slate-400" />
+                    Joined {profileJoinLabel}
+                  </span>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                    {profileDisplay.role}
+                  </span>
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-blue-600">
+                    {profileBeat}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-1 flex-col gap-4 sm:flex-row lg:max-w-md lg:justify-end">
+                <div className="flex h-[4.5rem] items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/50 px-5 transition hover:border-slate-200">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Impact</p>
+                    <p className="font-serif text-2xl font-bold text-slate-950">{profileImpactScore}%</p>
+                  </div>
+                  <div className="h-10 w-px bg-slate-200" />
+                  <div className="flex-1">
+                    <div className="h-1.5 w-24 rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full bg-blue-600" style={{ width: `${profileImpactScore}%` }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenConnections('followers')}
+                    className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2 transition hover:border-slate-200 hover:shadow-sm"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Followers</p>
+                    <p className="text-lg font-bold text-slate-950">{formatCount(profileFollowersCount)}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenConnections('following')}
+                    className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2 transition hover:border-slate-200 hover:shadow-sm"
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Following</p>
+                    <p className="text-lg font-bold text-slate-950">{formatCount(profileFollowingCount)}</p>
+                  </button>
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Reputation</p>
+                    <p className="text-lg font-bold text-slate-950">{formatCount(profileDisplay.reputation)}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -6455,6 +6539,16 @@ function ProfileView({
           </div>
         )}
 
+        {profileTab === 'momentum' && (
+          <div className="space-y-4">
+            <EmptyProfilePanel
+              icon={<Zap className="h-5 w-5" />}
+              title="Momentum is building"
+              description="High-impact interactions and viral civic reports will appear here as the community rallies around this profile."
+            />
+          </div>
+        )}
+
         {profileTab === 'activity' && (
           <div className="space-y-4">
             {profileActivityFeed.map((activity, index) => (
@@ -6480,32 +6574,39 @@ function ProfileView({
   );
 }
 
-function ProfileStatPill({ icon, label, value, hint, onClick }) {
-  const Container = onClick ? 'button' : 'div';
-
-  return (
-    <Container
-      {...(onClick ? { type: 'button', onClick } : {})}
-      className={`signal-metric group rounded-[24px] border border-slate-200/90 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.94))] px-4 py-4 text-left shadow-[0_14px_34px_-28px_rgba(15,23,42,0.25)] transition sm:px-5 ${onClick
-        ? ' hover:border-slate-300 hover:bg-white'
-        : ''
-        }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-          <p className="mt-3 font-serif text-[28px] font-bold leading-none text-slate-950">{value}</p>
-        </div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/80 bg-white text-black shadow-[0_14px_30px_-22px_rgba(37,99,235,0.9)]">
+function ProfileStatPill({ icon, label, value, onClick }) {
+  const content = (
+    <>
+      <div className="flex items-center gap-3">
+        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-900 transition group-hover:bg-blue-600 group-hover:text-white">
           {icon}
         </span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</span>
       </div>
+      <div className="flex items-center gap-2">
+        <span className="text-lg font-bold text-slate-950">{value}</span>
+        {onClick && <ChevronRight className="h-3.5 w-3.5 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-black" />}
+      </div>
+    </>
+  );
 
-      <div className="mt-4 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-        <span>{hint || (onClick ? 'Open list' : 'Live stat')}</span>
-        {onClick ? <ChevronRight className="h-3.5 w-3.5 text-black transition " /> : <span className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-100 via-sky-300 to-teal-300" />}
-      </div>
-    </Container>
+  const className = `group flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm transition hover:shadow-md ${onClick
+    ? ' hover:border-slate-200 hover:bg-slate-50/50'
+    : ''
+    }`;
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
+    </div>
   );
 }
 
@@ -6832,26 +6933,47 @@ function ProfileSettingsModal({
   if (activeSection === 'personal') {
     sectionContent = (
       <form className="space-y-5" onSubmit={onSavePersonalDetails}>
-        <div className="rounded-2xl border border-slate-200 bg-[#f9fafc] p-4">
-          <div className="flex items-center gap-3">
-            {profilePhotoUrl ? (
-              <img src={profilePhotoUrl} alt={profile.username} className="h-16 w-16 rounded-xl border border-slate-200 object-cover" />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold uppercase text-white">
-                {getInitials(profile.username)}
+        <div className="flex flex-col gap-4 sm:flex-row">
+          <div className="flex-1 rounded-2xl border border-slate-200 bg-[#f9fafc] p-4">
+            <div className="flex items-center gap-3">
+              {profilePhotoUrl ? (
+                <img src={profilePhotoUrl} alt={profile.username} className="h-16 w-16 rounded-xl border border-slate-200 object-cover" />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-900 text-lg font-bold uppercase text-white">
+                  {getInitials(profile.username)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[1.05rem] font-medium text-slate-950">Avatar</p>
+                <p className="mt-0.5 text-sm text-slate-500">Public photo</p>
               </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[1.05rem] font-medium text-slate-950">{getDisplayNameLabel(profile.displayName, profile.username)}</p>
-              <p className="mt-0.5 text-sm text-slate-500">@{profile.username}</p>
+              <button
+                type="button"
+                onClick={onEditPhoto}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-200"
+              >
+                <SquarePen className="h-[1.2rem] w-[1.2rem]" strokeWidth={2} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={onEditPhoto}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-200"
-            >
-              <SquarePen className="h-[1.2rem] w-[1.2rem]" strokeWidth={2} />
-            </button>
+          </div>
+
+          <div className="flex-1 rounded-2xl border border-slate-200 bg-[#f9fafc] p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-500">
+                <ImageIcon className="h-7 w-7" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[1.05rem] font-medium text-slate-950">Banner</p>
+                <p className="mt-0.5 text-sm text-slate-500">Profile background</p>
+              </div>
+              <button
+                type="button"
+                onClick={onEditBanner}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition hover:bg-slate-200"
+              >
+                <SquarePen className="h-[1.2rem] w-[1.2rem]" strokeWidth={2} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -6895,20 +7017,20 @@ function ProfileSettingsModal({
             <p className="text-[0.92rem] font-medium text-slate-500">Personal Description</p>
           </div>
           <div className="px-4 py-4 sm:px-5">
-          <textarea
-            rows={4}
-            maxLength={180}
-            value={personalDescriptionDraft}
-            onChange={(event) => onPersonalDescriptionDraftChange(event.target.value.slice(0, 180))}
-            className="min-h-[110px] w-full resize-none rounded-none border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
-            placeholder="Tell people what you care about, what you report on, or how you contribute."
-            disabled={isSubmitting}
-          />
-          <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-400">
-            <span>Shown on your public profile.</span>
-            <span>{`${personalDescriptionDraft.length}/180`}</span>
+            <textarea
+              rows={4}
+              maxLength={180}
+              value={personalDescriptionDraft}
+              onChange={(event) => onPersonalDescriptionDraftChange(event.target.value.slice(0, 180))}
+              className="min-h-[110px] w-full resize-none rounded-none border-0 bg-transparent p-0 text-[1.02rem] text-slate-950 outline-none placeholder:text-slate-300"
+              placeholder="Tell people what you care about, what you report on, or how you contribute."
+              disabled={isSubmitting}
+            />
+            <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-400">
+              <span>Shown on your public profile.</span>
+              <span>{`${personalDescriptionDraft.length}/180`}</span>
+            </div>
           </div>
-        </div>
         </div>
 
         <div className="flex justify-end pt-1">
@@ -7729,7 +7851,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
       />
 
       <div
-        className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(180deg,_rgba(2,6,23,0.06)_35%,_rgba(2,6,23,0.86)_100%)]"
+        className="pointer-events-none absolute inset-0 z-10 bg-slate-900/80"
       />
 
       <div className="absolute right-3 top-3 z-20 hidden sm:block pointer-events-auto">

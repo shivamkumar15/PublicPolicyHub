@@ -1301,6 +1301,34 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
   }
 });
 
+app.post('/api/users/profile/banner', authenticateToken, upload.single('banner'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Banner is required' });
+
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const nextBannerUrl = `/uploads/${req.file.filename}`;
+    const previousBannerUrl = user.banner_url || user.bannerUrl;
+    
+    const { error } = await supabase.from('users').update({ banner_url: nextBannerUrl }).eq('id', req.user.id);
+    if (error) throw error;
+
+    if (previousBannerUrl && previousBannerUrl !== nextBannerUrl) {
+      try {
+        await deleteFileIfExists(path.resolve('uploads', path.basename(previousBannerUrl)));
+      } catch (error) {
+        console.error(`Failed to delete old banner ${previousBannerUrl}:`, error.message);
+      }
+    }
+
+    res.json({ bannerUrl: nextBannerUrl });
+  } catch (error) {
+    console.error('Error uploading banner:', error);
+    res.status(500).json({ error: 'Failed to upload banner' });
+  }
+});
+
 app.patch('/api/users/profile', authenticateToken, async (req, res) => {
   try {
     const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
