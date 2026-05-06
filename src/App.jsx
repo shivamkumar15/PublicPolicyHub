@@ -66,11 +66,17 @@ import {
 const Logo = new URL('../Logo.svg', import.meta.url).href;
 const API_BASE_URL = '';
 
+function getMediaBaseUrl() {
+  if (API_BASE_URL) return API_BASE_URL;
+  if (typeof window === 'undefined') return '';
+  if (window.location.port === '5000') return '';
+  return `${window.location.protocol}//${window.location.hostname}:5000`;
+}
+
 const navItems = [
   { id: 'home', label: 'Home Feed', Icon: (props) => <FileText {...props} /> },
   { id: 'create', label: 'Civic Reporting', Icon: (props) => <Flag {...props} />, requiresAuth: true },
   { id: 'chat', label: 'Chat', Icon: (props) => <MessageCircle {...props} />, requiresAuth: true },
-  { id: 'profile', label: 'Profile Dashboard', Icon: (props) => <Activity {...props} />, requiresAuth: true },
   { id: 'alerts', label: 'Notifications', Icon: (props) => <Bell {...props} />, requiresAuth: true },
   { id: 'bookmarks', label: 'Saved Library', Icon: (props) => <Bookmark {...props} />, requiresAuth: true },
 ];
@@ -2242,13 +2248,6 @@ function App() {
     }, 0);
   };
 
-  const focusCommentInput = (postId) => {
-    setTimeout(() => {
-      const inputElement = commentInputRefs.current[postId];
-      if (inputElement) inputElement.focus();
-    }, 0);
-  };
-
   const toggleSolutionReplies = (solutionStateKey) => {
     setVisibleRepliesByKey((current) => ({ ...current, [solutionStateKey]: !current[solutionStateKey] }));
   };
@@ -2558,12 +2557,8 @@ function App() {
     setTheme((currentTheme) => (currentTheme === 'dark' ? 'light' : 'dark'));
   };
 
-  const isMobileViewport = () => (
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches
-  );
-
-  const openMobileProfilePhotoActions = () => {
-    if (!isOwnProfile || !isMobileViewport()) return;
+  const openProfilePhotoActions = () => {
+    if (!isOwnProfile) return;
     setIsProfilePhotoPreviewOpen(false);
     setIsMobileProfilePhotoActionsOpen(true);
   };
@@ -2583,7 +2578,49 @@ function App() {
 
   const handleMobileProfilePhotoChange = () => {
     setIsMobileProfilePhotoActionsOpen(false);
-    profilePhotoInputRef.current?.click();
+    if (profilePhotoInputRef.current) {
+      profilePhotoInputRef.current.value = '';
+      profilePhotoInputRef.current.click();
+    }
+  };
+
+  const handleBannerPickerOpen = () => {
+    if (!isOwnProfile) return;
+    if (bannerInputRef.current) {
+      bannerInputRef.current.value = '';
+      bannerInputRef.current.click();
+    }
+  };
+
+  const handleRemoveProfilePhoto = async () => {
+    if (!userProfile?.username) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/users/profile/photo`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Failed to remove profile photo');
+
+      setProfilePhotoUrl('');
+      setUserProfile((currentProfile) => (
+        currentProfile ? { ...currentProfile, profilePhotoUrl: '', profile_photo_url: '' } : currentProfile
+      ));
+      setViewedProfileMeta((currentProfile) => (
+        currentProfile?.username === userProfile.username
+          ? { ...currentProfile, profilePhotoUrl: '', profile_photo_url: '' }
+          : currentProfile
+      ));
+      closeMobileProfilePhotoActions();
+      closeProfilePhotoPreview();
+      setProfileSettingsStatus({ type: 'success', message: 'Profile photo removed.' });
+    } catch (error) {
+      alert(error.message);
+    }
   };
 
   const openProfileSettings = (section = 'overview') => {
@@ -3819,6 +3856,10 @@ function App() {
                   : item.id === 'alerts'
                     ? unreadAlertsCount
                     : 0;
+
+                const isProfileItem = item.id === 'profile';
+                const resolvedUserPhoto = isProfileItem && profilePhotoUrl ? resolveMediaUrl(profilePhotoUrl) : null;
+
                 return (
                   <button
                     key={item.id}
@@ -3831,7 +3872,11 @@ function App() {
                       : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-600 hover:bg-slate-100'
                       }`}
                   >
-                    <Icon className="nav-pill__icon h-5 w-5" />
+                    {resolvedUserPhoto ? (
+                      <img src={resolvedUserPhoto} alt="" className="h-5 w-5 rounded-full object-cover" />
+                    ) : (
+                      <Icon className="nav-pill__icon h-5 w-5" />
+                    )}
                     {badgeCount > 0 && (
                       <span className={`absolute right-0.5 top-0.5 z-10 inline-flex min-w-[1.3rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none shadow-sm ${isActive
                         ? 'bg-white text-slate-900'
@@ -3858,6 +3903,10 @@ function App() {
                         : item.id === 'alerts'
                           ? unreadAlertsCount
                           : 0;
+
+                      const isProfileItem = item.id === 'profile';
+                      const resolvedUserPhoto = isProfileItem && profilePhotoUrl ? resolveMediaUrl(profilePhotoUrl) : null;
+
                       return (
                         <button
                           key={item.id}
@@ -3865,7 +3914,11 @@ function App() {
                           className={`nav-pill flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-left text-base font-semibold transition ${activeView === item.id ? 'nav-pill--active bg-black text-white' : 'text-slate-600 hover:bg-slate-100'
                             }`}
                         >
-                          <Icon className="nav-pill__icon h-5 w-5" />
+                          {resolvedUserPhoto ? (
+                            <img src={resolvedUserPhoto} alt="" className="h-6 w-6 rounded-full object-cover" />
+                          ) : (
+                            <Icon className="nav-pill__icon h-5 w-5" />
+                          )}
                           <span className="flex-1">{item.label}</span>
                           {badgeCount > 0 && (
                             <span className={`inline-flex min-w-[1.55rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${activeView === item.id
@@ -4677,7 +4730,7 @@ function App() {
                             {activePost.verified && <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700"><BadgeCheck className="h-3.5 w-3.5" />Verified</span>}
                           </div>
 
-                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-2">
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2">
                             <button
                               type="button"
                               disabled={isSubmittingAction}
@@ -4689,15 +4742,6 @@ function App() {
                             >
                               <TrendingUp className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
                               <span className="truncate">Support {formatCount(activePost.support)}</span>
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isSubmittingAction}
-                              onClick={() => focusCommentInput(activePost.id)}
-                              className="flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 dark:border-blue-900 dark:bg-blue-900/20 px-1 py-1.5 text-[10px] sm:text-[11px] font-semibold text-slate-900 transition hover:bg-slate-200 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <MessageCircle className="h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
-                              <span className="truncate">Comment {formatCount(activePost.comments)}</span>
                             </button>
                             <button
                               type="button"
@@ -4730,18 +4774,6 @@ function App() {
                               <span className="truncate">{isSavedByUser ? 'Saved' : 'Save'}</span>
                             </button>
                           </div>
-
-                          {isOwnActivePost && (
-                            <button
-                              type="button"
-                              disabled={isSubmittingAction}
-                              onClick={() => handleDeletePost(activePost.id)}
-                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete Post
-                            </button>
-                          )}
 
                           <form
                             onSubmit={(event) => {
@@ -5218,8 +5250,8 @@ function App() {
                 onSelectTab={setProfileTab}
                 onOpenConnections={handleOpenProfileConnections}
                 onCreateReport={() => handleNavClick('create')}
-                onOpenPhotoActions={openMobileProfilePhotoActions}
-                onEditBanner={() => bannerInputRef.current?.click()}
+                onOpenPhotoActions={openProfilePhotoActions}
+                onEditBanner={handleBannerPickerOpen}
                 onOpenSettings={openProfileSettings}
                 onOpenChat={openPrivateChat}
                 onToggleFollow={handleToggleProfileFollow}
@@ -5257,6 +5289,7 @@ function App() {
                 onClose={closeMobileProfilePhotoActions}
                 onViewPhoto={openProfilePhotoPreview}
                 onChangePhoto={handleMobileProfilePhotoChange}
+                onRemovePhoto={handleRemoveProfilePhoto}
               />
               <ProfilePhotoPreviewModal
                 isOpen={isOwnProfile && isProfilePhotoPreviewOpen}
@@ -5285,8 +5318,8 @@ function App() {
                   closeProfileSettings();
                   setActiveView('alerts');
                 }}
-                onEditPhoto={() => profilePhotoInputRef.current?.click()}
-                onEditBanner={() => bannerInputRef.current?.click()}
+                onEditPhoto={handleMobileProfilePhotoChange}
+                onEditBanner={handleBannerPickerOpen}
                 onThemeToggle={handleThemeToggle}
                 onNameDraftChange={setProfileNameDraft}
                 onUsernameDraftChange={setProfileUsernameDraft}
@@ -5429,6 +5462,10 @@ function App() {
               : item.id === 'alerts'
                 ? unreadAlertsCount
                 : 0;
+
+            const isProfileItem = item.id === 'profile';
+            const resolvedUserPhoto = isProfileItem && profilePhotoUrl ? resolveMediaUrl(profilePhotoUrl) : null;
+
             return (
               <button
                 key={item.id}
@@ -5437,7 +5474,11 @@ function App() {
                   }${isActive ? 'text-slate-900' : 'text-slate-400 '
                   }`}
               >
-                <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                {resolvedUserPhoto ? (
+                  <img src={resolvedUserPhoto} alt="" className={`h-5 w-5 rounded-full object-cover transition-transform ${isActive ? 'scale-110' : ''}`} />
+                ) : (
+                  <Icon className={`nav-pill__icon h-5 w-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                )}
                 {badgeCount > 0 && (
                   <span className="absolute right-3 top-2 inline-flex min-w-[1.3rem] items-center justify-center rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-sm">
                     {badgeCount > 99 ? '99+' : badgeCount}
@@ -6261,6 +6302,8 @@ function ProfileView({
   onOpenLatestPost,
   onOpenPost,
 }) {
+  const resolvedBannerUrl = resolveMediaUrl(bannerUrl);
+  const resolvedViewedProfilePhotoUrl = resolveMediaUrl(viewedProfilePhotoUrl);
   const profileTabs = [
     {
       id: 'reports',
@@ -6290,9 +6333,9 @@ function ProfileView({
     <>
       <div className="motion-fade-up profile-hero overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.32)] sm:rounded-[32px]">
         {/* Banner Section */}
-        <div className="relative h-44 w-full bg-slate-100 sm:h-64">
-          {bannerUrl ? (
-            <img src={bannerUrl} alt="Profile Banner" className="h-full w-full object-cover" />
+        <div className="relative h-28 w-full bg-slate-100 sm:h-44">
+          {resolvedBannerUrl ? (
+            <img src={resolvedBannerUrl} alt="Profile Banner" className="h-full w-full object-cover object-center" />
           ) : (
             <div className="h-full w-full bg-gradient-to-br from-slate-100 to-slate-200" />
           )}
@@ -6300,7 +6343,7 @@ function ProfileView({
             <button
               type="button"
               onClick={onEditBanner}
-              className="absolute bottom-4 right-4 flex h-10 items-center gap-2 rounded-xl bg-black/60 px-4 text-[13px] font-semibold text-white backdrop-blur-md transition hover:bg-black/80"
+              className="absolute right-4 top-4 z-10 flex h-10 items-center gap-2 rounded-xl bg-black/60 px-4 text-[13px] font-semibold text-white backdrop-blur-md transition hover:bg-black/80"
             >
               <Camera className="h-4 w-4" />
               Change banner
@@ -6317,9 +6360,9 @@ function ProfileView({
                 onClick={onOpenPhotoActions}
                 className="group relative h-24 w-24 rounded-[32px] border-4 border-white bg-white shadow-xl sm:h-32 sm:w-32 sm:rounded-[40px] sm:border-[6px]"
               >
-                {viewedProfilePhotoUrl ? (
+                {resolvedViewedProfilePhotoUrl ? (
                   <img
-                    src={viewedProfilePhotoUrl}
+                    src={resolvedViewedProfilePhotoUrl}
                     alt={`${profileDisplay.username} profile`}
                     className="h-full w-full rounded-[24px] object-cover sm:rounded-[32px]"
                   />
@@ -6753,13 +6796,14 @@ function MobileProfilePhotoActionsSheet({
   onClose,
   onViewPhoto,
   onChangePhoto,
+  onRemovePhoto,
 }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[96] flex items-end bg-slate-950/55 px-4 py-4 backdrop-blur-sm sm:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[96] flex items-end justify-center bg-slate-950/55 px-4 py-4 backdrop-blur-sm sm:items-center" onClick={onClose}>
       <div
-        className="motion-pop w-full rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
+        className="motion-pop w-full max-w-sm rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 p-4 shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-slate-200" />
@@ -6794,6 +6838,16 @@ function MobileProfilePhotoActionsSheet({
             <ImageIcon className="h-4 w-4" />
             Change profile picture
           </button>
+          {profilePhotoUrl && (
+            <button
+              type="button"
+              onClick={onRemovePhoto}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove current profile picture
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -7612,7 +7666,7 @@ function formatCount(value) {
 function resolveMediaUrl(url) {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
-  return `${API_BASE_URL}${url}`;
+  return `${getMediaBaseUrl()}${url}`;
 }
 
 function buildMediaQualityOptions(media, fallbackUrl) {
@@ -7659,21 +7713,50 @@ function formatMediaTime(seconds) {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
+function findPreferredAutoplayQualityOption(options = []) {
+  if (!Array.isArray(options) || options.length === 0) return null;
+
+  const exact480 = options.find((option) => /(^|\D)480p?(\D|$)/i.test(`${option?.label ?? ''}`));
+  if (exact480) return exact480;
+
+  const value480 = options.find((option) => /(^|\D)480p?(\D|$)/i.test(`${option?.value ?? ''}`));
+  if (value480) return value480;
+
+  return options.find((option) => `${option?.label ?? ''}`.toLowerCase() === 'auto') ?? options[0];
+}
+
+let enhancedVideoPlayerInstanceCounter = 0;
+
 function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
+  const playerIdRef = useRef('');
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [selectedQuality, setSelectedQuality] = useState(() => qualityOptions?.[0]?.value ?? 'auto');
+  const [selectedQuality, setSelectedQuality] = useState(() => findPreferredAutoplayQualityOption(qualityOptions)?.value ?? 'auto');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const sourceOptions = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
   const activeQualityOption = sourceOptions.find((option) => option.value === selectedQuality) ?? sourceOptions[0];
   const activeSource = activeQualityOption?.url || src;
+
+  if (!playerIdRef.current) {
+    enhancedVideoPlayerInstanceCounter += 1;
+    playerIdRef.current = `enhanced-video-${enhancedVideoPlayerInstanceCounter}`;
+  }
+
+  useEffect(() => {
+    const preferredOption = findPreferredAutoplayQualityOption(sourceOptions);
+    if (!preferredOption) return;
+
+    setSelectedQuality((currentValue) => (
+      sourceOptions.some((option) => option.value === currentValue) ? currentValue : preferredOption.value
+    ));
+  }, [sourceOptions]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -7722,13 +7805,30 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    const playerId = playerIdRef.current;
+
+    const onGlobalVideoPlay = (event) => {
+      const activePlayerId = event?.detail?.playerId;
+      if (!activePlayerId || activePlayerId === playerId) return;
+      if (!video.paused) video.pause();
+    };
+
+    const notifyCurrentVideoPlay = () => {
+      window.dispatchEvent(new CustomEvent('pph:video-play', { detail: { playerId } }));
+    };
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
+            video.muted = false;
+            setIsMuted(false);
             if (video.paused) {
-              video.play().catch(() => { });
+              video.play().catch(() => {
+                video.muted = true;
+                setIsMuted(true);
+                video.play().catch(() => { });
+              });
             }
           } else {
             if (!video.paused) {
@@ -7740,8 +7840,14 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
       { threshold: 0.55 }
     );
 
+    video.addEventListener('play', notifyCurrentVideoPlay);
+    window.addEventListener('pph:video-play', onGlobalVideoPlay);
     observer.observe(video);
-    return () => observer.disconnect();
+    return () => {
+      video.removeEventListener('play', notifyCurrentVideoPlay);
+      window.removeEventListener('pph:video-play', onGlobalVideoPlay);
+      observer.disconnect();
+    };
   }, []);
 
   const togglePlayPause = () => {
@@ -7834,11 +7940,11 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   };
 
   return (
-    <div ref={containerRef} className="relative h-full w-full bg-black">
+    <div ref={containerRef} className="relative h-full w-full bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950">
       <video
         ref={videoRef}
         src={activeSource || src}
-        className="h-full w-full object-contain bg-black"
+        className="h-full w-full object-contain bg-transparent"
         preload="metadata"
         playsInline
         autoPlay
@@ -7850,9 +7956,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
         }}
       />
 
-      <div
-        className="pointer-events-none absolute inset-0 z-10 bg-slate-900/80"
-      />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24 bg-gradient-to-t from-black/55 via-black/20 to-transparent" />
 
       <div className="absolute right-3 top-3 z-20 hidden sm:block pointer-events-auto">
         <button

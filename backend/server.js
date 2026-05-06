@@ -10,7 +10,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import admin from 'firebase-admin';
-import { seed } from './seed.js';
+
 
 // Initialize Firebase Admin
 const firebaseAdminConfig = {
@@ -29,15 +29,11 @@ if (firebaseAdminConfig.projectId && firebaseAdminConfig.clientEmail && firebase
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const profileMediaOverridesPath = path.resolve(__dirname, 'profile-media-overrides.json');
 
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-// Auto-seed if database is empty
-const { count: postCount } = await supabase.from('posts').select('*', { count: 'exact', head: true });
-if (postCount === 0) {
-  console.log('Database is empty. Running seed script...');
-  await seed();
-}
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -558,6 +554,64 @@ const deleteFileIfExists = async (filePath) => {
   }
 };
 
+const isMissingColumnError = (error, columnName) => {
+  const errorText = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return errorText.includes('column') && errorText.includes(`${columnName}`.toLowerCase());
+};
+
+const updateUserMediaColumn = async (userId, primaryColumn, fallbackColumn, value) => {
+  const { error: primaryError } = await supabase.from('users').update({ [primaryColumn]: value }).eq('id', userId);
+  if (!primaryError) return;
+  if (!fallbackColumn || !isMissingColumnError(primaryError, primaryColumn)) throw primaryError;
+
+  const { error: fallbackError } = await supabase.from('users').update({ [fallbackColumn]: value }).eq('id', userId);
+  if (fallbackError) throw fallbackError;
+};
+
+const readProfileMediaOverrides = async () => {
+  try {
+    const fileContent = await fs.promises.readFile(profileMediaOverridesPath, 'utf8');
+    const parsed = JSON.parse(fileContent);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    if (error?.code === 'ENOENT') return {};
+    throw error;
+  }
+};
+
+const writeProfileMediaOverrides = async (overrides) => {
+  await fs.promises.writeFile(profileMediaOverridesPath, JSON.stringify(overrides, null, 2));
+};
+
+const readUserMediaOverride = async (user) => {
+  if (!user?.id && !user?.username) return {};
+  const overrides = await readProfileMediaOverrides();
+  return overrides[user.id] || overrides[user.username] || {};
+};
+
+const writeUserMediaOverride = async (user, nextOverride) => {
+  if (!user?.id && !user?.username) return;
+  const overrides = await readProfileMediaOverrides();
+  const existingOverride = overrides[user.id] || overrides[user.username] || {};
+  const mergedOverride = {
+    ...existingOverride,
+    username: user.username || existingOverride.username || '',
+    ...nextOverride,
+  };
+
+  if (user.username && overrides[user.username]) delete overrides[user.username];
+  overrides[user.id] = mergedOverride;
+  await writeProfileMediaOverrides(overrides);
+};
+
+const getUserBannerUrl = async (user) => {
+  const override = await readUserMediaOverride(user);
+  return user?.banner_url || user?.bannerUrl || override.bannerUrl || '';
+};
+
 const normalizeEmail = (emailValue) => `${emailValue ?? ''}`.trim().toLowerCase();
 
 const normalizeGender = (genderValue) => {
@@ -830,6 +884,7 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
   const includePrivateFields = !!options?.includePrivateFields;
   const { count: postsCount } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('author', user.username);
   const { count: followerCount } = await supabase.from('users').select('*', { count: 'exact', head: true }).contains('following', [user.username]);
+  const bannerUrl = await getUserBannerUrl(user);
   
   const following = getUniqueStrings(user.following);
   const bookmarkedPostIds = getUniqueStrings(user.bookmarked_post_ids || user.bookmarkedPostIds);
@@ -849,6 +904,7 @@ const buildProfilePayload = async (user, viewerUsername = '', options = {}) => {
     postsCount: postsCount || 0,
     solutionsProposed,
     profilePhotoUrl: user.profile_photo_url || user.profilePhotoUrl || '',
+    bannerUrl,
     bookmarkedPostIds,
     following,
     followerCount: followerCount || 0,
@@ -1301,6 +1357,30 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
   }
 });
 
+app.delete('/api/users/profile/photo', authenticateToken, async (req, res) => {
+  try {
+    const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
+    if (!user) return res.status(404).json({ error: 'Profile not found' });
+
+    const previousPhotoUrl = user.profile_photo_url || user.profilePhotoUrl;
+    const { error } = await supabase.from('users').update({ profile_photo_url: null }).eq('id', req.user.id);
+    if (error) throw error;
+
+    if (previousPhotoUrl) {
+      try {
+        await deleteFileIfExists(path.resolve('uploads', path.basename(previousPhotoUrl)));
+      } catch (deleteError) {
+        console.error(`Failed to delete profile photo ${previousPhotoUrl}:`, deleteError.message);
+      }
+    }
+
+    res.json({ profilePhotoUrl: '' });
+  } catch (error) {
+    console.error('Error removing profile photo:', error);
+    res.status(500).json({ error: 'Failed to remove profile photo' });
+  }
+});
+
 app.post('/api/users/profile/banner', authenticateToken, upload.single('banner'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Banner is required' });
@@ -1309,10 +1389,16 @@ app.post('/api/users/profile/banner', authenticateToken, upload.single('banner')
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
     const nextBannerUrl = `/uploads/${req.file.filename}`;
-    const previousBannerUrl = user.banner_url || user.bannerUrl;
-    
-    const { error } = await supabase.from('users').update({ banner_url: nextBannerUrl }).eq('id', req.user.id);
-    if (error) throw error;
+    const previousBannerUrl = await getUserBannerUrl(user);
+
+    try {
+      await updateUserMediaColumn(req.user.id, 'banner_url', 'bannerUrl', nextBannerUrl);
+    } catch (error) {
+      if (!isMissingColumnError(error, 'banner_url') && !isMissingColumnError(error, 'bannerUrl')) {
+        throw error;
+      }
+      await writeUserMediaOverride(user, { bannerUrl: nextBannerUrl });
+    }
 
     if (previousBannerUrl && previousBannerUrl !== nextBannerUrl) {
       try {
