@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import EmojiPicker from 'emoji-picker-react';
 import Activity from 'lucide-react/dist/esm/icons/activity.js';
 import ArrowLeft from 'lucide-react/dist/esm/icons/arrow-left.js';
@@ -54,17 +54,27 @@ import PageLoader from './PageLoader.jsx';
 import SearchInput from './SearchInput.jsx';
 import {
   auth,
+  createUserWithEmailAndPassword,
   getRedirectResult,
   provider,
   RecaptchaVerifier,
+  signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signInWithPopup,
   signInWithRedirect,
   signOut as firebaseSignOut,
+  updateProfile,
 } from './firebase.js';
 
 const Logo = new URL('../Logo.svg', import.meta.url).href;
-const API_BASE_URL = '';
+
+function getApiBaseUrl() {
+  if (typeof window === 'undefined') return '';
+  if (window.location.port === '5000') return '';
+  return `${window.location.protocol}//${window.location.hostname}:5000`;
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 function getMediaBaseUrl() {
   if (API_BASE_URL) return API_BASE_URL;
@@ -6927,6 +6937,7 @@ function ProfileSettingsModal({
   onSectionChange,
   onOpenNotifications,
   onEditPhoto,
+  onEditBanner,
   onThemeToggle,
   onNameDraftChange,
   onUsernameDraftChange,
@@ -7189,25 +7200,32 @@ function ProfileSettingsModal({
 
     if (item.toggle) {
       return (
-        <div key={item.id} className="flex items-center gap-4 px-5 py-4 sm:px-6">
+        <button
+          key={item.id}
+          type="button"
+          onClick={onThemeToggle}
+          className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 sm:px-6"
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-pressed={theme === 'dark'}
+        >
           <div className="flex h-9 w-9 items-center justify-center text-slate-700">
             <item.Icon className="h-[1.35rem] w-[1.35rem]" strokeWidth={2} />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[1.02rem] font-medium text-slate-950">{item.label}</p>
           </div>
-          <button
-            type="button"
-            onClick={onThemeToggle}
-            className={`relative inline-flex h-9 w-16 items-center rounded-full transition ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-200'}`}
-            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            aria-pressed={theme === 'dark'}
+          <span className="mr-2 text-sm font-semibold text-slate-500">
+            {theme === 'dark' ? 'On' : 'Off'}
+          </span>
+          <span
+            className={`relative inline-flex h-8 w-14 flex-shrink-0 items-center rounded-full border transition ${theme === 'dark' ? 'border-blue-500 bg-blue-600' : 'border-slate-300 bg-slate-200'}`}
+            aria-hidden="true"
           >
             <span
-              className={`inline-block h-7 w-7 rounded-full bg-white shadow-sm transition ${theme === 'dark' ? 'translate-x-8' : 'translate-x-1'}`}
+              className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition ${theme === 'dark' ? 'translate-x-7' : 'translate-x-1'}`}
             />
-          </button>
-        </div>
+          </span>
+        </button>
       );
     }
 
@@ -7725,12 +7743,10 @@ function findPreferredAutoplayQualityOption(options = []) {
   return options.find((option) => `${option?.label ?? ''}`.toLowerCase() === 'auto') ?? options[0];
 }
 
-let enhancedVideoPlayerInstanceCounter = 0;
-
 function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
+  const playerId = useId();
   const containerRef = useRef(null);
   const videoRef = useRef(null);
-  const playerIdRef = useRef('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -7743,20 +7759,6 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   const sourceOptions = qualityOptions?.length > 0 ? qualityOptions : [{ label: 'Auto', value: 'auto', url: src }];
   const activeQualityOption = sourceOptions.find((option) => option.value === selectedQuality) ?? sourceOptions[0];
   const activeSource = activeQualityOption?.url || src;
-
-  if (!playerIdRef.current) {
-    enhancedVideoPlayerInstanceCounter += 1;
-    playerIdRef.current = `enhanced-video-${enhancedVideoPlayerInstanceCounter}`;
-  }
-
-  useEffect(() => {
-    const preferredOption = findPreferredAutoplayQualityOption(sourceOptions);
-    if (!preferredOption) return;
-
-    setSelectedQuality((currentValue) => (
-      sourceOptions.some((option) => option.value === currentValue) ? currentValue : preferredOption.value
-    ));
-  }, [sourceOptions]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -7805,7 +7807,6 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const playerId = playerIdRef.current;
 
     const onGlobalVideoPlay = (event) => {
       const activePlayerId = event?.detail?.playerId;
@@ -7848,7 +7849,7 @@ function EnhancedVideoPlayer({ src, title, qualityOptions = [] }) {
       window.removeEventListener('pph:video-play', onGlobalVideoPlay);
       observer.disconnect();
     };
-  }, []);
+  }, [playerId]);
 
   const togglePlayPause = () => {
     const video = videoRef.current;

@@ -14,15 +14,16 @@ import {
   updateProfile,
 } from "firebase/auth";
 
-// Your web app's Firebase configuration
+// Firebase web config is public at runtime, but keeping it in env files avoids
+// hardcoding project identifiers in tracked source.
 const firebaseConfig = {
-  apiKey: "AIzaSyA9w4m9lRm96skuohivcdLp2kboFXZ5z3c",
-  authDomain: "publicpolicyhub-2f323.firebaseapp.com",
-  projectId: "publicpolicyhub-2f323",
-  storageBucket: "publicpolicyhub-2f323.firebasestorage.app",
-  messagingSenderId: "75188438645",
-  appId: "1:75188438645:web:c97a12b870645a368fda3c",
-  measurementId: "G-GZ1TM8SERY"
+  apiKey: process.env.FIREBASE_API_KEY || '',
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || '',
+  projectId: process.env.FIREBASE_PROJECT_ID || '',
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: process.env.FIREBASE_APP_ID || '',
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || ''
 };
 
 // Initialize Firebase

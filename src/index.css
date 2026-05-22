@@ -32,9 +32,9 @@
   }
 
   html[data-theme='dark'] body {
-    background-color: #020617;
+    background-color: #000000;
     background-image: none;
-    color: #e2e8f0;
+    color: #ffffff;
   }
 
   html[data-theme='dark'] .bg-slate-50,
@@ -42,18 +42,18 @@
   html[data-theme='dark'] .bg-white,
   html[data-theme='dark'] .bg-white\/90,
   html[data-theme='dark'] .bg-white\/95 {
-    background-color: #0f172a;
+    background-color: #000000;
   }
 
   html[data-theme='dark'] .border-slate-200,
   html[data-theme='dark'] .border-slate-200\/80,
   html[data-theme='dark'] .border-slate-300 {
-    border-color: #334155;
+    border-color: #1f1f1f;
   }
 
   html[data-theme='dark'] .text-slate-900,
   html[data-theme='dark'] .text-slate-950 {
-    color: #f8fafc;
+    color: #ffffff;
   }
 
   html[data-theme='dark'] .text-slate-800,
@@ -61,22 +61,22 @@
   html[data-theme='dark'] .text-slate-600,
   html[data-theme='dark'] .text-slate-500,
   html[data-theme='dark'] .text-slate-400 {
-    color: #cbd5e1;
+    color: #ffffff;
   }
 
   html[data-theme='dark'] .hover\:bg-slate-100:hover {
-    background-color: #1e293b;
+    background-color: #111111;
   }
 
   html[data-theme='dark'] .soft-card {
-    border-color: rgba(148, 163, 184, 0.3);
-    background-color: rgba(15, 23, 42, 0.9);
-    box-shadow: 0 10px 30px -24px rgba(2, 6, 23, 0.9);
+    border-color: #1f1f1f;
+    background-color: #000000;
+    box-shadow: 0 10px 30px -24px rgba(0, 0, 0, 0.95);
   }
 
   html[data-theme='dark'] .glass-panel {
-    border-color: rgba(148, 163, 184, 0.26);
-    background-color: rgba(15, 23, 42, 0.64);
+    border-color: #1f1f1f;
+    background-color: rgba(0, 0, 0, 0.9);
   }
 
   button,

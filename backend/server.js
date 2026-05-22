@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import admin from 'firebase-admin';
 
+dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') });
 
 // Initialize Firebase Admin
 const firebaseAdminConfig = {
@@ -31,13 +32,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const profileMediaOverridesPath = path.resolve(__dirname, 'profile-media-overrides.json');
 
-dotenv.config({ path: path.resolve(__dirname, '.env') });
-
 
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'better_india_secret_key_123';
+const JWT_SECRET = process.env.JWT_SECRET || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const sseClients = new Set();
