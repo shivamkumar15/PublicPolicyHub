@@ -31,6 +31,8 @@ lerna-debug.log*
 backend/.env
 backend/.env.*
 !backend/.env.example
+*firebase-adminsdk-*.json
+*-service-account*.json
 *.local
 
 # Editor files

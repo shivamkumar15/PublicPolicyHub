@@ -3635,7 +3635,7 @@ function App() {
   const isChatView = activeView === 'chat';
 
   return (
-    <div className="app-shell flex flex-col min-h-screen bg-slate-50 text-slate-900">
+    <div className="app-shell flex flex-col min-h-screen bg-slate-50 text-slate-900 ">
       <div className="sticky top-0 z-50">
         <header className="app-header border-b border-slate-200/90 bg-white/90 backdrop-blur-md">
           <div className="mx-auto flex min-h-16 w-full max-w-[1580px] items-center px-3 py-2 sm:h-16 sm:min-h-0 sm:px-4 sm:py-0 lg:px-6">
@@ -6407,7 +6407,7 @@ function ProfileView({
                 <>
                   <button
                     type="button"
-                    onClick={() => onOpenSettings('personal')}
+                    onClick={() => onOpenSettings('overview')}
                     className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-[13px] font-bold text-slate-700 transition hover:bg-slate-50"
                   >
                     <Settings className="h-4 w-4" />
@@ -6481,39 +6481,26 @@ function ProfileView({
               </div>
 
               <div className="flex flex-1 flex-col gap-4 sm:flex-row lg:max-w-md lg:justify-end">
-                <div className="flex h-[4.5rem] items-center gap-4 rounded-2xl border border-slate-100 bg-slate-50/50 px-5 transition hover:border-slate-200">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Impact</p>
-                    <p className="font-serif text-2xl font-bold text-slate-950">{profileImpactScore}%</p>
-                  </div>
-                  <div className="h-10 w-px bg-slate-200" />
-                  <div className="flex-1">
-                    <div className="h-1.5 w-24 rounded-full bg-slate-200 overflow-hidden">
-                      <div className="h-full bg-blue-600" style={{ width: `${profileImpactScore}%` }} />
-                    </div>
-                  </div>
-                </div>
-
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => onOpenConnections('followers')}
-                    className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2 transition hover:border-slate-200 hover:shadow-sm"
+                    className="flex flex-col items-center justify-center px-5 py-2 transition hover:opacity-80"
                   >
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Followers</p>
-                    <p className="text-lg font-bold text-slate-950">{formatCount(profileFollowersCount)}</p>
+                    <p className="text-lg font-bold text-slate-950 dark:text-white">{formatCount(profileFollowersCount)}</p>
                   </button>
                   <button
                     type="button"
                     onClick={() => onOpenConnections('following')}
-                    className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2 transition hover:border-slate-200 hover:shadow-sm"
+                    className="flex flex-col items-center justify-center px-5 py-2 transition hover:opacity-80"
                   >
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Following</p>
-                    <p className="text-lg font-bold text-slate-950">{formatCount(profileFollowingCount)}</p>
+                    <p className="text-lg font-bold text-slate-950 dark:text-white">{formatCount(profileFollowingCount)}</p>
                   </button>
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-100 bg-white px-5 py-2">
+                  <div className="flex flex-col items-center justify-center px-5 py-2">
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Reputation</p>
-                    <p className="text-lg font-bold text-slate-950">{formatCount(profileDisplay.reputation)}</p>
+                    <p className="text-lg font-bold text-slate-950 dark:text-white">{formatCount(profileDisplay.reputation)}</p>
                   </div>
                 </div>
               </div>
@@ -6523,25 +6510,25 @@ function ProfileView({
       </div>
 
       <div className="motion-fade-up space-y-5" style={{ '--motion-delay': '120ms' }}>
-        <div className="soft-card overflow-hidden p-2.5 sm:p-3">
+        <div className="overflow-hidden p-2.5 sm:p-3">
           <div className="flex justify-center">
-            <div className="grid w-full max-w-[52rem] grid-cols-3 gap-1 rounded-[20px] border border-slate-200 bg-slate-50/90 p-0.5">
+            <div className="grid w-full max-w-[52rem] grid-cols-3 gap-1 rounded-[20px] border border-slate-200 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-900/50 p-0.5">
               {profileTabs.map((tab) => {
                 const isActive = profileTab === tab.id;
                 return (
                   <button
-                    key={tab.id}
+                    key={tab.id || Math.random()}
                     type="button"
                     onClick={() => onSelectTab(tab.id)}
                     className={`inline-flex min-h-[1.95rem] w-full items-center justify-center gap-1 rounded-[14px] px-3 py-0.5 text-[12px] font-semibold transition sm:min-h-[2.1rem] sm:px-5 sm:text-[13px] ${isActive
-                      ? 'bg-slate-900 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.7)]'
-                      : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                      ? 'bg-slate-900 text-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.7)] dark:bg-slate-800 dark:shadow-none'
+                      : 'text-slate-600 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
                       }`}
                   >
                     <span>{tab.label}</span>
                     <span className={`inline-flex min-w-[1.7rem] items-center justify-center rounded-full px-1.5 py-px text-[9px] font-bold sm:text-[10px] ${isActive
-                      ? 'bg-white/15 text-white'
-                      : 'bg-white text-slate-600'
+                      ? 'bg-white/15 text-white dark:bg-white/10'
+                      : 'bg-white text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                       }`}>
                       {formatCount(tab.count)}
                     </span>
@@ -7257,7 +7244,7 @@ function ProfileSettingsModal({
   return (
     <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-slate-950/55 px-0 py-0 backdrop-blur-sm sm:px-4 sm:py-4" onClick={onClose}>
       <div
-        className="motion-pop flex min-h-dvh w-full max-w-2xl flex-col overflow-hidden bg-[#f7f8fb] shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:border sm:border-slate-200"
+        className="settings-modal motion-pop flex min-h-dvh w-full max-w-2xl flex-col overflow-hidden bg-[#f7f8fb] shadow-[0_32px_90px_-42px_rgba(15,23,42,0.55)] sm:min-h-0 sm:max-h-[calc(100dvh-2rem)] sm:rounded-[28px] sm:border sm:border-slate-200"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-slate-200 bg-[#f9fafc] px-5 py-4 sm:px-6">

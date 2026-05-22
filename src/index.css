@@ -32,8 +32,8 @@
   }
 
   html[data-theme='dark'] body {
-    background-color: #000000;
-    background-image: none;
+    background-color: #000000 !important;
+    background-image: none !important;
     color: #ffffff;
   }
 
@@ -42,7 +42,7 @@
   html[data-theme='dark'] .bg-white,
   html[data-theme='dark'] .bg-white\/90,
   html[data-theme='dark'] .bg-white\/95 {
-    background-color: #000000;
+    background-color: #000000 !important;
   }
 
   html[data-theme='dark'] .border-slate-200,
@@ -2786,4 +2786,121 @@ html[data-theme='dark'] .upload-progress-btn::before {
   .magnetic-item:hover {
     transform: none;
   }
+}
+
+html[data-theme='dark'] .app-shell {
+  background-color: #000000 !important;
+}
+
+/* ── Formal Guidelines Section Dark Mode ── */
+html[data-theme='dark'] .guidelines-formal {
+  background: #000000 !important;
+  border-color: #1f1f1f !important;
+}
+html[data-theme='dark'] .guidelines-formal__header {
+  background: #111111 !important;
+  border-color: #1f1f1f !important;
+}
+html[data-theme='dark'] .guidelines-formal__title {
+  color: #ffffff !important;
+}
+html[data-theme='dark'] .guidelines-formal__item-title {
+  color: #f8fafc !important;
+}
+html[data-theme='dark'] .guidelines-formal__item-detail {
+  color: #ffffff !important;
+}
+html[data-theme='dark'] .guidelines-formal__number {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+}
+html[data-theme='dark'] .guidelines-formal__item--warning {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+}
+html[data-theme='dark'] .guidelines-formal__item--warning .guidelines-formal__number {
+  background: #991b1b !important;
+}
+html[data-theme='dark'] .guidelines-formal__item--warning .guidelines-formal__item-title {
+  color: #ef4444 !important;
+}
+html[data-theme='dark'] .guidelines-formal__footer {
+  border-color: #1f1f1f !important;
+}
+html[data-theme='dark'] .guidelines-formal__goal {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  color: #38bdf8 !important;
+}
+html[data-theme='dark'] .guidelines-formal__consent:hover {
+  background: #111111 !important;
+}
+
+/* ── Force signal-card Full Dark & Text White in Dark Mode ── */
+html[data-theme='dark'] .signal-card,
+html[data-theme='dark'] article.signal-card {
+  background-color: #000000 !important;
+  background-image: none !important;
+  border-color: #1f1f1f !important;
+}
+
+html[data-theme='dark'] .signal-card h2,
+html[data-theme='dark'] .signal-card h3,
+html[data-theme='dark'] .signal-card p,
+html[data-theme='dark'] .signal-card span,
+html[data-theme='dark'] .signal-card div,
+html[data-theme='dark'] .signal-card button {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .signal-card .text-slate-500,
+html[data-theme='dark'] .signal-card .text-slate-600,
+html[data-theme='dark'] .signal-card .text-slate-700,
+html[data-theme='dark'] .signal-card .text-slate-900,
+html[data-theme='dark'] .signal-card .text-slate-950,
+html[data-theme='dark'] .signal-card .text-slate-400 {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .settings-modal {
+  background: #000000 !important;
+  border-color: #1f1f1f !important;
+}
+
+html[data-theme='dark'] .settings-modal .bg-\[\#f7f8fb\],
+html[data-theme='dark'] .settings-modal .bg-\[\#f9fafc\],
+html[data-theme='dark'] .settings-modal .bg-white,
+html[data-theme='dark'] .settings-modal .bg-slate-50,
+html[data-theme='dark'] .settings-modal .bg-slate-100 {
+  background-color: #000000 !important;
+}
+
+html[data-theme='dark'] .settings-modal .border-slate-200,
+html[data-theme='dark'] .settings-modal .border-slate-300 {
+  border-color: #1f1f1f !important;
+}
+
+html[data-theme='dark'] .settings-modal .text-slate-400,
+html[data-theme='dark'] .settings-modal .text-slate-500,
+html[data-theme='dark'] .settings-modal .text-slate-600,
+html[data-theme='dark'] .settings-modal .text-slate-700,
+html[data-theme='dark'] .settings-modal .text-slate-900,
+html[data-theme='dark'] .settings-modal .text-slate-950 {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .settings-modal input,
+html[data-theme='dark'] .settings-modal textarea,
+html[data-theme='dark'] .settings-modal select {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .settings-modal input::placeholder,
+html[data-theme='dark'] .settings-modal textarea::placeholder {
+  color: #94a3b8 !important;
 }

@@ -26,9 +26,28 @@ const firebaseConfig = {
   measurementId: process.env.FIREBASE_MEASUREMENT_ID || ''
 };
 
+const hasFirebaseConfig = [
+  firebaseConfig.apiKey,
+  firebaseConfig.authDomain,
+  firebaseConfig.projectId,
+  firebaseConfig.appId,
+].every((value) => value && !value.startsWith('your_') && !value.startsWith('your-'));
+
+const firebaseAuthConfigError = hasFirebaseConfig
+  ? ''
+  : 'Firebase authentication is not configured. Replace the placeholder FIREBASE_* values in .env with your Firebase web app credentials.';
+
+function ensureFirebaseAuthConfigured() {
+  if (firebaseAuthConfigError) {
+    throw new Error(firebaseAuthConfigError);
+  }
+}
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+const analytics = hasFirebaseConfig && typeof window !== 'undefined'
+  ? getAnalytics(app)
+  : null;
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({
@@ -39,6 +58,8 @@ export {
   auth,
   analytics,
   createUserWithEmailAndPassword,
+  ensureFirebaseAuthConfigured,
+  firebaseAuthConfigError,
   provider,
   RecaptchaVerifier,
   getRedirectResult,

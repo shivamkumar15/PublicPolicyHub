@@ -1,9 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { supabase } from './db.js';
+import { isSupabaseConfigured, supabase } from './db.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -20,10 +19,27 @@ const firebaseAdminConfig = {
   privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
 };
 
-if (firebaseAdminConfig.projectId && firebaseAdminConfig.clientEmail && firebaseAdminConfig.privateKey) {
-  admin.initializeApp({
-    credential: admin.credential.cert(firebaseAdminConfig),
-  });
+const hasConfiguredFirebaseAdminValue = (value) => {
+  const normalizedValue = `${value ?? ''}`.trim().toLowerCase();
+  return !!normalizedValue
+    && !normalizedValue.startsWith('your_')
+    && !normalizedValue.startsWith('your-')
+    && !normalizedValue.startsWith('replace_')
+    && !normalizedValue.startsWith('replace-');
+};
+
+const hasFirebaseAdminConfig = hasConfiguredFirebaseAdminValue(firebaseAdminConfig.projectId)
+  && hasConfiguredFirebaseAdminValue(firebaseAdminConfig.clientEmail)
+  && `${firebaseAdminConfig.privateKey ?? ''}`.includes('BEGIN PRIVATE KEY');
+
+if (hasFirebaseAdminConfig) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(firebaseAdminConfig),
+    });
+  } catch {
+    console.warn('Firebase Admin SDK not initialized because the configured credentials could not be parsed.');
+  }
 } else {
   console.warn('Firebase Admin SDK not initialized. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY in .env');
 }
@@ -36,15 +52,52 @@ const profileMediaOverridesPath = path.resolve(__dirname, 'profile-media-overrid
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const sseClients = new Set();
+const MAX_UPLOAD_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const AI_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+const AI_SUMMARY_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const AI_SUMMARY_RATE_LIMIT_MAX_REQUESTS = 10;
+const aiSummaryCache = new Map();
+const aiSummaryRateLimitByIp = new Map();
+const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const ALLOWED_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const ALLOWED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/ogg']);
+const ALLOWED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.ogv']);
+const INVALID_UPLOAD_TYPE_ERROR_MESSAGE = 'Only JPG, PNG, WEBP, GIF, MP4, MOV, WEBM, and OGV uploads are allowed.';
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    services: {
+      firebaseAdmin: admin.apps.length > 0,
+      openai: Boolean(OPENAI_API_KEY),
+      supabase: isSupabaseConfigured,
+    },
+  });
+});
+app.use('/api', (req, res, next) => {
+  if (!isSupabaseConfigured) {
+    return res.status(503).json({ error: 'Server configuration error: Supabase is not configured.' });
+  }
+
+  next();
+});
+
+const isAllowedUpload = (file, allowedMimeTypes, allowedExtensions) => {
+  const mimeType = `${file?.mimetype ?? ''}`.trim().toLowerCase();
+  const extension = path.extname(`${file?.originalname ?? ''}`).trim().toLowerCase();
+  return allowedMimeTypes.has(mimeType) && allowedExtensions.has(extension);
+};
+
+const isAllowedImageUpload = (file) => isAllowedUpload(file, ALLOWED_IMAGE_MIME_TYPES, ALLOWED_IMAGE_EXTENSIONS);
+const isAllowedVideoUpload = (file) => isAllowedUpload(file, ALLOWED_VIDEO_MIME_TYPES, ALLOWED_VIDEO_EXTENSIONS);
+const isAllowedPostUpload = (file) => isAllowedImageUpload(file) || isAllowedVideoUpload(file);
 
 // Multer Config
 const storage = multer.diskStorage({
@@ -54,10 +107,23 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname));
+    cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname).toLowerCase());
   }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: MAX_UPLOAD_FILE_SIZE_BYTES,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (isAllowedPostUpload(file)) {
+      cb(null, true);
+      return;
+    }
+
+    cb(new Error(INVALID_UPLOAD_TYPE_ERROR_MESSAGE));
+  },
+});
 const VIDEO_QUALITY_PRESETS = [
   { label: '144p', height: 144, videoBitrate: '180k', audioBitrate: '48k', bufferSize: '300k' },
   { label: '480p', height: 480, videoBitrate: '1200k', audioBitrate: '96k', bufferSize: '1800k' },
@@ -244,28 +310,6 @@ const createDiscussionEntry = (author, text) => ({
   replies: [],
 });
 
-const ensureWritableSolution = (post, solutionIndex) => {
-  if (!Array.isArray(post?.solutionsList)) post.solutionsList = [];
-
-  const rawSolution = post.solutionsList[solutionIndex];
-  if (!rawSolution) return null;
-
-  if (typeof rawSolution === 'string') {
-    const text = rawSolution.trim();
-    if (!text) return null;
-    post.solutionsList[solutionIndex] = {
-      ...createDiscussionEntry('Community member', text),
-    };
-  }
-
-  const solution = post.solutionsList[solutionIndex];
-  if (!solution?.text) return null;
-  if (!Array.isArray(solution.upvoters)) solution.upvoters = [];
-  if (!Array.isArray(solution.downvoters)) solution.downvoters = [];
-  if (!Array.isArray(solution.replies)) solution.replies = [];
-  return solution;
-};
-
 const ensureWritableDiscussionEntry = (entry, fallbackAuthor = 'Community member') => {
   if (!entry) return null;
 
@@ -409,7 +453,7 @@ const renameUserReferences = async (currentUsername, nextUsername) => {
   await supabase.rpc('rename_user_participants', { old_username: currentUsername, new_username: nextUsername });
 
   // Update posts
-  const { data: posts, error } = await supabase.from('posts')
+  const { data: posts, error: _error } = await supabase.from('posts')
     .select('*')
     .or(`author.eq.${currentUsername},supporters.cs.{${currentUsername}}`);
 
@@ -553,6 +597,14 @@ const deleteFileIfExists = async (filePath) => {
   }
 };
 
+const ensureUploadedImageFile = async (file) => {
+  if (!file) return { ok: false, error: 'Image file is required.' };
+  if (isAllowedImageUpload(file)) return { ok: true, error: '' };
+
+  await deleteFileIfExists(path.resolve(file.path));
+  return { ok: false, error: 'Only JPG, PNG, WEBP, and GIF images are allowed.' };
+};
+
 const isMissingColumnError = (error, columnName) => {
   const errorText = [error?.message, error?.details, error?.hint]
     .filter(Boolean)
@@ -630,6 +682,29 @@ const normalizePhoneNumber = (phoneNumberValue) => `${phoneNumberValue ?? ''}`
 
 const normalizeDisplayName = (value) => `${value ?? ''}`.trim().replace(/\s+/g, ' ');
 
+const getVerifiedFirebaseEmail = (decoded) => (
+  decoded?.email_verified === true ? normalizeEmail(decoded?.email) : ''
+);
+
+const getTrustedFirebasePhoneNumber = (decoded) => normalizePhoneNumber(decoded?.phone_number);
+
+const validateSubmittedFirebaseIdentity = (decoded, payload) => {
+  const submittedEmail = normalizeEmail(payload?.email);
+  const submittedPhoneNumber = normalizePhoneNumber(payload?.phoneNumber);
+  const trustedEmail = normalizeEmail(decoded?.email);
+  const trustedPhoneNumber = getTrustedFirebasePhoneNumber(decoded);
+
+  if (submittedEmail && submittedEmail !== trustedEmail) {
+    return 'Submitted email does not match the authenticated Firebase account.';
+  }
+
+  if (submittedPhoneNumber && submittedPhoneNumber !== trustedPhoneNumber) {
+    return 'Submitted phone number does not match the authenticated Firebase account.';
+  }
+
+  return '';
+};
+
 const normalizePersonalDescription = (value) => `${value ?? ''}`
   .trim()
   .replace(/\s+/g, ' ')
@@ -641,18 +716,6 @@ const normalizeUsernameCandidate = (value) => `${value ?? ''}`
   .replace(/\s+/g, '_')
   .replace(/[^a-z0-9_]/g, '')
   .slice(0, 24);
-
-const escapeRegex = (value) => `${value ?? ''}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const getUsernameKey = (value) => normalizeUsernameCandidate(value);
-
-const buildFlexibleUsernameMatcher = (value) => {
-  const normalizedUsername = getUsernameKey(value);
-  if (!normalizedUsername) return null;
-
-  const flexiblePattern = escapeRegex(normalizedUsername).replace(/_/g, '[\\s_]+');
-  return new RegExp(`^${flexiblePattern}$`, 'i');
-};
 
 const validateRequestedUsername = (value) => {
   const normalizedUsername = normalizeUsernameCandidate(value);
@@ -668,12 +731,73 @@ const validateRequestedUsername = (value) => {
 };
 
 const findUserByNormalizedUsername = async (normalizedUsername) => {
-  const { data, error } = await supabase
+  const { data, error: _error } = await supabase
     .from('users')
     .select('*')
     .ilike('username', normalizedUsername)
     .single();
   return data;
+};
+
+const findUserByFirebaseIdentity = async (decoded) => {
+  const normalizedUid = `${decoded?.uid ?? ''}`.trim();
+  if (!normalizedUid) return null;
+
+  let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', normalizedUid).single();
+  if (user) return user;
+
+  const verifiedEmail = getVerifiedFirebaseEmail(decoded);
+  if (!verifiedEmail) return null;
+
+  const { data } = await supabase.from('users').select('*').eq('email', verifiedEmail).single();
+  return data || null;
+};
+
+const getClientIp = (req) => {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  return `${req.ip || req.socket?.remoteAddress || 'unknown'}`;
+};
+
+const getCachedAiSummary = (cacheKey) => {
+  const cachedSummary = aiSummaryCache.get(cacheKey);
+  if (!cachedSummary) return null;
+
+  if (cachedSummary.expiresAt <= Date.now()) {
+    aiSummaryCache.delete(cacheKey);
+    return null;
+  }
+
+  return cachedSummary.data;
+};
+
+const buildAiSummaryCacheKey = (post) => JSON.stringify({
+  id: post?.id || '',
+  solutions: getSolutionEntriesForSummary(post),
+});
+
+const consumeAiSummaryRateLimit = (req) => {
+  const now = Date.now();
+  const clientIp = getClientIp(req);
+  const existingEntry = aiSummaryRateLimitByIp.get(clientIp);
+
+  if (!existingEntry || existingEntry.resetAt <= now) {
+    aiSummaryRateLimitByIp.set(clientIp, {
+      count: 1,
+      resetAt: now + AI_SUMMARY_RATE_LIMIT_WINDOW_MS,
+    });
+    return true;
+  }
+
+  if (existingEntry.count >= AI_SUMMARY_RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  existingEntry.count += 1;
+  return true;
 };
 
 const generateUniqueUsername = async (rawUsername, uid) => {
@@ -720,13 +844,7 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-
-    let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
-
-    if (!user && decoded.email) {
-      const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
-      user = data;
-    }
+    const user = await findUserByFirebaseIdentity(decoded);
 
     if (!user) return res.status(401).json({ error: 'Account not found. Please sync your account.' });
 
@@ -756,13 +874,7 @@ const attachOptionalUser = async (req, _res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-
-    let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', decoded.uid).single();
-
-    if (!user && decoded.email) {
-      const { data } = await supabase.from('users').select('*').eq('email', normalizeEmail(decoded.email)).single();
-      user = data;
-    }
+    const user = await findUserByFirebaseIdentity(decoded);
 
     req.user = user ? {
       id: user.id.toString(),
@@ -1126,10 +1238,14 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
     const normalizedUid = decoded.uid;
     
     const { gender, username, mode, displayName, email, phoneNumber } = req.body;
+    const identityError = validateSubmittedFirebaseIdentity(decoded, { email, phoneNumber });
+    if (identityError) {
+      return res.status(400).json({ error: identityError });
+    }
     
-    const finalEmail = normalizeEmail(email || decoded.email);
+    const finalEmail = normalizeEmail(decoded.email);
     const finalDisplayName = normalizeDisplayName(displayName || decoded.name || decoded.display_name);
-    const finalPhoneNumber = normalizePhoneNumber(phoneNumber || decoded.phone_number);
+    const finalPhoneNumber = getTrustedFirebasePhoneNumber(decoded);
     const normalizedGender = normalizeGender(gender);
     const normalizedMode = `${mode ?? 'login'}`.trim().toLowerCase() === 'signup' ? 'signup' : 'login';
     const requestedUsername = normalizeUsernameCandidate(username);
@@ -1138,6 +1254,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
       : { normalizedUsername: '', error: '' };
     
     const hasValidEmail = finalEmail && finalEmail.includes('@');
+    const hasVerifiedEmail = Boolean(getVerifiedFirebaseEmail(decoded));
     const hasPhone = !!finalPhoneNumber;
     const usernameSeed = finalDisplayName || (hasValidEmail ? finalEmail.split('@')[0] : '') || finalPhoneNumber || normalizedUid;
 
@@ -1147,7 +1264,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
 
     let { data: user } = await supabase.from('users').select('*').eq('firebase_uid', normalizedUid).single();
     
-    if (!user && hasValidEmail) {
+    if (!user && hasVerifiedEmail) {
       const { data } = await supabase.from('users').select('*').eq('email', finalEmail).single();
       user = data;
     }
@@ -1194,7 +1311,7 @@ app.post('/api/auth/firebaseLogin', async (req, res) => {
       const updateData = {};
       if (!user.firebase_uid) updateData.firebase_uid = normalizedUid;
 
-      if (hasValidEmail && (!user.email || user.email !== finalEmail)) {
+      if (hasVerifiedEmail && (!user.email || user.email !== finalEmail)) {
         const { data: emailOwner } = await supabase.from('users').select('*').eq('email', finalEmail).neq('id', user.id).single();
         if (!emailOwner) updateData.email = finalEmail;
       }
@@ -1332,6 +1449,9 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
   try {
     if (!req.file) return res.status(400).json({ error: 'Photo is required' });
 
+    const photoValidation = await ensureUploadedImageFile(req.file);
+    if (!photoValidation.ok) return res.status(415).json({ error: photoValidation.error });
+
     const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
 
@@ -1383,6 +1503,9 @@ app.delete('/api/users/profile/photo', authenticateToken, async (req, res) => {
 app.post('/api/users/profile/banner', authenticateToken, upload.single('banner'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Banner is required' });
+
+    const bannerValidation = await ensureUploadedImageFile(req.file);
+    if (!bannerValidation.ok) return res.status(415).json({ error: bannerValidation.error });
 
     const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
     if (!user) return res.status(404).json({ error: 'Profile not found' });
@@ -1451,7 +1574,6 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
     }
 
     let updatedUser = user;
-    let nextToken = undefined;
 
     if (Object.keys(updateData).length > 0) {
       const { data, error } = await supabase.from('users').update(updateData).eq('id', user.id).select().single();
@@ -1459,13 +1581,16 @@ app.patch('/api/users/profile', authenticateToken, async (req, res) => {
       updatedUser = data;
       
       if (updateData.username) {
-        nextToken = issueAuthToken(updatedUser);
-        await renameUserReferences(currentUsername, updateData.username);
+        try {
+          await renameUserReferences(currentUsername, updateData.username);
+        } catch (renameError) {
+          await supabase.from('users').update({ username: currentUsername }).eq('id', user.id);
+          throw renameError;
+        }
       }
     }
 
     res.json({
-      token: nextToken,
       profile: await buildProfilePayload(updatedUser, updatedUser.username, { includePrivateFields: true }),
     });
   } catch (error) {
@@ -1700,8 +1825,6 @@ app.post('/api/chats/:username/messages', authenticateToken, async (req, res) =>
 
 // --- Content Routes ---
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-
 app.get('/api/posts', async (req, res) => {
   try {
     const { data: posts, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
@@ -1718,7 +1841,22 @@ app.get('/api/posts/:postId/ai-summary', async (req, res) => {
     const { data: post } = await supabase.from('posts').select('*').eq('id', req.params.postId).single();
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    const summary = await createAiSolutionSummary(normalizePost(post));
+    const normalizedPost = normalizePost(post);
+    const cacheKey = buildAiSummaryCacheKey(normalizedPost);
+    const cachedSummary = getCachedAiSummary(cacheKey);
+    if (cachedSummary) {
+      return res.json(cachedSummary);
+    }
+
+    if (OPENAI_API_KEY && !consumeAiSummaryRateLimit(req)) {
+      return res.status(429).json({ error: 'Too many AI summary requests. Please try again soon.' });
+    }
+
+    const summary = await createAiSolutionSummary(normalizedPost);
+    aiSummaryCache.set(cacheKey, {
+      data: summary,
+      expiresAt: Date.now() + AI_SUMMARY_CACHE_TTL_MS,
+    });
     res.json(summary);
   } catch (error) {
     console.error('Error generating AI solution summary:', error);
@@ -2231,6 +2369,22 @@ app.patch('/api/notifications/read', authenticateToken, async (req, res) => {
     console.error('Error marking notifications as read:', error);
     res.status(500).json({ error: 'Failed to mark notifications as read' });
   }
+});
+
+app.use((error, _req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `Files must be ${Math.floor(MAX_UPLOAD_FILE_SIZE_BYTES / (1024 * 1024))}MB or smaller.` });
+    }
+
+    return res.status(400).json({ error: error.message || 'Upload failed.' });
+  }
+
+  if (error?.message === INVALID_UPLOAD_TYPE_ERROR_MESSAGE) {
+    return res.status(415).json({ error: error.message });
+  }
+
+  return next(error);
 });
 
 app.listen(PORT, () => console.log(`Backend server listening at http://localhost:${PORT}`));
