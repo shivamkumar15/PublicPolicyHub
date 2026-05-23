@@ -61,3 +61,4 @@ test2.*
 test3.*
 test_upload.js
 upload test/
+.gitignore
