@@ -26,6 +26,77 @@ const realNotifications = [
   'Trending alert: Massive crater on WEH (Mumbai)'
 ];
 
+const realPosts = [
+  {
+    id: 'post-delhi-bawana-smoke',
+    author: 'CleanAirDelhi',
+    title: 'Bawana industrial zone releasing thick smoke after midnight',
+    description: 'Factories near the Bawana industrial area have been burning waste after midnight for the past two weeks. Residents wake up to a thick haze and a strong chemical smell. Please inspect and enforce emission norms.',
+    location: 'Bawana, Delhi',
+    department: 'DPCC (Delhi Pollution Control Committee)',
+    media: 'IMAGE',
+    tag: 'Environment',
+    accent: '#0f766e',
+    support: '2.4k',
+    comments: '180',
+    solutions: '45',
+    time: '6',
+    fixes: ['Install real-time stack emission monitors', 'Conduct surprise night inspections', 'Publish inspection reports online'],
+    mediaList: [],
+  },
+  {
+    id: 'post-pune-hinjewadi-traffic',
+    author: 'PuneCommuter',
+    title: 'Hinjewadi Phase 2 junction choked every evening due to metro construction',
+    description: 'The Hinjewadi Phase 2 signal junction is gridlocked from 6 PM to 9 PM because metro pillars narrow the road to a single lane. Auto and bus commuters are stuck for 40+ minutes daily.',
+    location: 'Hinjewadi, Pune',
+    department: 'Pune Metro & Traffic Police',
+    media: 'IMAGE',
+    tag: 'Infrastructure',
+    accent: '#b45309',
+    support: '1.8k',
+    comments: '96',
+    solutions: '31',
+    time: '14',
+    fixes: ['Deploy traffic marshals at peak hours', 'Create a temporary alternate route signage plan', 'Stagger metro construction vehicle movement'],
+    mediaList: [],
+  },
+  {
+    id: 'post-chennai-water-taste',
+    author: 'ChennaiWaterWatch',
+    title: 'Turbid, salty tap water across Velachery for over a week',
+    description: 'Residents of Velachery have received muddy, salty water since the reservoir inflow changed. Water purifier filters clog within days and several families report stomach upsets. CMWSSB has been informed but no resolution yet.',
+    location: 'Velachery, Chennai',
+    department: 'CMWSSB (Chennai Water)',
+    media: 'IMAGE',
+    tag: 'Water',
+    accent: '#2563eb',
+    support: '920',
+    comments: '64',
+    solutions: '18',
+    time: '9',
+    fixes: ['Flush and clean the affected feeder lines', 'Test water quality daily and publish results', 'Provide tanker supply until resolved'],
+    mediaList: [],
+  },
+  {
+    id: 'post-mumbai-weh-crater',
+    author: 'MumbaiRoads',
+    title: 'Massive crater on Western Express Highway near Kalanagar',
+    description: 'A deep crater has opened up on the WEH service road near Kalanagar after the rains. Two-wheelers have already swerved dangerously to avoid it. Needs an immediate barricade and urgent repair.',
+    location: 'Kalanagar, Mumbai',
+    department: 'BMC (Brihanmumbai Municipal Corporation)',
+    media: 'IMAGE',
+    tag: 'Road Safety',
+    accent: '#dc2626',
+    support: '3.1k',
+    comments: '210',
+    solutions: '27',
+    time: '2',
+    fixes: ['Barricade the crater today', 'Issue a repair tender with a 7-day deadline', 'Audit the stretch for more weak spots'],
+    mediaList: [],
+  },
+];
+
 const toCount = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -40,6 +111,11 @@ const toCount = (value) => {
 };
 
 export async function seed() {
+  if (!supabase) {
+    console.error('Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in backend/.env first (see backend/.env.example or README).');
+    return;
+  }
+
   try {
     console.log('Clearing old data...');
 
