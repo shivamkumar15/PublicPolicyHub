@@ -709,20 +709,28 @@ function App() {
     return false;
   };
 
+  const isBackendConfigurationError = (res, data) => (
+    res?.status === 503 && `${data?.error ?? ''}`.toLowerCase().includes('configuration')
+  );
+
+  const readPublicListResponse = async (res, label) => {
+    const data = await res.json().catch(() => ([]));
+    if (!res.ok) {
+      if (isBackendConfigurationError(res, data)) {
+        console.warn(`Backend not configured yet (${data?.error || label} unavailable). Showing empty ${label} list.`);
+        return [];
+      }
+      throw new Error(data?.error || `Failed to fetch ${label}`);
+    }
+    return data;
+  };
+
   const fetchPublicData = (currentToken = token) => {
     const notificationHeaders = currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
 
     return Promise.all([
-      fetch(`${API_BASE_URL}/api/posts`).then(async (res) => {
-        const data = await res.json().catch(() => ([]));
-        if (!res.ok) throw new Error(data?.error || 'Failed to fetch posts');
-        return data;
-      }),
-      fetch(`${API_BASE_URL}/api/notifications`, { headers: notificationHeaders }).then(async (res) => {
-        const data = await res.json().catch(() => ([]));
-        if (!res.ok) throw new Error(data?.error || 'Failed to fetch notifications');
-        return data;
-      }),
+      fetch(`${API_BASE_URL}/api/posts`).then((res) => readPublicListResponse(res, 'posts')),
+      fetch(`${API_BASE_URL}/api/notifications`, { headers: notificationHeaders }).then((res) => readPublicListResponse(res, 'notifications')),
     ])
       .then(([postsData, notifsData]) => {
         if (Array.isArray(postsData)) {
@@ -743,7 +751,14 @@ function App() {
     const headers = currentToken ? { Authorization: `Bearer ${currentToken}` } : {};
     const res = await fetch(`${API_BASE_URL}/api/notifications`, { headers });
     const data = await res.json().catch(() => ([]));
-    if (!res.ok) throw new Error(data?.error || 'Failed to fetch notifications');
+    if (!res.ok) {
+      if (isBackendConfigurationError(res, data)) {
+        console.warn(`Backend not configured yet (${data?.error || 'notifications unavailable'}). Notifications list is empty.`);
+        setApiNotifications([]);
+        return [];
+      }
+      throw new Error(data?.error || 'Failed to fetch notifications');
+    }
     const normalizedNotifications = Array.isArray(data)
       ? data
         .map(normalizeNotification)
