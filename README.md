@@ -1,75 +1,128 @@
 # Public Policy Hub
 
-Public Policy Hub is a civic reporting platform where users can publish public issues, support posts, discuss solutions, bookmark reports, follow profiles, and chat with other users.
+Public Policy Hub is a civic engagement platform where people can report issues, share policy updates, follow communities, bookmark useful posts, and discuss solutions with others.
+
+## Overview
+
+This project combines:
+
+- a React frontend for browsing and creating civic content
+- an Express backend API for authentication, posts, follow logic, notifications, and messaging
+- Firebase for authentication and web app configuration
+- Supabase for app data persistence and storage
+
+## Features
+
+- Create and browse public policy posts
+- Support or react to community issues
+- Follow users and profiles
+- Bookmark important reports
+- Messaging and notifications between users
+- City and location-aware civic content
+- Admin-friendly setup and demo data seeding
+
+## Tech stack
+
+- Frontend: React + Parcel
+- Backend: Node.js + Express
+- Database: Supabase
+- Auth: Firebase Authentication
+- Styling: Tailwind CSS
 
 ## Local development
 
+Install dependencies and start both apps together:
+
 ```bash
 npm install
-npm run setup          # guided: writes backend/.env (Supabase + Firebase Admin) and optionally .env (frontend Firebase web config)
-npm run seed           # optional: load demo posts/cities/notifications into Supabase
-npm run dev            # frontend on :1234 (proxies /api + /uploads to :5000), backend on :5000
+npm run setup          # scaffolds backend/.env and optional root .env
+npm run seed           # optional: loads demo content into Supabase
+npm run dev            # frontend on :1234 and backend on :5000
 ```
 
-Check what is configured at any time (prints status only, never secrets):
+Check environment configuration without printing secrets:
 
 ```bash
 npm run setup:check
 ```
 
-### 1. Frontend — Firebase web app (root `.env`)
+## Project configuration
 
-The root `.env` holds the **public** Firebase *web* config that Parcel inlines for `src/firebase.js`:
+### 1. Frontend Firebase config
 
-| Variable | Where to find it |
+Create a `.env` file in the project root with the public Firebase web config values.
+
+| Variable | Example |
 | --- | --- |
-| `FIREBASE_API_KEY` | Firebase Console > Project settings > General > Your apps > your web app |
-| `FIREBASE_AUTH_DOMAIN` | same section (e.g. `<project-id>.firebaseapp.com`) |
-| `FIREBASE_PROJECT_ID` | same section |
-| `FIREBASE_STORAGE_BUCKET` | same section (e.g. `<project-id>.firebasestorage.app` or `<project-id>.appspot.com`) |
-| `FIREBASE_MESSAGING_SENDER_ID` | same section |
-| `FIREBASE_APP_ID` | same section |
-| `FIREBASE_MEASUREMENT_ID` | same section |
+| `FIREBASE_API_KEY` | public API key from Firebase web app config |
+| `FIREBASE_AUTH_DOMAIN` | `your-project.firebaseapp.com` |
+| `FIREBASE_PROJECT_ID` | your Firebase project ID |
+| `FIREBASE_STORAGE_BUCKET` | `your-project.firebasestorage.app` |
+| `FIREBASE_MESSAGING_SENDER_ID` | sender ID from Firebase config |
+| `FIREBASE_APP_ID` | Firebase web app ID |
+| `FIREBASE_MEASUREMENT_ID` | analytics measurement ID |
 
-Steps: create a Firebase project → **Add app** → choose **Web** → register the app → copy the `firebaseConfig` values into `.env`. These values are public by design (they ship in the browser bundle) — the file is not a secret, but it is still gitignored.
+These values are public by design and are used by the browser. The file is gitignored.
 
-Then enable sign-in providers: Firebase Console > **Authentication > Sign-in method** — turn on **Email/Password**, **Google**, and (optional) **Phone**. For Google/redirect sign-in during local dev, add `http://localhost:1234` under **Authentication > Settings > Authorized domains**.
+In Firebase Console, enable the sign-in methods you want, especially:
 
-### 2. Backend — Supabase (`backend/.env`)
+- Email/Password
+- Google
+- Phone (optional)
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Supabase Dashboard > **Project Settings > API**: copy the **Project URL** and the **service_role key**.
-3. Run `backend/schema.sql` in the Supabase SQL editor (Dashboard > **SQL** > New query > paste > Run). It creates the tables (`users`, `posts`, `cities`, `notifications`, `messages`), indexes, RLS policies, and the `rename_user_following` / `rename_user_participants` RPC functions the backend calls when a user renames their username.
-4. (Optional) `npm run seed` to load demo posts, cities, and notifications.
+For local Google sign-in, add `http://localhost:1234` to the authorized domains list.
+
+### 2. Backend Supabase config
+
+Create `backend/.env` with:
 
 | Variable | Purpose |
 | --- | --- |
-| `SUPABASE_URL` | Project URL, e.g. `https://xxxx.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key — server-side, bypasses RLS |
-| `SUPABASE_ANON_KEY` | optional fallback (anon key) if you don't use the service-role key |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side key used by the backend |
+| `SUPABASE_ANON_KEY` | Optional anon key fallback |
 
-### 3. Backend — Firebase Admin SDK (`backend/.env`)
+Then run the SQL schema from `backend/schema.sql` in the Supabase SQL editor. This creates the core tables and functions required by the app.
 
-Used to verify the ID tokens the frontend sends.
+### 3. Backend Firebase Admin config
 
-1. Firebase Console > **Project settings > Service accounts** > **Generate new private key** — downloads a JSON file.
-2. Copy these three values into `backend/.env`:
-   - `FIREBASE_PROJECT_ID` → `project_id` from the JSON
-   - `FIREBASE_CLIENT_EMAIL` → `client_email`
-   - `FIREBASE_PRIVATE_KEY` → `private_key` — paste the whole PEM block, keeping the `\n` escapes as-is (or run `npm run setup`, which normalizes it for you)
+The backend verifies Firebase ID tokens using a service account.
 
-### 4. Optional variables
+Add these values to `backend/.env`:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+
+Generate the service account JSON from Firebase Console > Project settings > Service accounts.
+
+### 4. Optional environment variables
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | AI solution summaries (falls back to a local summary when unset) |
-| `OPENAI_MODEL` | default `gpt-4o-mini` |
-| `PORT` | backend port, default `5000` |
+| `OPENAI_API_KEY` | Enables AI-powered summaries |
+| `OPENAI_MODEL` | Defaults to `gpt-4o-mini` |
+| `PORT` | Backend port, default `5000` |
 
-> The backend reads **`backend/.env`** only. It starts even when Supabase/Firebase Admin are unset, but `/api/*` returns `503 Server configuration error` until `backend/.env` is populated. The frontend shows an empty feed instead of crashing in that case.
+> The backend reads `backend/.env` only. If the required environment is missing, API routes may return a `503` configuration error.
 
-# Screenshot
-<img width="1546" height="916" alt="2026-05-22-151444" src="https://github.com/user-attachments/assets/1b4aaca1-f12e-4af7-8245-1f73c2ec1684" />
-<img width="1555" height="895" alt="2026-05-22-151423" src="https://github.com/user-attachments/assets/7542ac46-fc54-4fc0-906a-742e72c65dd7" />
-<img width="1572" height="908" alt="2026-05-22-151411" src="https://github.com/user-attachments/assets/48d6c138-bf4d-4909-9c04-e3a938c856e5" />
-# Guys its sad to announce that PPH will no longer be available yo use as there is too much risk with this project 
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run setup
+npm run setup:check
+npm run seed
+```
+
+## Screenshots
+
+![Public Policy Hub screenshot](https://github.com/user-attachments/assets/1b4aaca1-f12e-4af7-8245-1f73c2ec1684)
+![Public Policy Hub screenshot](https://github.com/user-attachments/assets/7542ac46-fc54-4fc0-906a-742e72c65dd7)
+![Public Policy Hub screenshot](https://github.com/user-attachments/assets/48d6c138-bf4d-4909-9c04-e3a938c856e5)
+
+## Notes
+
+This project is intended for local development and demo use. Keep secrets out of source control and store them only in environment files that are ignored by Git.
