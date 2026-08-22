@@ -22,10 +22,16 @@ dist/
 
 # Backend runtime data (user-uploaded media)
 backend/uploads/
+backend/setup-env.mjs
 
-# Firebase service account keys
+# Local tool metadata / workspace artifacts
+.opencodex/
+
+# Firebase service account keys and app config
 serviceAccountKey.json
 *-firebase-adminsdk-*.json
+backend/publicpolicyhub-*-firebase-adminsdk-*.json
+src/firebase.js
 
 # Editor / OS files
 .DS_Store
@@ -36,5 +42,3 @@ Thumbs.db
 # Misc
 .eslintcache
 *.local
-
-src/firebase.js

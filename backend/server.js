@@ -9,6 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import admin from 'firebase-admin';
+import { Backend } from 'firebase/ai';
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.env') });
 
@@ -67,10 +68,53 @@ const ALLOWED_VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/quicktime', 'video
 const ALLOWED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.ogv']);
 const INVALID_UPLOAD_TYPE_ERROR_MESSAGE = 'Only JPG, PNG, WEBP, GIF, MP4, MOV, WEBM, and OGV uploads are allowed.';
 
+const UPLOADS_DIR = path.resolve(__dirname, 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Supabase Storage (media persistence). Files are still written to the local
+// uploads dir for processing (e.g. video transcoding) and are also mirrored to
+// Supabase Storage so media survives and is served from the uploads bucket.
+const SUPABASE_URL_RAW = process.env.SUPABASE_URL || '';
+const supabaseUrlBase = SUPABASE_URL_RAW.replace(/\/$/, '');
+const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
+const supabaseStorageBase = (isSupabaseConfigured && supabaseUrlBase)
+  ? `${supabaseUrlBase}/storage/v1/object/public/${STORAGE_BUCKET}`
+  : '';
+
+const uploadFileToStorage = async (storagePath, localFilePath, contentType) => {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const buffer = fs.readFileSync(localFilePath);
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: contentType || 'application/octet-stream',
+        upsert: true,
+      });
+    if (error) {
+      console.error('Supabase storage upload error:', error.message);
+      return null;
+    }
+    return storagePath;
+  } catch (err) {
+    console.error('Supabase storage upload failed:', err.message);
+    return null;
+  }
+};
+
+const deleteFromStorage = async (storagePath) => {
+  if (!isSupabaseConfigured || !supabase || !storagePath) return;
+  try {
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+  } catch {
+    /* best-effort */
+  }
+};
+
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(UPLOADS_DIR));
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
@@ -102,9 +146,7 @@ const isAllowedPostUpload = (file) => isAllowedImageUpload(file) || isAllowedVid
 // Multer Config
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = 'uploads';
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
+    cb(null, UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname).toLowerCase());
@@ -176,7 +218,7 @@ const transcodeVideoQualities = async (file) => {
 
   for (const preset of VIDEO_QUALITY_PRESETS) {
     const outputFilename = `${parsedFileName.name}-${preset.label}.mp4`;
-    const outputPath = path.resolve('uploads', outputFilename);
+    const outputPath = path.resolve(UPLOADS_DIR, outputFilename);
 
     try {
       await runCommand('ffmpeg', [
@@ -406,28 +448,24 @@ const replaceUsernameInPost = (post, currentUsername, nextUsername) => {
     }
   }
 
-  if (Array.isArray(post.commentsList)) {
-    post.commentsList.forEach((comment) => {
-      if (`${comment?.author ?? ''}`.trim() === currentUsername) {
-        comment.author = nextUsername;
-        hasChanges = true;
-      }
-    });
-  }
+  const commentsList = Array.isArray(post.comments_list)
+    ? post.comments_list
+    : (Array.isArray(post.commentsList) ? post.commentsList : []);
+  commentsList.forEach((comment) => {
+    if (`${comment?.author ?? ''}`.trim() === currentUsername) {
+      comment.author = nextUsername;
+      hasChanges = true;
+    }
+  });
 
-  if (Array.isArray(post.solutionsList)) {
-    post.solutionsList.forEach((solution) => {
-      if (replaceUsernameInDiscussionEntry(solution, currentUsername, nextUsername)) {
-        hasChanges = true;
-      }
-    });
-  }
-
-  if (hasChanges) {
-    post.markModified('supporters');
-    post.markModified('commentsList');
-    post.markModified('solutionsList');
-  }
+  const solutionsList = Array.isArray(post.solutions_list)
+    ? post.solutions_list
+    : (Array.isArray(post.solutionsList) ? post.solutionsList : []);
+  solutionsList.forEach((solution) => {
+    if (replaceUsernameInDiscussionEntry(solution, currentUsername, nextUsername)) {
+      hasChanges = true;
+    }
+  });
 
   return hasChanges;
 };
@@ -558,7 +596,7 @@ const addUploadFilePathFromUrl = (url, filePaths) => {
   const filename = path.basename(normalizedUrl);
   if (!filename) return;
 
-  filePaths.add(path.resolve('uploads', filename));
+  filePaths.add(path.resolve(UPLOADS_DIR, filename));
 };
 
 const collectPostMediaFilePaths = (post) => {
@@ -906,6 +944,15 @@ const getPostCreatedAt = (post) => {
     if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
   }
 
+  if (post?.created_at instanceof Date && !Number.isNaN(post.created_at.getTime())) {
+    return post.created_at;
+  }
+
+  if (post?.created_at) {
+    const parsedCreatedAt = new Date(post.created_at);
+    if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
+  }
+
   if (post?._id && typeof post._id.getTimestamp === 'function') {
     const objectIdTimestamp = post._id.getTimestamp();
     if (objectIdTimestamp instanceof Date && !Number.isNaN(objectIdTimestamp.getTime())) {
@@ -925,13 +972,13 @@ const serializeNotification = (notification) => {
       : null;
 
   return {
-    id: source?._id?.toString?.() || '',
-    recipientUsername: source?.recipientUsername || '',
-    actorUsername: source?.actorUsername || '',
-    type: source?.type || 'generic',
-    message: source?.message || '',
-    postId: source?.postId || '',
-    postTitle: source?.postTitle || '',
+    id: `${source?.id ?? source?._id ?? ''}`.toString(),
+    recipientUsername: `${source?.recipient_username ?? source?.recipientUsername ?? ''}`.trim(),
+    actorUsername: `${source?.actor_username ?? source?.actorUsername ?? ''}`.trim(),
+    type: `${source?.type ?? 'generic'}`.trim() || 'generic',
+    message: `${source?.message ?? ''}`.trim(),
+    postId: `${source?.post_id ?? source?.postId ?? ''}`.trim(),
+    postTitle: `${source?.post_title ?? source?.postTitle ?? ''}`.trim(),
     read: !!source?.read,
     createdAt: createdAt instanceof Date && !Number.isNaN(createdAt.getTime())
       ? createdAt.toISOString()
@@ -978,6 +1025,15 @@ const getUserJoinedAt = (user) => {
 
   if (user?.createdAt) {
     const parsedCreatedAt = new Date(user.createdAt);
+    if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
+  }
+
+  if (user?.created_at instanceof Date && !Number.isNaN(user.created_at.getTime())) {
+    return user.created_at;
+  }
+
+  if (user?.created_at) {
+    const parsedCreatedAt = new Date(user.created_at);
     if (!Number.isNaN(parsedCreatedAt.getTime())) return parsedCreatedAt;
   }
 
@@ -1461,9 +1517,12 @@ app.post('/api/users/profile/photo', authenticateToken, upload.single('photo'), 
     const { error } = await supabase.from('users').update({ profile_photo_url: nextPhotoUrl }).eq('id', req.user.id);
     if (error) throw error;
 
+    await uploadFileToStorage(req.file.filename, path.resolve(UPLOADS_DIR, req.file.filename), req.file.mimetype);
+
     if (previousPhotoUrl && previousPhotoUrl !== nextPhotoUrl) {
       try {
-        await deleteFileIfExists(path.resolve('uploads', path.basename(previousPhotoUrl)));
+        await deleteFileIfExists(path.resolve(UPLOADS_DIR, path.basename(previousPhotoUrl)));
+        await deleteFromStorage(path.basename(previousPhotoUrl));
       } catch (error) {
         console.error(`Failed to delete old profile photo ${previousPhotoUrl}:`, error.message);
       }
@@ -1487,7 +1546,7 @@ app.delete('/api/users/profile/photo', authenticateToken, async (req, res) => {
 
     if (previousPhotoUrl) {
       try {
-        await deleteFileIfExists(path.resolve('uploads', path.basename(previousPhotoUrl)));
+        await deleteFileIfExists(path.resolve(UPLOADS_DIR, path.basename(previousPhotoUrl)));
       } catch (deleteError) {
         console.error(`Failed to delete profile photo ${previousPhotoUrl}:`, deleteError.message);
       }
@@ -1522,9 +1581,12 @@ app.post('/api/users/profile/banner', authenticateToken, upload.single('banner')
       await writeUserMediaOverride(user, { bannerUrl: nextBannerUrl });
     }
 
+    await uploadFileToStorage(req.file.filename, path.resolve(UPLOADS_DIR, req.file.filename), req.file.mimetype);
+
     if (previousBannerUrl && previousBannerUrl !== nextBannerUrl) {
       try {
-        await deleteFileIfExists(path.resolve('uploads', path.basename(previousBannerUrl)));
+        await deleteFileIfExists(path.resolve(UPLOADS_DIR, path.basename(previousBannerUrl)));
+        await deleteFromStorage(path.basename(previousBannerUrl));
       } catch (error) {
         console.error(`Failed to delete old banner ${previousBannerUrl}:`, error.message);
       }
@@ -1912,6 +1974,23 @@ app.post('/api/posts', authenticateToken, upload.array('files', 10), async (req,
         sources,
       };
     }));
+
+    // Mirror every uploaded file (originals + transcoded video variants) to
+    // Supabase Storage so media is served from the uploads bucket.
+    if (req.files && req.files.length > 0) {
+      await Promise.all(req.files.map(async (file) => {
+        await uploadFileToStorage(file.filename, path.resolve(UPLOADS_DIR, file.filename), file.mimetype);
+        if (file.mimetype.startsWith('video/')) {
+          const parsed = path.parse(file.filename);
+          for (const preset of VIDEO_QUALITY_PRESETS) {
+            const variantPath = path.resolve(UPLOADS_DIR, `${parsed.name}-${preset.label}.mp4`);
+            if (fs.existsSync(variantPath)) {
+              await uploadFileToStorage(`${parsed.name}-${preset.label}.mp4`, variantPath, 'video/mp4');
+            }
+          }
+        }
+      }));
+    }
   }
 
   try {
@@ -1957,6 +2036,7 @@ app.delete('/api/posts/:postId', authenticateToken, async (req, res) => {
       mediaFilePaths.map(async (mediaFilePath) => {
         try {
           await deleteFileIfExists(mediaFilePath);
+          await deleteFromStorage(path.basename(mediaFilePath));
         } catch (error) {
           console.error(`Failed to delete media file ${mediaFilePath}:`, error.message);
         }

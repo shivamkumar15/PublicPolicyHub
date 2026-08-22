@@ -70,18 +70,26 @@ const Logo = new URL('../Logo.svg', import.meta.url).href;
 
 function getApiBaseUrl() {
   if (typeof window === 'undefined') return '';
-  if (window.location.port === '5000') return '';
-  return `${window.location.protocol}//${window.location.hostname}:5000`;
+  // Use relative URLs so requests go through the dev server proxy (.proxyrc)
+  // which forwards /api and /uploads to the backend on :5000. This keeps the
+  // app working in proxied/remote dev environments where the browser cannot
+  // reach the backend's localhost:5000 directly.
+  return '';
 }
 
 const API_BASE_URL = getApiBaseUrl();
 
 function getMediaBaseUrl() {
-  if (API_BASE_URL) return API_BASE_URL;
-  if (typeof window === 'undefined') return '';
-  if (window.location.port === '5000') return '';
-  return `${window.location.protocol}//${window.location.hostname}:5000`;
+  return API_BASE_URL;
 }
+
+// Media is stored in Supabase Storage (the `uploads` bucket). DB references use
+// the `/uploads/<file>` convention; resolve them to the public Storage URL.
+const SUPABASE_URL = `${process.env.SUPABASE_URL || ''}`.trim().replace(/\/$/, '');
+const SUPABASE_STORAGE_BUCKET = `${process.env.SUPABASE_STORAGE_BUCKET || 'uploads'}`.trim();
+const supabaseStorageBase = SUPABASE_URL
+  ? `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}`
+  : '';
 
 const navItems = [
   { id: 'home', label: 'Home Feed', Icon: (props) => <FileText {...props} /> },
@@ -7686,6 +7694,9 @@ function formatCount(value) {
 function resolveMediaUrl(url) {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
+  if (url.startsWith('/uploads/') && supabaseStorageBase) {
+    return `${supabaseStorageBase}${url.slice('/uploads'.length)}`;
+  }
   return `${getMediaBaseUrl()}${url}`;
 }
 

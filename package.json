@@ -9,12 +9,15 @@
     "dev:backend": "cd backend && npm run dev",
     "start": "parcel serve index.html --dist-dir .parcel-dev",
     "build": "parcel build index.html --dist-dir dist",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "setup": "node backend/setup-env.mjs",
+    "setup:check": "node backend/setup-env.mjs --check",
+    "seed": "cd backend && node seed.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.1",
     "emoji-picker-react": "^4.19.1",
-    "firebase": "^12.13.0",
+    "firebase": "^12.17.1",
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

@@ -87,6 +87,31 @@ CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipien
 CREATE INDEX IF NOT EXISTS idx_messages_participants ON messages USING GIN (participants);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
 
+-- RPC functions used by the backend when a user renames their username.
+-- They replace the old username inside TEXT[] arrays (users.following,
+-- messages.participants) across all rows that reference it.
+CREATE OR REPLACE FUNCTION rename_user_following(old_username TEXT, new_username TEXT)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE users
+     SET following = array_replace(following, old_username, new_username)
+   WHERE old_username = ANY(following);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION rename_user_participants(old_username TEXT, new_username TEXT)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE messages
+     SET participants = array_replace(participants, old_username, new_username)
+   WHERE old_username = ANY(participants);
+END;
+$$;
+
 -- Disable RLS for all tables to allow the backend to function without complex policies for now
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE posts DISABLE ROW LEVEL SECURITY;
